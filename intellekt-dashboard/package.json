@@ -1,0 +1,34 @@
+{
+	"name": "intellekt-dashboard",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start"
+	},
+	"dependencies": {
+		"chart.js": "^4.5.1",
+		"cors": "^2.8.6",
+		"express": "^5.2.1",
+		"html2pdf.js": "^0.14.0",
+		"jspdf": "^4.2.1",
+		"jspdf-autotable": "^5.0.7",
+		"lucide-react": "^0.577.0",
+		"next": "latest",
+		"nodemon": "^3.1.14",
+		"pg": "^8.20.0",
+		"react": "latest",
+		"react-chartjs-2": "^5.3.1",
+		"react-dom": "latest"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "^4.2.1",
+		"@types/node": "25.3.3",
+		"@types/react": "19.2.14",
+		"autoprefixer": "^10.4.27",
+		"postcss": "^8.5.8",
+		"tailwindcss": "^4.2.1",
+		"typescript": "5.9.3"
+	}
+}
