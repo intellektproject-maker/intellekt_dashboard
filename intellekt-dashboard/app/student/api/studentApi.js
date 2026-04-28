@@ -1,6 +1,6 @@
 export async function getStudentProfile(rollNo) {
 	try {
-		const response = await fetch(`http://192.168.1.20:5050/student/${rollNo}`);
+		const response = await fetch(`http://192.168.1.26:5050/student/${rollNo}`);
 
 		if (!response.ok) {
 			throw new Error('Failed to fetch student');

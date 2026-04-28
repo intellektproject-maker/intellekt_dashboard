@@ -1163,7 +1163,7 @@ app.post('/post-test', async (req, res) => {
 			link = existingLink.rows[0].test_slot_link;
 			console.log('Using existing link:', link);
 		} else {
-			link = `http://192.168.1.20:3000/register-test?date=${test_date}`;
+			link = `http://192.168.1.26:3000/register-test?date=${test_date}`;
 			console.log('Created new link:', link);
 		}
 

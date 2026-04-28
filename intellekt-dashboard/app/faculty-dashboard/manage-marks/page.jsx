@@ -22,7 +22,7 @@ export default function ManageMarks() {
         testCode
       });
 
-      const res = await fetch(`http://192.168.1.20:5050/marks?${params}`);
+      const res = await fetch(`http://192.168.1.26:5050/marks?${params}`);
       const data = await res.json();
 
       setMarksData(data);
@@ -42,7 +42,7 @@ export default function ManageMarks() {
 
     try {
       await fetch(
-        `http://192.168.1.20:5050/marks/${row.roll_no}/${row.test_code}`,
+        `http://192.168.1.26:5050/marks/${row.roll_no}/${row.test_code}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

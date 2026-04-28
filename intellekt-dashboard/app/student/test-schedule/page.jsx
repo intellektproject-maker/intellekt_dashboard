@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "http://192.168.1.20:5050";
+const API_BASE = "http://192.168.1.26:5050";
 
 export default function TestSchedulePage() {
   const searchParams = useSearchParams();

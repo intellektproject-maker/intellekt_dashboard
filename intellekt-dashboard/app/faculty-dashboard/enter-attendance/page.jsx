@@ -7,14 +7,14 @@ export default function EnterAttendancePage() {
 	const searchParams = useSearchParams();
 	const facultyId = searchParams.get('id');
 
-	const [classBoard, setClassBoard] = useState('');
-	const [subject, setSubject] = useState('');
-	const [selectedDate, setSelectedDate] = useState('');
-	const [students, setStudents] = useState([]);
-	const [attendance, setAttendance] = useState({});
-	const [loading, setLoading] = useState(false);
-	const [showPopup, setShowPopup] = useState(false);
-	const [absentees, setAbsentees] = useState([]);
+	const [ classBoard, setClassBoard ] = useState('');
+	const [ subject, setSubject ] = useState('');
+	const [ selectedDate, setSelectedDate ] = useState('');
+	const [ students, setStudents ] = useState([]);
+	const [ attendance, setAttendance ] = useState({});
+	const [ loading, setLoading ] = useState(false);
+	const [ showPopup, setShowPopup ] = useState(false);
+	const [ absentees, setAbsentees ] = useState([]);
 
 	const subjectMap = {
 		MATHS: 1,
@@ -36,7 +36,9 @@ export default function EnterAttendancePage() {
 			setLoading(true);
 
 			const res = await fetch(
-				`http://192.168.1.20:5050/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[subject]}&date=${selectedDate}`
+				`http://192.168.1.26:5050/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[
+					subject
+				]}&date=${selectedDate}`
 			);
 
 			const data = await res.json();
@@ -93,7 +95,7 @@ export default function EnterAttendancePage() {
 				status: attendance[student.roll_no] || 'Present'
 			}));
 
-			const res = await fetch('http://192.168.1.20:5050/attendance', {
+			const res = await fetch('http://192.168.1.26:5050/attendance', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -176,7 +178,8 @@ export default function EnterAttendancePage() {
 
 			{loading && <p className="text-gray-600">Loading students...</p>}
 
-			{!loading && students.length > 0 && (
+			{!loading &&
+			students.length > 0 && (
 				<div className="bg-white shadow-md rounded-xl p-6 border">
 					<div className="overflow-x-auto">
 						<table className="w-full border-collapse min-w-[700px]">

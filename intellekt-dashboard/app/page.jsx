@@ -39,11 +39,7 @@ const cards = [
   },
 ];
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ||
-  (typeof window !== "undefined"
-    ? `http://${window.location.hostname}:5050`
-    : "http://localhost:5050");
+const API_BASE = "http://192.168.1.26:5050";
 
 export default function Home() {
   const router = useRouter();

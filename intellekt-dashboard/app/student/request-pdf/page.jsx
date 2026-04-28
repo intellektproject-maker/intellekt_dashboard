@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-const API_BASE = 'http://192.168.1.20:5050'; // change if needed
+const API_BASE = 'http://192.168.1.26:5050'; // change if needed
 
 export default function RequestPdfPage() {
 	const searchParams = useSearchParams();

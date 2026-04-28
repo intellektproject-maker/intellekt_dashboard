@@ -14,7 +14,7 @@ export default function FeePage() {
 			if (!roll) return;
 
 			async function fetchFee() {
-				const res = await fetch(`http://192.168.1.20:5050/fees/${roll}`);
+				const res = await fetch(`http://192.168.1.26:5050/fees/${roll}`);
 				const data = await res.json();
 				setFee(data);
 			}
