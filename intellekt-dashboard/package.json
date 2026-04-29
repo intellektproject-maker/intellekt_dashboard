@@ -15,6 +15,7 @@
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
+    "html2pdf.js": "^0.14.0",
     "jspdf": "latest",
     "jspdf-autotable": "latest",
     "lucide-react": "latest",
