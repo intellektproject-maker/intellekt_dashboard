@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "../../../components/Sidebar";
 import Navbar from "../../../components/Navbar";
 
-const API_BASE = "http://192.168.1.26:5050";
+const API_BASE = "/backend-api";
 
 export default function EditFacultyPage() {
   const router = useRouter();

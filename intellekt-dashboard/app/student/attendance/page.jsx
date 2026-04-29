@@ -7,49 +7,52 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/backend-api';
 
 export default function AttendancePage() {
 	const searchParams = useSearchParams();
 	const roll = searchParams.get('roll');
 
-	const [attendance, setAttendance] = useState([]);
-	const [selectedMonth, setSelectedMonth] = useState(() => {
+	const [ attendance, setAttendance ] = useState([]);
+	const [ selectedMonth, setSelectedMonth ] = useState(() => {
 		const d = new Date();
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 	});
 
-	const [presentSubjectFilter, setPresentSubjectFilter] = useState('');
-	const [absentSubjectFilter, setAbsentSubjectFilter] = useState('');
+	const [ presentSubjectFilter, setPresentSubjectFilter ] = useState('');
+	const [ absentSubjectFilter, setAbsentSubjectFilter ] = useState('');
 
-	useEffect(() => {
-		if (!roll) return;
+	useEffect(
+		() => {
+			if (!roll) return;
 
-		async function load() {
-			try {
-				const res = await fetch(`${API_BASE}/attendance/${roll}`);
+			async function load() {
+				try {
+					const res = await fetch(`${API_BASE}/attendance/${roll}`);
 
-				if (!res.ok) {
+					if (!res.ok) {
+						setAttendance([]);
+						return;
+					}
+
+					const rows = await res.json();
+
+					const prefix = selectedMonth + '-';
+					const filtered = Array.isArray(rows)
+						? rows.filter((r) => String(r.attendance_date || '').startsWith(prefix))
+						: [];
+
+					setAttendance(filtered);
+				} catch (err) {
+					console.error('Load attendance error:', err);
 					setAttendance([]);
-					return;
 				}
-
-				const rows = await res.json();
-
-				const prefix = selectedMonth + '-';
-				const filtered = Array.isArray(rows)
-					? rows.filter((r) => String(r.attendance_date || '').startsWith(prefix))
-					: [];
-
-				setAttendance(filtered);
-			} catch (err) {
-				console.error('Load attendance error:', err);
-				setAttendance([]);
 			}
-		}
 
-		load();
-	}, [roll, selectedMonth]);
+			load();
+		},
+		[ roll, selectedMonth ]
+	);
 
 	const formatDate = (dateString) => {
 		const d = new Date(dateString);
@@ -59,7 +62,7 @@ export default function AttendancePage() {
 		return `${day}-${month}-${year}`;
 	};
 
-	const [selYear, selMonth] = selectedMonth.split('-').map(Number);
+	const [ selYear, selMonth ] = selectedMonth.split('-').map(Number);
 	const daysInMonth = selYear && selMonth ? new Date(selYear, selMonth, 0).getDate() : 30;
 	const total = attendance.length;
 	const notEntered = Math.max(0, daysInMonth - total);
@@ -91,11 +94,11 @@ export default function AttendancePage() {
 	const absent = absentDates.length;
 
 	const chartData = {
-		labels: ['Present', 'Absent', 'Not Entered'],
+		labels: [ 'Present', 'Absent', 'Not Entered' ],
 		datasets: [
 			{
-				data: [present, absent, notEntered],
-				backgroundColor: ['#22c55e', '#ef4444', '#9ca3af'],
+				data: [ present, absent, notEntered ],
+				backgroundColor: [ '#22c55e', '#ef4444', '#9ca3af' ],
 				borderWidth: 1
 			}
 		]

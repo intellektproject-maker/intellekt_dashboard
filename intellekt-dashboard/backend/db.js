@@ -1,10 +1,13 @@
-const { Pool } = require('pg');
+const { Pool } = require("pg");
+const path = require("path");
+
+require("dotenv").config({
+  path: path.join(__dirname, ".env"),
+});
 
 const pool = new Pool({
-	user: 'postgres',
-	host: 'localhost',
-	database: 'intellekt_db', // your DB name
-	password: 'welcome123',
-	port: 5432
+  connectionString: process.env.DATABASE_URL,
+  ssl: false,
 });
+
 module.exports = pool;

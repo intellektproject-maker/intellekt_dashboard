@@ -15,7 +15,7 @@ export default function MarksPage() {
 
 			async function fetchMarks() {
 				try {
-					const res = await fetch(`http://192.168.1.26:5050/marks/${roll}`);
+					const res = await fetch(`/backend-api/marks/${roll}`);
 					const data = await res.json();
 					setMarks(data);
 				} catch (err) {

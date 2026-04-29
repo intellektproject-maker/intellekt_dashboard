@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import Navbar from '../../components/Navbar';
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/backend-api";
 
 const subjectMap = {
 	1: 'MATHS',

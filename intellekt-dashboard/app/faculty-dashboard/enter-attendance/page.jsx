@@ -36,7 +36,7 @@ export default function EnterAttendancePage() {
 			setLoading(true);
 
 			const res = await fetch(
-				`http://192.168.1.26:5050/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[
+				`/backend-api/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[
 					subject
 				]}&date=${selectedDate}`
 			);
@@ -95,7 +95,7 @@ export default function EnterAttendancePage() {
 				status: attendance[student.roll_no] || 'Present'
 			}));
 
-			const res = await fetch('http://192.168.1.26:5050/attendance', {
+			const res = await fetch('/backend-api/attendance', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'

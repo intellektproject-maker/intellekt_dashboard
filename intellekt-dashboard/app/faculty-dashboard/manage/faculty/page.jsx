@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "http://192.168.1.26:5050";
+const API_BASE = "/backend-api";
 
 const SUBJECT_OPTIONS = [
   { subject_id: "1", subject_name: "Admin" },

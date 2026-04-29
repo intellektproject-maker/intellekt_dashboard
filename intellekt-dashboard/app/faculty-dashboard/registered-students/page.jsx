@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API_BASE = 'http://192.168.1.26:5050';
+const API_BASE = '/backend-api';
 
 export default function RegisteredStudentsPage() {
 	const searchParams = useSearchParams();

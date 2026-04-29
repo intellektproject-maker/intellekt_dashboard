@@ -23,7 +23,7 @@ export default function PostTest() {
 	useEffect(() => {
 		async function loadClasses() {
 			try {
-				const res = await fetch('http://192.168.1.26:5050/classes');
+				const res = await fetch('/backend-api/classes');
 				const data = await res.json();
 				setClasses(Array.isArray(data) ? data : []);
 			} catch (err) {
@@ -118,7 +118,7 @@ export default function PostTest() {
 		}
 
 		try {
-			const res = await fetch('http://192.168.1.26:5050/post-test', {
+			const res = await fetch('/backend-api/post-test', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({

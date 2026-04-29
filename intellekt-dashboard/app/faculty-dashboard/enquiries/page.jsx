@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-const API_BASE = 'http://192.168.1.26:5050';
+const API_BASE = '/backend-api';
 
 const CLASS_OPTIONS = [ '10', '11', '12' ];
 const BOARD_OPTIONS = [ 'CBSE', 'ICSE', 'State Board' ];

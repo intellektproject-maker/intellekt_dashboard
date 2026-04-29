@@ -1163,7 +1163,7 @@ app.post('/post-test', async (req, res) => {
 			link = existingLink.rows[0].test_slot_link;
 			console.log('Using existing link:', link);
 		} else {
-			link = `http://192.168.1.26:3000/register-test?date=${test_date}`;
+			link = `/backend-api.1.26:3000/register-test?date=${test_date}`;
 			console.log('Created new link:', link);
 		}
 
@@ -2619,8 +2619,8 @@ app.get('/registered-students', async (req, res) => {
 /* =========================================================
    SERVER START
 ========================================================= */
-const PORT = 5050;
+const PORT = process.env.PORT || 5050;
 
-app.listen(PORT, '0.0.0.0', () => {
-	console.log(`Server running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });

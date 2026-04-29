@@ -60,7 +60,7 @@ export default function ManageAttendancePage() {
       }
 
       const res = await fetch(
-        `http://192.168.1.26:5050/attendance?${params.toString()}`
+        `/backend-api/attendance?${params.toString()}`
       );
       const data = await res.json();
 
@@ -123,7 +123,7 @@ export default function ManageAttendancePage() {
     if (!ok) return;
 
     try {
-      const res = await fetch("http://192.168.1.26:5050/attendance", {
+      const res = await fetch("/backend-api/attendance", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

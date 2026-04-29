@@ -12,7 +12,7 @@ import {
   FileText,
 } from "lucide-react";
 
-const API_BASE = "http://192.168.1.26:5050";
+const API_BASE = "/backend-api";
 
 export default function StudentPage() {
   const searchParams = useSearchParams();
