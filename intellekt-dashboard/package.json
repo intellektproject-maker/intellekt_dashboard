@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-  "start": "next start -p $PORT",
+    "start": "next start -p $PORT",
     "backend": "node backend/server.js"
   },
   "dependencies": {
@@ -36,6 +36,5 @@
   "main": "tailwind.config.js",
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "license": "ISC"
 }
