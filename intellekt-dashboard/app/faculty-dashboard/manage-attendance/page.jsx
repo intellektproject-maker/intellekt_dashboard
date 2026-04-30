@@ -61,7 +61,7 @@ function ManageAttendancePageInner() {
       }
 
       const res = await fetch(
-        `/backend-api/attendance?${params.toString()}`
+        `https://responsible-wonder-production.up.railway.app/attendance?${params.toString()}`
       );
       const data = await res.json();
 
@@ -124,7 +124,7 @@ function ManageAttendancePageInner() {
     if (!ok) return;
 
     try {
-      const res = await fetch("/backend-api/attendance", {
+      const res = await fetch("https://responsible-wonder-production.up.railway.app/attendance", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

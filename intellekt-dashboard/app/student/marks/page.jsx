@@ -14,7 +14,7 @@ function MarksPageContent() {
 
     async function fetchMarks() {
       try {
-        const res = await fetch(`/backend-api/marks/${roll}`);
+        const res = await fetch(`https://responsible-wonder-production.up.railway.app/marks/${roll}`);
         const data = await res.json();
         setMarks(data);
       } catch (err) {

@@ -36,7 +36,7 @@ function EnterAttendancePageInner() {
 			setLoading(true);
 
 			const res = await fetch(
-				`/backend-api/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[subject]}&date=${selectedDate}`
+				`https://responsible-wonder-production.up.railway.app/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[subject]}&date=${selectedDate}`
 			);
 
 			const data = await res.json();
@@ -93,7 +93,7 @@ function EnterAttendancePageInner() {
 				status: attendance[student.roll_no] || 'Present'
 			}));
 
-			const res = await fetch('/backend-api/attendance', {
+			const res = await fetch('https://responsible-wonder-production.up.railway.app/attendance', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({

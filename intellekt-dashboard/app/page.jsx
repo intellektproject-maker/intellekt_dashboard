@@ -39,7 +39,7 @@ const cards = [
   },
 ];
 
-const API_BASE = "/backend-api";
+const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 export default function Home() {
   const router = useRouter();

@@ -1163,7 +1163,7 @@ app.post('/post-test', async (req, res) => {
 			link = existingLink.rows[0].test_slot_link;
 			console.log('Using existing link:', link);
 		} else {
-			link = `/backend-api.1.26:3000/register-test?date=${test_date}`;
+			link = `https://responsible-wonder-production.up.railway.app.1.26:3000/register-test?date=${test_date}`;
 			console.log('Created new link:', link);
 		}
 
