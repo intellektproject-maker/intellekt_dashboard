@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function EnterAttendancePage() {
+function EnterAttendancePageInner() {
 	const searchParams = useSearchParams();
 	const facultyId = searchParams.get('id');
 
@@ -36,9 +36,7 @@ export default function EnterAttendancePage() {
 			setLoading(true);
 
 			const res = await fetch(
-				`/backend-api/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[
-					subject
-				]}&date=${selectedDate}`
+				`/backend-api/attendance?class=${encodeURIComponent(classBoard)}&subject=${subjectMap[subject]}&date=${selectedDate}`
 			);
 
 			const data = await res.json();
@@ -97,9 +95,7 @@ export default function EnterAttendancePage() {
 
 			const res = await fetch('/backend-api/attendance', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					records,
 					subject: subjectMap[subject],
@@ -136,11 +132,7 @@ export default function EnterAttendancePage() {
 
 			<div className="bg-white shadow-md rounded-xl p-6 mb-6 border">
 				<div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-					<select
-						value={classBoard}
-						onChange={(e) => setClassBoard(e.target.value)}
-						className="border rounded-lg px-4 py-3"
-					>
+					<select value={classBoard} onChange={(e) => setClassBoard(e.target.value)} className="border rounded-lg px-4 py-3">
 						<option value="">Select Class</option>
 						<option value="CBSE-12">CBSE-12</option>
 						<option value="CBSE-10">CBSE-10</option>
@@ -150,27 +142,15 @@ export default function EnterAttendancePage() {
 						<option value="ICSE-10">ICSE-10</option>
 					</select>
 
-					<select
-						value={subject}
-						onChange={(e) => setSubject(e.target.value)}
-						className="border rounded-lg px-4 py-3"
-					>
+					<select value={subject} onChange={(e) => setSubject(e.target.value)} className="border rounded-lg px-4 py-3">
 						<option value="">Select Subject</option>
 						<option value="MATHS">MATHS</option>
 						<option value="PHYSICS">PHYSICS</option>
 					</select>
 
-					<input
-						type="date"
-						value={selectedDate}
-						onChange={(e) => setSelectedDate(e.target.value)}
-						className="border rounded-lg px-4 py-3"
-					/>
+					<input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border rounded-lg px-4 py-3" />
 
-					<button
-						onClick={loadStudents}
-						className="bg-blue-700 text-white rounded-lg px-4 py-3 hover:bg-blue-800"
-					>
+					<button onClick={loadStudents} className="bg-blue-700 text-white rounded-lg px-4 py-3 hover:bg-blue-800">
 						Load Students
 					</button>
 				</div>
@@ -178,8 +158,7 @@ export default function EnterAttendancePage() {
 
 			{loading && <p className="text-gray-600">Loading students...</p>}
 
-			{!loading &&
-			students.length > 0 && (
+			{!loading && students.length > 0 && (
 				<div className="bg-white shadow-md rounded-xl p-6 border">
 					<div className="overflow-x-auto">
 						<table className="w-full border-collapse min-w-[700px]">
@@ -190,7 +169,6 @@ export default function EnterAttendancePage() {
 									<th className="text-left py-3">Status</th>
 								</tr>
 							</thead>
-
 							<tbody>
 								{students.map((student) => (
 									<tr key={student.roll_no} className="border-b">
@@ -199,8 +177,7 @@ export default function EnterAttendancePage() {
 										<td className="py-3">
 											<select
 												value={attendance[student.roll_no] || 'Present'}
-												onChange={(e) =>
-													handleAttendanceChange(student.roll_no, e.target.value)}
+												onChange={(e) => handleAttendanceChange(student.roll_no, e.target.value)}
 												className="border rounded-lg px-3 py-2"
 											>
 												<option value="Present">Present</option>
@@ -213,10 +190,7 @@ export default function EnterAttendancePage() {
 						</table>
 					</div>
 
-					<button
-						onClick={handlePreview}
-						className="mt-6 bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800"
-					>
+					<button onClick={handlePreview} className="mt-6 bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">
 						Preview & Submit
 					</button>
 				</div>
@@ -232,22 +206,14 @@ export default function EnterAttendancePage() {
 						) : (
 							<ul className="list-disc list-inside mb-4 text-gray-700">
 								{absentees.map((student) => (
-									<li key={student.roll_no}>
-										{student.roll_no} - {student.name}
-									</li>
+									<li key={student.roll_no}>{student.roll_no} - {student.name}</li>
 								))}
 							</ul>
 						)}
 
 						<div className="flex gap-3">
-							<button onClick={() => setShowPopup(false)} className="px-5 py-2 rounded-lg border">
-								Cancel
-							</button>
-
-							<button
-								onClick={() => submitAttendance(false)}
-								className="px-5 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800"
-							>
+							<button onClick={() => setShowPopup(false)} className="px-5 py-2 rounded-lg border">Cancel</button>
+							<button onClick={() => submitAttendance(false)} className="px-5 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800">
 								Submit Attendance
 							</button>
 						</div>
@@ -255,5 +221,13 @@ export default function EnterAttendancePage() {
 				</div>
 			)}
 		</div>
+	);
+}
+
+export default function EnterAttendancePage() {
+	return (
+		<Suspense fallback={<div>Loading...</div>}>
+			<EnterAttendancePageInner />
+		</Suspense>
 	);
 }

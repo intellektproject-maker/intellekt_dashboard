@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, Suspense } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
@@ -9,7 +9,7 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/backend-api';
 
-export default function AttendancePage() {
+function AttendancePageInner() {
 	const searchParams = useSearchParams();
 	const roll = searchParams.get('roll');
 
@@ -204,5 +204,13 @@ export default function AttendancePage() {
 				</div>
 			</div>
 		</div>
+	);
+}
+
+export default function AttendancePage() {
+	return (
+		<Suspense fallback={<div>Loading...</div>}>
+			<AttendancePageInner />
+		</Suspense>
 	);
 }

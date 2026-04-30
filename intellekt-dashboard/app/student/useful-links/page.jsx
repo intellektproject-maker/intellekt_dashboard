@@ -1,17 +1,14 @@
+"use client";
+
 export default function UsefulLinksPage() {
-
   return (
-
     <div className="p-6 md:p-10">
-
       <h2 className="text-2xl md:text-3xl font-bold text-blue-700 mb-6">
         Useful Links
       </h2>
 
       <div className="bg-white shadow-md rounded-xl p-6">
-
         <ul className="space-y-4">
-
           <li>
             <a
               href="https://ncert.nic.in"
@@ -44,11 +41,8 @@ export default function UsefulLinksPage() {
               BYJU'S
             </a>
           </li>
-
         </ul>
-
       </div>
-
     </div>
   );
 }

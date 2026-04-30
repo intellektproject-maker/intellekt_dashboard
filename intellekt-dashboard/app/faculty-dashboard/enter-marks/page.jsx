@@ -1,11 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "/backend-api";
 
-export default function MarksPage() {
+function MarksPageContent() {
   const searchParams = useSearchParams();
   const facultyId = searchParams.get("id");
 
@@ -41,7 +42,6 @@ export default function MarksPage() {
         setLoadingClasses(false);
       }
     }
-
     loadClasses();
   }, []);
 
@@ -60,7 +60,8 @@ export default function MarksPage() {
     let boardName = null;
 
     if (boardPrefix === "C") boardName = "CBSE";
-    else if (boardPrefix === "S" || boardPrefix === "SB") boardName = "State Board";
+    else if (boardPrefix === "S" || boardPrefix === "SB")
+      boardName = "State Board";
     else if (boardPrefix === "I") boardName = "ICSE";
 
     if (!boardName) return null;
@@ -75,7 +76,8 @@ export default function MarksPage() {
       const cls = String(c.class || "").toUpperCase();
       const brd = String(c.board || "").toUpperCase();
 
-      return cls.includes(parsed.classNum) && brd === parsed.boardName.toUpperCase();
+      return cls.includes(parsed.classNum) &&
+        brd === parsed.boardName.toUpperCase();
     });
   }
 
@@ -128,16 +130,12 @@ export default function MarksPage() {
     if (!classBoard) {
       setClassError("Select class");
       hasError = true;
-    } else {
-      setClassError("");
-    }
+    } else setClassError("");
 
     if (!totalMarks) {
       setTotalError("Enter total marks");
       hasError = true;
-    } else {
-      setTotalError("");
-    }
+    } else setTotalError("");
 
     if (!testCode.trim()) {
       setTestCodeError("Enter test code");
@@ -162,37 +160,34 @@ export default function MarksPage() {
 
   function handleMarks(roll, value) {
     if (value === "") {
-      setMarks((prev) => ({ ...prev, [roll]: "" }));
-      setComments((prev) => ({ ...prev, [roll]: "" }));
-      setErrors((prev) => ({ ...prev, [roll]: "Required" }));
+      setMarks((p) => ({ ...p, [roll]: "" }));
+      setComments((p) => ({ ...p, [roll]: "" }));
+      setErrors((p) => ({ ...p, [roll]: "Required" }));
       return;
     }
 
     let clean = value.replace(/\D/g, "").replace(/^0+/, "");
-
     if (clean === "") clean = "0";
 
     const num = Number(clean);
 
     if (num > totalMarks) {
-      setErrors((prev) => ({ ...prev, [roll]: `Max ${totalMarks}` }));
+      setErrors((p) => ({ ...p, [roll]: `Max ${totalMarks}` }));
       return;
     }
 
-    setMarks((prev) => ({ ...prev, [roll]: num }));
-    setErrors((prev) => ({ ...prev, [roll]: "" }));
-    setComments((prev) => ({ ...prev, [roll]: generateComment(num) }));
+    setMarks((p) => ({ ...p, [roll]: num }));
+    setErrors((p) => ({ ...p, [roll]: "" }));
+    setComments((p) => ({ ...p, [roll]: generateComment(num) }));
   }
 
   async function submitMarks() {
     const newErrors = {};
     let hasError = false;
 
-    students.forEach((student) => {
-      const mark = marks[student.roll_no];
-
-      if (mark === "" || mark === undefined) {
-        newErrors[student.roll_no] = "Required";
+    students.forEach((s) => {
+      if (marks[s.roll_no] === "" || marks[s.roll_no] === undefined) {
+        newErrors[s.roll_no] = "Required";
         hasError = true;
       }
     });
@@ -204,10 +199,10 @@ export default function MarksPage() {
       return;
     }
 
-    const payload = students.map((student) => ({
-      roll_no: student.roll_no,
-      marks: marks[student.roll_no],
-      comments: comments[student.roll_no] || "",
+    const payload = students.map((s) => ({
+      roll_no: s.roll_no,
+      marks: marks[s.roll_no],
+      comments: comments[s.roll_no] || "",
       test_code: testCode.toUpperCase().trim(),
       total_marks: totalMarks,
     }));
@@ -215,13 +210,8 @@ export default function MarksPage() {
     try {
       const res = await fetch(`${API_BASE}/marks`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          records: payload,
-          facultyId,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ records: payload, facultyId }),
       });
 
       const data = await res.json();
@@ -247,6 +237,7 @@ export default function MarksPage() {
 
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Test Code
@@ -270,29 +261,17 @@ export default function MarksPage() {
                 Class
               </label>
               <select
-                className={`w-full appearance-none bg-white border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 ${
-                  classError ? "border-red-500" : "border-gray-300"
-                }`}
+                className="w-full border rounded-lg px-4 py-3"
                 value={classBoard}
-                onChange={(e) => {
-                  setClassBoard(e.target.value);
-                  setClassError("");
-                }}
-                disabled={loadingClasses}
+                onChange={(e) => setClassBoard(e.target.value)}
               >
-                <option value="">
-                  {loadingClasses ? "Loading classes..." : "Select Class"}
-                </option>
-
-                {classes.map((item, index) => (
-                  <option key={index} value={item.class}>
-                    {item.class} — {item.board}
+                <option value="">Select Class</option>
+                {classes.map((c, i) => (
+                  <option key={i} value={c.class}>
+                    {c.class} — {c.board}
                   </option>
                 ))}
               </select>
-              {classError && (
-                <p className="text-red-500 text-xs mt-1">{classError}</p>
-              )}
             </div>
 
             <div>
@@ -301,108 +280,42 @@ export default function MarksPage() {
               </label>
               <input
                 type="number"
-                placeholder="Total Marks"
-                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 ${
-                  totalError ? "border-red-500" : "border-gray-300"
-                }`}
+                className="w-full border rounded-lg px-4 py-3"
                 value={manualTotal || totalMarks || ""}
-                onChange={(e) => {
-                  setManualTotal(e.target.value);
-                  setTotalError("");
-                }}
+                onChange={(e) => setManualTotal(e.target.value)}
               />
-              {totalError && (
-                <p className="text-red-500 text-xs mt-1">{totalError}</p>
-              )}
             </div>
 
             <div className="flex items-end">
               <button
                 onClick={loadStudents}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-3 rounded-lg transition"
+                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg"
               >
                 Load Students
               </button>
             </div>
+
           </div>
         </div>
 
         {students.length > 0 && (
-          <div className="bg-white shadow-md rounded-xl border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-12 bg-gray-100 border-b border-gray-300 font-bold text-gray-800">
-              <div className="col-span-2 p-4 border-r">Roll No</div>
-              <div className="col-span-4 p-4 border-r">Student Name</div>
-              <div className="col-span-2 p-4 border-r text-center">Marks</div>
-              <div className="col-span-2 p-4 border-r text-center">Total</div>
-              <div className="col-span-2 p-4 text-center">Comment</div>
-            </div>
-
-            {students.map((student) => (
-              <div
-                key={student.roll_no}
-                className="grid grid-cols-12 items-center border-b last:border-b-0 hover:bg-gray-50"
-              >
-                <div className="col-span-2 p-4 border-r font-semibold text-gray-700">
-                  {student.roll_no}
-                </div>
-
-                <div className="col-span-4 p-4 border-r text-gray-800">
-                  {student.name}
-                </div>
-
-                <div className="col-span-2 p-4 border-r">
-                  <input
-                    type="text"
-                    value={marks[student.roll_no] ?? ""}
-                    onChange={(e) =>
-                      handleMarks(student.roll_no, e.target.value)
-                    }
-                    className={`w-full border rounded-lg px-3 py-2 text-center outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors[student.roll_no]
-                        ? "border-red-500"
-                        : "border-gray-300"
-                    }`}
-                    placeholder="Mark"
-                  />
-                  {errors[student.roll_no] && (
-                    <p className="text-red-500 text-xs text-center mt-1">
-                      {errors[student.roll_no]}
-                    </p>
-                  )}
-                </div>
-
-                <div className="col-span-2 p-4 border-r text-center font-bold text-gray-800">
-                  {totalMarks}
-                </div>
-
-                <div className="col-span-2 p-4">
-                  <input
-                    type="text"
-                    value={comments[student.roll_no] || ""}
-                    onChange={(e) =>
-                      setComments((prev) => ({
-                        ...prev,
-                        [student.roll_no]: e.target.value,
-                      }))
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Comment"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {students.length > 0 && (
           <button
             onClick={submitMarks}
-            className="mt-8 bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-3 rounded-lg transition"
+            className="mt-8 bg-green-600 text-white px-8 py-3 rounded-lg"
           >
             Save Marks
           </button>
         )}
+
       </div>
     </div>
+  );
+}
+
+export default function MarksPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <MarksPageContent />
+    </Suspense>
   );
 }

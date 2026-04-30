@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,7 +14,7 @@ import {
 
 const API_BASE = "/backend-api";
 
-export default function StudentPage() {
+function StudentPageContent() {
   const searchParams = useSearchParams();
   const roll = searchParams.get("roll");
 
@@ -199,53 +199,27 @@ export default function StudentPage() {
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-10 text-lg text-gray-700">
-                <p>
-                  Roll No:{" "}
-                  <span className="font-semibold">{student?.roll_no || roll}</span>
-                </p>
-                <p>
-                  Name: <span className="font-semibold">{studentName}</span>
-                </p>
-                <p>
-                  Class: <span className="font-semibold">{className}</span>
-                </p>
-                <p>
-                  Board: <span className="font-semibold">{board}</span>
-                </p>
-                <p>
-                  Phone: <span className="font-semibold">{phone}</span>
-                </p>
-                <p className="break-all">
-                  Email: <span className="font-semibold">{email}</span>
-                </p>
-                <p className="md:col-span-2 break-words">
-                  School Name: <span className="font-semibold">{schoolName}</span>
-                </p>
+                <p>Roll No: <span className="font-semibold">{student?.roll_no || roll}</span></p>
+                <p>Name: <span className="font-semibold">{studentName}</span></p>
+                <p>Class: <span className="font-semibold">{className}</span></p>
+                <p>Board: <span className="font-semibold">{board}</span></p>
+                <p>Phone: <span className="font-semibold">{phone}</span></p>
+                <p className="break-all">Email: <span className="font-semibold">{email}</span></p>
+                <p className="md:col-span-2 break-words">School Name: <span className="font-semibold">{schoolName}</span></p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {cards.map((card) => (
-                <Link
-                  key={card.title}
-                  href={card.href}
-                  className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 block"
-                >
+                <Link key={card.title} href={card.href}
+                  className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 block">
                   <div className="flex items-start justify-between mb-4">
                     <div className="text-blue-700">{card.icon}</div>
-                    <span className="text-sm font-semibold text-gray-500">
-                      Open
-                    </span>
+                    <span className="text-sm font-semibold text-gray-500">Open</span>
                   </div>
 
-                  <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                    {card.title}
-                  </h3>
-
-                  <p className="text-3xl font-extrabold text-blue-700 mb-2 break-words">
-                    {card.value}
-                  </p>
-
+                  <h3 className="text-2xl font-bold text-gray-800 mb-2">{card.title}</h3>
+                  <p className="text-3xl font-extrabold text-blue-700 mb-2 break-words">{card.value}</p>
                   <p className="text-gray-600 text-base">{card.subtitle}</p>
                 </Link>
               ))}
@@ -254,5 +228,13 @@ export default function StudentPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function StudentPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <StudentPageContent />
+    </Suspense>
   );
 }
