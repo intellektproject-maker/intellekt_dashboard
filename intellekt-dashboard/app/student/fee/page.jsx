@@ -13,7 +13,7 @@ function FeePageContent() {
     if (!roll) return;
 
     async function fetchFee() {
-      const res = await fetch(`/backend-api/fees/${roll}`);
+      const res = await fetch(`https://responsible-wonder-production.up.railway.app/fees/${roll}`);
       const data = await res.json();
       setFee(data);
     }

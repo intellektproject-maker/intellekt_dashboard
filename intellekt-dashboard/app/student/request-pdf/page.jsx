@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "/backend-api";
+const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 function RequestPdfContent() {
   const searchParams = useSearchParams();

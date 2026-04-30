@@ -15,7 +15,7 @@ export default function Login() {
 		const rollUpper = roll.toUpperCase().trim();
 
 		try {
-			const apiBase = process.env.NEXT_PUBLIC_API_URL || '/backend-api';
+			const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://responsible-wonder-production.up.railway.app';
 			const resp = await fetch(`${apiBase}/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },

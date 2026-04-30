@@ -22,7 +22,7 @@ export default function ManageMarks() {
         testCode
       });
 
-      const res = await fetch(`/backend-api/marks?${params}`);
+      const res = await fetch(`https://responsible-wonder-production.up.railway.app/marks?${params}`);
       const data = await res.json();
 
       setMarksData(data);
@@ -42,7 +42,7 @@ export default function ManageMarks() {
 
     try {
       await fetch(
-        `/backend-api/marks/${row.roll_no}/${row.test_code}`,
+        `https://responsible-wonder-production.up.railway.app/marks/${row.roll_no}/${row.test_code}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "/backend-api";
+const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 const SUBJECT_OPTIONS = [
   { subject_id: "1", subject_name: "Admin" },

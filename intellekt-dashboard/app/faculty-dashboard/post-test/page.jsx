@@ -20,7 +20,7 @@ const [ loadingClasses, setLoadingClasses ] = useState(true);
 useEffect(() => {
 async function loadClasses() {
 try {
-const res = await fetch('/backend-api/classes');
+const res = await fetch('https://responsible-wonder-production.up.railway.app/classes');
 const data = await res.json();
 setClasses(Array.isArray(data) ? data : []);
             } catch (err) {
@@ -101,7 +101,7 @@ alert('Writing Allowed Till cannot be before Registration Active Till');
 return;
         }
 try {
-const res = await fetch('/backend-api/post-test', {
+const res = await fetch('https://responsible-wonder-production.up.railway.app/post-test', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({

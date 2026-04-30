@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-const API_BASE = '/backend-api';
+const API_BASE = 'https://responsible-wonder-production.up.railway.app';
 
 function FacultyProfileInner() {
 const searchParams = useSearchParams();

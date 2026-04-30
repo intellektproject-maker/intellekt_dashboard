@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "/backend-api";
+const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 function MarksPageContent() {
   const searchParams = useSearchParams();

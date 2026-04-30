@@ -7,7 +7,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/backend-api';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://responsible-wonder-production.up.railway.app';
 
 function AttendancePageInner() {
 	const searchParams = useSearchParams();

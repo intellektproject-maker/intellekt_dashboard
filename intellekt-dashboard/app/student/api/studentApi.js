@@ -1,6 +1,6 @@
 export async function getStudentProfile(rollNo) {
 	try {
-		const response = await fetch(`/backend-api/student/${rollNo}`);
+		const response = await fetch(`https://responsible-wonder-production.up.railway.app/student/${rollNo}`);
 
 		if (!response.ok) {
 			throw new Error('Failed to fetch student');

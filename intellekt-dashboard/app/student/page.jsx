@@ -12,7 +12,7 @@ import {
   FileText,
 } from "lucide-react";
 
-const API_BASE = "/backend-api";
+const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 function StudentPageContent() {
   const searchParams = useSearchParams();

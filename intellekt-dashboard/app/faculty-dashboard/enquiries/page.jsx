@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-const API_BASE = '/backend-api';
+const API_BASE = 'https://responsible-wonder-production.up.railway.app';
 
 const CLASS_OPTIONS = [ '10', '11', '12' ];
 const BOARD_OPTIONS = [ 'CBSE', 'ICSE', 'State Board' ];
