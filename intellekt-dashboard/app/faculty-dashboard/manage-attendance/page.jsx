@@ -1,9 +1,10 @@
+
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function ManageAttendancePage() {
+function ManageAttendancePageInner() {
   const searchParams = useSearchParams();
   const facultyId = searchParams.get("id");
 
@@ -422,5 +423,12 @@ export default function ManageAttendancePage() {
         <p className="text-gray-500">No attendance records found.</p>
       )}
     </div>
+  );
+}
+export default function ManageAttendancePageWrapper() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ManageAttendancePageInner />
+    </Suspense>
   );
 }

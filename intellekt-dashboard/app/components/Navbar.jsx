@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
-export default function Sidebar() {
+function SidebarContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const roll = searchParams.get("roll") || "";
@@ -54,5 +55,13 @@ export default function Sidebar() {
         Sign Out
       </Link>
     </div>
+  );
+}
+
+export default function Sidebar() {
+  return (
+    <Suspense fallback={<div className="w-64 min-h-screen bg-white" />}>
+      <SidebarContent />
+    </Suspense>
   );
 }

@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { useState } from "react";
 
-export default function FacultyLayout({ children }) {
+function FacultyLayoutContent({ children }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const facultyId = searchParams.get("id");
+  const facultyId = searchParams.get("id") || "";
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -18,21 +18,16 @@ export default function FacultyLayout({ children }) {
 
   const linkClass = (active) =>
     `block rounded-lg px-3 py-2 text-base font-medium transition ${
-      active
-        ? "bg-blue-100 text-blue-700"
-        : "text-gray-800 hover:bg-gray-100"
+      active ? "bg-blue-100 text-blue-700" : "text-gray-800 hover:bg-gray-100"
     }`;
 
   const subLinkClass = (active) =>
     `block rounded-lg px-3 py-2 text-sm font-medium transition ${
-      active
-        ? "bg-blue-50 text-blue-700"
-        : "text-gray-700 hover:bg-gray-100"
+      active ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-100"
     }`;
 
   return (
     <div className="min-h-screen bg-gray-100 relative">
-      {/* TOP BAR */}
       <div className="bg-blue-700 text-white flex justify-between items-center px-4 md:px-8 py-4 shadow">
         <div className="flex items-center gap-4">
           <button
@@ -48,10 +43,8 @@ export default function FacultyLayout({ children }) {
         </div>
       </div>
 
-      {/* CONTENT */}
       <div className="p-4 md:p-10">{children}</div>
 
-      {/* OVERLAY */}
       {menuOpen && (
         <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
@@ -59,13 +52,11 @@ export default function FacultyLayout({ children }) {
         />
       )}
 
-      {/* SIDEBAR */}
       <div
         className={`fixed top-0 left-0 h-full w-72 bg-white shadow-xl z-50 transform transition-transform duration-300 ${
           menuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        {/* CLOSE BUTTON */}
         <div
           className="p-4 text-2xl cursor-pointer w-fit"
           onClick={() => setMenuOpen(false)}
@@ -73,7 +64,6 @@ export default function FacultyLayout({ children }) {
           ✕
         </div>
 
-        {/* MENU ITEMS */}
         <nav className="flex flex-col gap-2 px-6 pb-24">
           <Link
             href={`/faculty-dashboard/profile?id=${facultyId}`}
@@ -99,7 +89,6 @@ export default function FacultyLayout({ children }) {
             Test
           </Link>
 
-          {/* MANAGE DROPDOWN */}
           <div className="rounded-lg">
             <button
               type="button"
@@ -139,30 +128,29 @@ export default function FacultyLayout({ children }) {
             )}
           </div>
 
-          {/* ENQUIRIES ONLY FOR IG001 AND IG002 */}
           {isPrivilegedFaculty && (
-            <Link
-              href={`/faculty-dashboard/enquiries?id=${facultyId}`}
-              onClick={() => setMenuOpen(false)}
-              className={linkClass(isActive("/faculty-dashboard/enquiries"))}
-            >
-              Enquiries
-            </Link>
-          )}
-          {isPrivilegedFaculty && (
-                  <Link
-                    href={`/faculty-dashboard/requests?id=${facultyId}`}
-                    onClick={() => setMenuOpen(false)}
-                    className={subLinkClass(
-                      isActive("/faculty-dashboard/requests")
-                    )}
-                  >
-                    Requests
-                  </Link>
+            <>
+              <Link
+                href={`/faculty-dashboard/enquiries?id=${facultyId}`}
+                onClick={() => setMenuOpen(false)}
+                className={linkClass(isActive("/faculty-dashboard/enquiries"))}
+              >
+                Enquiries
+              </Link>
+
+              <Link
+                href={`/faculty-dashboard/requests?id=${facultyId}`}
+                onClick={() => setMenuOpen(false)}
+                className={subLinkClass(
+                  isActive("/faculty-dashboard/requests")
                 )}
+              >
+                Requests
+              </Link>
+            </>
+          )}
         </nav>
 
-        {/* SIGN OUT BUTTON */}
         <div className="absolute bottom-6 left-0 w-full px-6">
           <Link
             href="/"
@@ -173,5 +161,13 @@ export default function FacultyLayout({ children }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function FacultyLayout({ children }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-100" />}>
+      <FacultyLayoutContent>{children}</FacultyLayoutContent>
+    </Suspense>
   );
 }

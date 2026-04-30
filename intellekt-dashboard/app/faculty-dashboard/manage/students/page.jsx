@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "/backend-api";
 
-export default function ManageStudentsPage() {
+function ManageStudentsPageInner() {
   const searchParams = useSearchParams();
   const facultyId = searchParams.get("id");
 
@@ -789,5 +789,13 @@ export default function ManageStudentsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ManageStudentsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ManageStudentsPageInner />
+    </Suspense>
   );
 }
