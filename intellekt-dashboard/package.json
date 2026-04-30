@@ -5,22 +5,22 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+  "start": "next start -p $PORT",
     "backend": "node backend/server.js"
   },
   "dependencies": {
     "@tailwindcss/postcss": "latest",
     "autoprefixer": "latest",
     "chart.js": "latest",
-    "cors": "latest",
-    "dotenv": "latest",
-    "express": "latest",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "html2pdf.js": "^0.14.0",
     "jspdf": "latest",
     "jspdf-autotable": "latest",
     "lucide-react": "latest",
     "next": "latest",
-    "pg": "latest",
+    "pg": "^8.20.0",
     "postcss": "latest",
     "react": "latest",
     "react-chartjs-2": "latest",
@@ -31,5 +31,11 @@
     "@types/node": "25.6.0",
     "@types/react": "19.2.14",
     "typescript": "6.0.3"
-  }
+  },
+  "description": "",
+  "main": "tailwind.config.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
 }
