@@ -1169,6 +1169,7 @@ app.put('/attendance', async (req, res) => {
 ========================================================= */
 // ================== GET ALL POSTED TESTS ==================
 app.get('/posted-tests', async (req, res) => {
+
 	try {
 		const result = await pool.query(`
 			SELECT
@@ -1196,6 +1197,29 @@ app.get('/posted-tests', async (req, res) => {
 	} catch (err) {
 		console.error('GET /posted-tests error:', err);
 		res.status(500).json({ error: 'Failed to fetch tests' });
+	}
+});
+app.delete('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+			DELETE FROM tests
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+			RETURNING *
+			`,
+			[testCode]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		res.json({ message: 'Test deleted successfully' });
+	} catch (err) {
+		console.error('DELETE /posted-tests error:', err);
+		res.status(500).json({ error: 'Failed to delete test' });
 	}
 });
 app.post('/post-test', async (req, res) => {
