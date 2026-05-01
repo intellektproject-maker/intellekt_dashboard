@@ -248,7 +248,16 @@ app.get('/test-schedule/:roll', async (req, res) => {
 	const { roll } = req.params;
 
 	try {
-		const studentRes = await pool.query(`SELECT class, board FROM students WHERE roll_no = $1`, [ roll ]);
+		const studentRes = await pool.query(
+			`
+			SELECT 
+				TRIM(class) AS class,
+				TRIM(board) AS board
+			FROM students
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[roll]
+		);
 
 		if (studentRes.rows.length === 0) {
 			return res.status(404).json({ error: 'Student not found' });
@@ -258,51 +267,53 @@ app.get('/test-schedule/:roll', async (req, res) => {
 
 		const testsRes = await pool.query(
 			`
-      SELECT 
-        t.test_code,
-        t.subject_id,
-        t.test_date,
-        t.total_marks,
-        t.portion,
-        t.duration_minutes,
-        t.registration_end_date,
-        t.writing_allowed_till,
-        t.test_slot_link,
-        r.slot_start,
-        r.slot_end,
-        r.writing_date
-      FROM tests t
-      LEFT JOIN test_registrations r
-        ON r.test_code = t.test_code
-        AND r.roll_no = $1
-      WHERE t.class = $2
-        AND t.board = $3
-      ORDER BY t.test_date ASC
-      `,
-			[ roll, className, board ]
+			SELECT 
+				t.test_code,
+				t.subject_id,
+				CASE 
+					WHEN t.subject_id = 1 THEN 'Maths'
+					WHEN t.subject_id = 2 THEN 'Physics'
+					ELSE 'Unknown'
+				END AS subject_name,
+				t.test_date,
+				t.total_marks,
+				t.portion,
+				t.duration_minutes,
+				t.registration_end_date,
+				t.writing_allowed_till,
+				t.test_slot_link,
+				r.slot_start,
+				r.slot_end,
+				r.writing_date
+			FROM tests t
+			LEFT JOIN test_registrations r
+				ON UPPER(TRIM(r.test_code)) = UPPER(TRIM(t.test_code))
+				AND UPPER(TRIM(r.roll_no)) = UPPER(TRIM($1))
+			WHERE LOWER(REPLACE(TRIM(t.class), ' ', '')) = LOWER(REPLACE(TRIM($2), ' ', ''))
+			  AND LOWER(REPLACE(TRIM(t.board), ' ', '')) = LOWER(REPLACE(TRIM($3), ' ', ''))
+			ORDER BY t.test_date ASC
+			`,
+			[roll, className, board]
 		);
 
-		const formatted = testsRes.rows.map((row) => {
-			const isRegistered = !!row.writing_date;
-
-			return {
-				test_code: row.test_code,
-				subject_id: row.subject_id,
-				test_date: row.test_date,
-				total_marks: row.total_marks,
-				portion: row.portion,
-				duration_minutes: row.duration_minutes,
-				registration_end_date: row.registration_end_date,
-				writing_allowed_till: row.writing_allowed_till,
-				test_slot_link: row.test_slot_link,
-				is_registered: isRegistered,
-				writing_date: row.writing_date || null,
-				registered_slot_label:
-					row.slot_start && row.slot_end
-						? `${String(row.slot_start).slice(0, 5)} - ${String(row.slot_end).slice(0, 5)}`
-						: null
-			};
-		});
+		const formatted = testsRes.rows.map((row) => ({
+			test_code: row.test_code,
+			subject_id: row.subject_id,
+			subject_name: row.subject_name,
+			test_date: row.test_date,
+			total_marks: row.total_marks,
+			portion: row.portion,
+			duration_minutes: row.duration_minutes,
+			registration_end_date: row.registration_end_date,
+			writing_allowed_till: row.writing_allowed_till,
+			test_slot_link: row.test_slot_link,
+			is_registered: !!row.writing_date,
+			writing_date: row.writing_date || null,
+			registered_slot_label:
+				row.slot_start && row.slot_end
+					? `${String(row.slot_start).slice(0, 5)} - ${String(row.slot_end).slice(0, 5)}`
+					: null
+		}));
 
 		res.json(formatted);
 	} catch (err) {
@@ -310,7 +321,6 @@ app.get('/test-schedule/:roll', async (req, res) => {
 		res.status(500).json({ error: 'Failed to fetch schedule' });
 	}
 });
-
 /* =========================================================
    TEST SLOTS
 ========================================================= */
@@ -692,26 +702,6 @@ app.get('/faculty/:id', async (req, res) => {
 		res.status(500).json({ error: 'Server error' });
 	}
 });
-
-/* =========================================================
-   CLASSES
-========================================================= */
-app.get('/classes', async (req, res) => {
-	try {
-		const result = await pool.query(`
-      SELECT DISTINCT class, board
-      FROM students
-      WHERE class IS NOT NULL
-      ORDER BY class
-    `);
-
-		res.json(result.rows);
-	} catch (err) {
-		console.error('GET /classes error:', err);
-		res.status(500).json({ error: 'Failed to fetch classes' });
-	}
-});
-
 /* =========================================================
    MARKS SAVE / MANAGE / UPDATE
 ========================================================= */
@@ -894,34 +884,82 @@ app.put('/update-marks', async (req, res) => {
 /* =========================================================
    ATTENDANCE FETCH / SAVE / UPDATE
 ========================================================= */
+function splitClassBoard(classBoard) {
+	if (!classBoard) return { board: null, classOnly: null };
+
+	const value = String(classBoard).trim();
+	const lastDash = value.lastIndexOf('-');
+
+	if (lastDash === -1) {
+		return { board: null, classOnly: value };
+	}
+
+	return {
+		board: value.slice(0, lastDash).trim(),
+		classOnly: value.slice(lastDash + 1).trim()
+	};
+}
+
+app.get('/classes', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT DISTINCT class, board
+			FROM students
+			WHERE class IS NOT NULL
+			  AND board IS NOT NULL
+			ORDER BY board ASC, class ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /classes error:', err);
+		res.status(500).json({ error: 'Failed to fetch classes' });
+	}
+});
+
 app.get('/attendance', async (req, res) => {
-	const { mode, class: className, subject, date, from, to } = req.query;
+	const { mode, class: classBoard, subject, date, from, to } = req.query;
+	const { board, classOnly } = splitClassBoard(classBoard);
 
 	try {
 		if (mode === 'report') {
-			if (!className) {
+			if (!classBoard) {
 				return res.status(400).json({
 					error: 'class is required for report mode'
 				});
 			}
 
 			let query = `
-        SELECT
-          a.roll_no,
-          s.name,
-          s.class,
-          s.board,
-          a.subject_id,
-          TO_CHAR(a.attendance_date, 'YYYY-MM-DD') AS attendance_date,
-          a.status,
-          a.updated_by
-        FROM attendance a
-        JOIN students s ON s.roll_no = a.roll_no
-        WHERE s.class = $1
-      `;
+				SELECT
+					a.roll_no,
+					s.name,
+					s.class,
+					s.board,
+					a.subject_id,
+					TO_CHAR(a.attendance_date, 'YYYY-MM-DD') AS attendance_date,
+					a.status,
+					a.updated_by
+				FROM attendance a
+				JOIN students s ON s.roll_no = a.roll_no
+				WHERE 1 = 1
+			`;
 
-			const values = [ className ];
-			let index = 2;
+			const values = [];
+			let index = 1;
+
+			if (board && classOnly) {
+				query += ` AND UPPER(s.board) = UPPER($${index})`;
+				values.push(board);
+				index++;
+
+				query += ` AND s.class::text = $${index}`;
+				values.push(classOnly);
+				index++;
+			} else if (classOnly) {
+				query += ` AND s.class::text = $${index}`;
+				values.push(classOnly);
+				index++;
+			}
 
 			if (subject) {
 				query += ` AND a.subject_id = $${index}`;
@@ -947,29 +985,45 @@ app.get('/attendance', async (req, res) => {
 			return res.json(result.rows);
 		}
 
-		if (!className || !subject || !date) {
+		if (!classBoard || !subject || !date) {
 			return res.status(400).json({
 				error: 'class, subject and date are required'
 			});
 		}
 
-		const result = await pool.query(
-			`
-      SELECT
-        s.roll_no,
-        s.name,
-        a.status
-      FROM students s
-      LEFT JOIN attendance a
-        ON s.roll_no = a.roll_no
-        AND a.subject_id = $2
-        AND a.attendance_date = $3
-      WHERE s.class = $1
-      ORDER BY s.roll_no ASC
-      `,
-			[ className, subject, date ]
-		);
+		let query = `
+			SELECT
+				s.roll_no,
+				s.name,
+				a.status
+			FROM students s
+			LEFT JOIN attendance a
+				ON s.roll_no = a.roll_no
+				AND a.subject_id = $1
+				AND a.attendance_date = $2
+			WHERE 1 = 1
+		`;
 
+		const values = [subject, date];
+		let index = 3;
+
+		if (board && classOnly) {
+			query += ` AND UPPER(s.board) = UPPER($${index})`;
+			values.push(board);
+			index++;
+
+			query += ` AND s.class::text = $${index}`;
+			values.push(classOnly);
+			index++;
+		} else if (classOnly) {
+			query += ` AND s.class::text = $${index}`;
+			values.push(classOnly);
+			index++;
+		}
+
+		query += ` ORDER BY s.roll_no ASC`;
+
+		const result = await pool.query(query, values);
 		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /attendance error:', err);
@@ -985,9 +1039,17 @@ app.post('/attendance', async (req, res) => {
 		return res.status(400).json({ error: 'records are required' });
 	}
 
-	if (!subject) return res.status(400).json({ error: 'subject is required' });
-	if (!facultyId) return res.status(400).json({ error: 'facultyId is required' });
-	if (!selectedDate) return res.status(400).json({ error: 'date is required' });
+	if (!subject) {
+		return res.status(400).json({ error: 'subject is required' });
+	}
+
+	if (!facultyId) {
+		return res.status(400).json({ error: 'facultyId is required' });
+	}
+
+	if (!selectedDate) {
+		return res.status(400).json({ error: 'date is required' });
+	}
 
 	const client = await pool.connect();
 
@@ -1000,13 +1062,13 @@ app.post('/attendance', async (req, res) => {
 		for (const record of records) {
 			const exists = await client.query(
 				`
-        SELECT 1
-        FROM attendance
-        WHERE roll_no = $1
-          AND subject_id = $2
-          AND attendance_date = $3
-        `,
-				[ record.roll_no, subject, selectedDate ]
+				SELECT 1
+				FROM attendance
+				WHERE roll_no = $1
+				  AND subject_id = $2
+				  AND attendance_date = $3
+				`,
+				[record.roll_no, subject, selectedDate]
 			);
 
 			if (exists.rows.length > 0) {
@@ -1016,30 +1078,31 @@ app.post('/attendance', async (req, res) => {
 				if (overwrite) {
 					await client.query(
 						`
-            UPDATE attendance
-            SET status = $1,
-                updated_by = $2
-            WHERE roll_no = $3
-              AND subject_id = $4
-              AND attendance_date = $5
-            `,
-						[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+						UPDATE attendance
+						SET status = $1,
+						    updated_by = $2
+						WHERE roll_no = $3
+						  AND subject_id = $4
+						  AND attendance_date = $5
+						`,
+						[record.status, facultyId, record.roll_no, subject, selectedDate]
 					);
 				}
 			} else {
 				await client.query(
 					`
-          INSERT INTO attendance
-          (roll_no, subject_id, attendance_date, status, updated_by)
-          VALUES ($1, $2, $3, $4, $5)
-          `,
-					[ record.roll_no, subject, selectedDate, record.status, facultyId ]
+					INSERT INTO attendance
+						(roll_no, subject_id, attendance_date, status, updated_by)
+					VALUES ($1, $2, $3, $4, $5)
+					`,
+					[record.roll_no, subject, selectedDate, record.status, facultyId]
 				);
 			}
 		}
 
 		if (duplicateFound && !overwrite) {
 			await client.query('ROLLBACK');
+
 			return res.status(409).json({
 				error: 'Attendance already marked for one or more students',
 				duplicateFound: true,
@@ -1050,7 +1113,9 @@ app.post('/attendance', async (req, res) => {
 		await client.query('COMMIT');
 
 		res.json({
-			message: overwrite ? 'Attendance overwritten successfully' : 'Attendance saved successfully'
+			message: overwrite
+				? 'Attendance overwritten successfully'
+				: 'Attendance saved successfully'
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
@@ -1083,14 +1148,14 @@ app.put('/attendance', async (req, res) => {
 		for (const record of records) {
 			await client.query(
 				`
-        UPDATE attendance
-        SET status = $1,
-            updated_by = $2
-        WHERE roll_no = $3
-          AND subject_id = $4
-          AND attendance_date = $5
-        `,
-				[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+				UPDATE attendance
+				SET status = $1,
+				    updated_by = $2
+				WHERE roll_no = $3
+				  AND subject_id = $4
+				  AND attendance_date = $5
+				`,
+				[record.status, facultyId, record.roll_no, subject, selectedDate]
 			);
 		}
 
@@ -1104,7 +1169,6 @@ app.put('/attendance', async (req, res) => {
 		client.release();
 	}
 });
-
 /* =========================================================
    POST TEST WITH SLOT LINK + DURATION + REGISTRATION DATES
 ========================================================= */

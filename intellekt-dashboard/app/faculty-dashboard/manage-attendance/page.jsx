@@ -1,133 +1,213 @@
+'use client';
 
-"use client";
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
-import { useMemo, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE ||
+  'https://responsible-wonder-production.up.railway.app';
+
+const FALLBACK_CLASSES = [
+  'CBSE-12',
+  'CBSE-10',
+  'ISC-12',
+  'SB-12',
+  'SB-10',
+  'ICSE-10',
+];
+
+const subjectMap = {
+  MATHS: 1,
+  PHYSICS: 2,
+};
+
+const subjectNameMap = {
+  1: 'MATHS',
+  2: 'PHYSICS',
+};
 
 function ManageAttendancePageInner() {
   const searchParams = useSearchParams();
-  const facultyId = searchParams.get("id");
+  const facultyId = searchParams.get('id');
 
-  const [classBoard, setClassBoard] = useState("");
-  const [subject, setSubject] = useState("");
-  const [filterText, setFilterText] = useState("");
+  const [classOptions, setClassOptions] = useState(FALLBACK_CLASSES);
+  const [classBoard, setClassBoard] = useState('');
+  const [subject, setSubject] = useState('');
+  const [filterText, setFilterText] = useState('');
 
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [classesLoading, setClassesLoading] = useState(false);
 
-  const [statusFilter, setStatusFilter] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
 
-  const subjectMap = {
-    MATHS: 1,
-    PHYSICS: 2,
-  };
+  useEffect(() => {
+    fetchClasses();
+  }, []);
 
-  const subjectNameMap = {
-    1: "MATHS",
-    2: "PHYSICS",
-  };
+  async function fetchClasses() {
+    try {
+      setClassesLoading(true);
+
+      const res = await fetch(`${API_BASE}/classes`, {
+        cache: 'no-store',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !Array.isArray(data)) {
+        setClassOptions(FALLBACK_CLASSES);
+        return;
+      }
+
+      const formattedClasses = data
+        .map((item) => {
+          const board = item.board || item.Board || '';
+          const className = item.class || item.class_name || item.className || '';
+
+          if (!board || !className) return null;
+
+          return `${board}-${className}`;
+        })
+        .filter(Boolean);
+
+      const uniqueClasses = [...new Set(formattedClasses)];
+
+      setClassOptions(uniqueClasses.length > 0 ? uniqueClasses : FALLBACK_CLASSES);
+    } catch (err) {
+      console.error('Fetch classes error:', err);
+      setClassOptions(FALLBACK_CLASSES);
+    } finally {
+      setClassesLoading(false);
+    }
+  }
 
   async function fetchReport() {
     if (!classBoard) {
-      alert("Please select class");
+      alert('Please select class');
       return;
     }
 
     if (!fromDate || !toDate) {
-      alert("Please select from date and to date");
+      alert('Please select from date and to date');
       return;
     }
 
     if (new Date(fromDate) > new Date(toDate)) {
-      alert("From date cannot be greater than To date");
+      alert('From date cannot be greater than To date');
       return;
     }
 
     try {
       setLoading(true);
+      setRows([]);
 
       const params = new URLSearchParams();
-      params.append("mode", "report");
-      params.append("class", classBoard);
-      params.append("from", fromDate);
-      params.append("to", toDate);
+      params.append('mode', 'report');
+      params.append('class', classBoard);
+      params.append('from', fromDate);
+      params.append('to', toDate);
 
       if (subject) {
-        params.append("subject", subjectMap[subject]);
+        params.append('subject', subjectMap[subject]);
       }
 
-      const res = await fetch(
-        `https://responsible-wonder-production.up.railway.app/attendance?${params.toString()}`
-      );
+      const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
+        cache: 'no-store',
+      });
+
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed to fetch attendance report");
+        alert(data.error || 'Failed to fetch attendance report');
         return;
       }
 
-      const prepared = data.map((row) => ({
-        ...row,
-        isEditing: false,
-        editedStatus: row.status,
-      }));
+      const prepared = Array.isArray(data)
+        ? data.map((row) => ({
+            ...row,
+            isEditing: false,
+            editedStatus: row.status,
+          }))
+        : [];
 
       setRows(prepared);
     } catch (err) {
-      console.error("Fetch report error:", err);
-      alert("Failed to fetch attendance report");
+      console.error('Fetch report error:', err);
+      alert('Failed to fetch attendance report');
     } finally {
       setLoading(false);
     }
   }
 
-  function startEdit(index) {
-    const updated = [...rows];
-    updated[index].isEditing = true;
-    updated[index].editedStatus = updated[index].status;
-    setRows(updated);
+  function startEdit(rowKey) {
+    setRows((prev) =>
+      prev.map((row) =>
+        getRowKey(row) === rowKey
+          ? {
+              ...row,
+              isEditing: true,
+              editedStatus: row.status,
+            }
+          : row
+      )
+    );
   }
 
-  function cancelEdit(index) {
-    const updated = [...rows];
-    updated[index].isEditing = false;
-    updated[index].editedStatus = updated[index].status;
-    setRows(updated);
+  function cancelEdit(rowKey) {
+    setRows((prev) =>
+      prev.map((row) =>
+        getRowKey(row) === rowKey
+          ? {
+              ...row,
+              isEditing: false,
+              editedStatus: row.status,
+            }
+          : row
+      )
+    );
   }
 
-  function handleEditedStatusChange(index, value) {
-    const updated = [...rows];
-    updated[index].editedStatus = value;
-    setRows(updated);
+  function handleEditedStatusChange(rowKey, value) {
+    setRows((prev) =>
+      prev.map((row) =>
+        getRowKey(row) === rowKey
+          ? {
+              ...row,
+              editedStatus: value,
+            }
+          : row
+      )
+    );
   }
 
-  async function saveSingleRow(index) {
-    const row = rows[index];
+  async function saveSingleRow(rowKey) {
+    const row = rows.find((item) => getRowKey(item) === rowKey);
 
-    if (!row.isEditing) return;
+    if (!row || !row.isEditing) return;
 
     if (row.editedStatus === row.status) {
-      const updated = [...rows];
-      updated[index].isEditing = false;
-      setRows(updated);
+      cancelEdit(rowKey);
       return;
     }
 
     const ok = window.confirm(
-      `Are you sure you want to change attendance for ${row.roll_no} on ${row.attendance_date} from ${row.status} to ${row.editedStatus}?`
+      `Are you sure you want to change attendance for ${row.roll_no} on ${formatDate(
+        row.attendance_date
+      )} from ${row.status} to ${row.editedStatus}?`
     );
 
     if (!ok) return;
 
     try {
-      const res = await fetch("https://responsible-wonder-production.up.railway.app/attendance", {
-        method: "PUT",
+      const res = await fetch(`${API_BASE}/attendance`, {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           records: [
@@ -138,26 +218,35 @@ function ManageAttendancePageInner() {
           ],
           subject: row.subject_id,
           facultyId,
-          date: row.attendance_date,
+          date: toInputDate(row.attendance_date),
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed to update attendance");
+        alert(data.error || 'Failed to update attendance');
         return;
       }
 
-      const updated = [...rows];
-      updated[index].status = updated[index].editedStatus;
-      updated[index].isEditing = false;
-      setRows(updated);
+      setRows((prev) =>
+        prev.map((item) =>
+          getRowKey(item) === rowKey
+            ? {
+                ...item,
+                status: row.editedStatus,
+                editedStatus: row.editedStatus,
+                isEditing: false,
+                updated_by: facultyId || item.updated_by,
+              }
+            : item
+        )
+      );
 
-      alert("Attendance updated successfully");
+      alert('Attendance updated successfully');
     } catch (err) {
-      console.error("Save row error:", err);
-      alert("Failed to update attendance");
+      console.error('Save row error:', err);
+      alert('Failed to update attendance');
     }
   }
 
@@ -183,19 +272,19 @@ function ManageAttendancePageInner() {
 
   function downloadReport() {
     if (filteredRows.length === 0) {
-      alert("No data to download");
+      alert('No data to download');
       return;
     }
 
     const header = [
-      "Roll No",
-      "Name",
-      "Class",
-      "Board",
-      "Subject",
-      "Attendance Date",
-      "Status",
-      "Updated By",
+      'Roll No',
+      'Name',
+      'Class',
+      'Board',
+      'Subject',
+      'Attendance Date',
+      'Status',
+      'Updated By',
     ];
 
     const csvRows = filteredRows.map((row) => [
@@ -204,45 +293,54 @@ function ManageAttendancePageInner() {
       row.class,
       row.board,
       subjectNameMap[row.subject_id] || row.subject_id,
-      row.attendance_date,
+      formatDate(row.attendance_date),
       row.status,
       row.updated_by,
     ]);
 
     const csvContent = [header, ...csvRows]
-      .map((row) => row.map((cell) => `"${cell ?? ""}"`).join(","))
-      .join("\n");
+      .map((row) => row.map((cell) => `"${cell ?? ''}"`).join(','))
+      .join('\n');
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
+
     link.href = url;
-    link.setAttribute("download", "attendance_report.csv");
+    link.setAttribute('download', 'attendance_report.csv');
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    window.URL.revokeObjectURL(url);
   }
 
   return (
     <div className="p-6 md:p-10">
-      <h1 className="text-2xl md:text-3xl font-bold text-blue-700 mb-6">
+      <h1 className="text-2xl md:text-3xl font-bold text-blue-800 mb-6">
         Manage Attendance
       </h1>
 
-      <div className="bg-white shadow-md rounded-xl p-6 mb-6">
+      <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <select
             value={classBoard}
             onChange={(e) => setClassBoard(e.target.value)}
             className="border rounded-lg px-4 py-3"
           >
-            <option value="">Select Class</option>
-            <option value="CBSE-12">CBSE-12</option>
-            <option value="CBSE-10">CBSE-10</option>
-            <option value="ISC-12">ISC-12</option>
-            <option value="SB-12">SB-12</option>
-            <option value="SB-10">SB-10</option>
-            <option value="ICSE-10">ICSE-10</option>
+            <option value="">
+              {classesLoading ? 'Loading Classes...' : 'Select Class'}
+            </option>
+
+            {classOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
           </select>
 
           <select
@@ -266,9 +364,10 @@ function ManageAttendancePageInner() {
           <div className="md:col-span-2 flex justify-start md:justify-end">
             <button
               onClick={fetchReport}
-              className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto"
+              disabled={loading}
+              className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              View Report
+              {loading ? 'Loading...' : 'View Report'}
             </button>
           </div>
         </div>
@@ -308,8 +407,8 @@ function ManageAttendancePageInner() {
 
       {loading && <p className="text-gray-600">Loading attendance report...</p>}
 
-      {!loading && filteredRows.length > 0 && (
-        <div className="bg-white shadow-md rounded-xl p-6 overflow-x-auto">
+      {!loading && rows.length > 0 && (
+        <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 overflow-x-auto">
           <div className="flex flex-wrap gap-3 mb-4">
             <select
               value={statusFilter}
@@ -339,95 +438,135 @@ function ManageAttendancePageInner() {
             </button>
           </div>
 
-          <table className="w-full border-collapse min-w-[1100px]">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-3">Roll No</th>
-                <th className="text-left py-3">Name</th>
-                <th className="text-left py-3">Class</th>
-                <th className="text-left py-3">Board</th>
-                <th className="text-left py-3">Subject</th>
-                <th className="text-left py-3">Date</th>
-                <th className="text-left py-3">Current Status</th>
-                <th className="text-left py-3">Action</th>
-                <th className="text-left py-3">Updated By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row, index) => (
-                <tr
-                  key={`${row.roll_no}-${row.subject_id}-${row.attendance_date}`}
-                  className="border-b"
-                >
-                  <td className="py-3">{row.roll_no}</td>
-                  <td className="py-3">{row.name}</td>
-                  <td className="py-3">{row.class}</td>
-                  <td className="py-3">{row.board}</td>
-                  <td className="py-3">
-                    {subjectNameMap[row.subject_id] || row.subject_id}
-                  </td>
-                  <td className="py-3">{row.attendance_date}</td>
-
-                  <td className="py-3">
-                    {row.isEditing ? (
-                      <select
-                        value={row.editedStatus}
-                        onChange={(e) =>
-                          handleEditedStatusChange(index, e.target.value)
-                        }
-                        className="border rounded-lg px-3 py-2"
-                      >
-                        <option value="Present">Present</option>
-                        <option value="Absent">Absent</option>
-                      </select>
-                    ) : (
-                      <span>{row.status}</span>
-                    )}
-                  </td>
-
-                  <td className="py-3">
-                    {row.isEditing ? (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => saveSingleRow(index)}
-                          className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => cancelEdit(index)}
-                          className="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => startEdit(index)}
-                        className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </td>
-
-                  <td className="py-3">{row.updated_by}</td>
+          {filteredRows.length === 0 ? (
+            <p className="text-gray-500">No records match the selected filters.</p>
+          ) : (
+            <table className="w-full border-collapse min-w-[1100px]">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-3 px-2 text-blue-700">Roll No</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Name</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Class</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Board</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Subject</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Date</th>
+                  <th className="text-left py-3 px-2 text-blue-700">
+                    Current Status
+                  </th>
+                  <th className="text-left py-3 px-2 text-blue-700">Action</th>
+                  <th className="text-left py-3 px-2 text-blue-700">
+                    Updated By
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {filteredRows.map((row) => {
+                  const rowKey = getRowKey(row);
+
+                  return (
+                    <tr key={rowKey} className="border-b">
+                      <td className="py-3 px-2">{row.roll_no}</td>
+                      <td className="py-3 px-2">{row.name}</td>
+                      <td className="py-3 px-2">{row.class}</td>
+                      <td className="py-3 px-2">{row.board}</td>
+                      <td className="py-3 px-2">
+                        {subjectNameMap[row.subject_id] || row.subject_id}
+                      </td>
+                      <td className="py-3 px-2">{formatDate(row.attendance_date)}</td>
+
+                      <td className="py-3 px-2">
+                        {row.isEditing ? (
+                          <select
+                            value={row.editedStatus}
+                            onChange={(e) =>
+                              handleEditedStatusChange(rowKey, e.target.value)
+                            }
+                            className="border rounded-lg px-3 py-2"
+                          >
+                            <option value="Present">Present</option>
+                            <option value="Absent">Absent</option>
+                          </select>
+                        ) : (
+                          <span>{row.status}</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-2">
+                        {row.isEditing ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveSingleRow(rowKey)}
+                              className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                            >
+                              Save
+                            </button>
+
+                            <button
+                              onClick={() => cancelEdit(rowKey)}
+                              className="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => startEdit(rowKey)}
+                            className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-2">{row.updated_by || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
-      {!loading && filteredRows.length === 0 && (
+      {!loading && rows.length === 0 && (
         <p className="text-gray-500">No attendance records found.</p>
       )}
     </div>
   );
 }
+
+function getRowKey(row) {
+  return `${row.roll_no}-${row.subject_id}-${toInputDate(row.attendance_date)}`;
+}
+
+function toInputDate(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDate(value) {
+  if (!value) return '-';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  return date.toLocaleDateString('en-IN');
+}
+
 export default function ManageAttendancePageWrapper() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
       <ManageAttendancePageInner />
     </Suspense>
   );

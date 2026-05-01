@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
@@ -25,7 +24,9 @@ function MarksPageContent() {
   const [totalError, setTotalError] = useState("");
 
   const [classes, setClasses] = useState([]);
+  const [tests, setTests] = useState([]);
   const [loadingClasses, setLoadingClasses] = useState(true);
+  const [loadingTests, setLoadingTests] = useState(true);
 
   const totalMarks = manualTotal ? Number(manualTotal) : autoTotal;
 
@@ -42,73 +43,41 @@ function MarksPageContent() {
         setLoadingClasses(false);
       }
     }
+
+    async function loadTests() {
+      try {
+        const res = await fetch(`${API_BASE}/tests`);
+        const data = await res.json();
+        setTests(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Error loading tests:", err);
+        setTests([]);
+      } finally {
+        setLoadingTests(false);
+      }
+    }
+
     loadClasses();
+    loadTests();
   }, []);
-
-  function parseTestCode(code) {
-    if (!code) return null;
-
-    const upper = code.toUpperCase().trim();
-    const match = upper.match(/^([CSI]B?)(\d{2})([MP])(\d+)C(\d+)$/);
-
-    if (!match) return null;
-
-    const boardPrefix = match[1];
-    const classNum = match[2];
-    const totalMarks = Number(match[4]);
-
-    let boardName = null;
-
-    if (boardPrefix === "C") boardName = "CBSE";
-    else if (boardPrefix === "S" || boardPrefix === "SB")
-      boardName = "State Board";
-    else if (boardPrefix === "I") boardName = "ICSE";
-
-    if (!boardName) return null;
-
-    return { boardName, classNum, totalMarks };
-  }
-
-  function findMatchingClass(parsed) {
-    if (!parsed) return null;
-
-    return classes.find((c) => {
-      const cls = String(c.class || "").toUpperCase();
-      const brd = String(c.board || "").toUpperCase();
-
-      return cls.includes(parsed.classNum) &&
-        brd === parsed.boardName.toUpperCase();
-    });
-  }
 
   function handleTestCode(value) {
     setTestCode(value);
 
-    const parsed = parseTestCode(value);
+    const selected = tests.find((t) => t.test_code === value);
 
-    if (parsed) {
-      setAutoTotal(parsed.totalMarks);
+    if (selected) {
+      setAutoTotal(Number(selected.total_marks));
       setManualTotal("");
+      setClassBoard(selected.class || "");
       setTestCodeError("");
+      setClassError("");
       setTotalError("");
-
-      const matched = findMatchingClass(parsed);
-
-      if (matched) {
-        setClassBoard(matched.class);
-        setClassError("");
-      } else {
-        setClassBoard("");
-      }
     } else {
       setAutoTotal(null);
       setClassBoard("");
-
-      if (value.length > 3) {
-        setTestCodeError("Invalid test code format");
-      } else {
-        setTestCodeError("");
-      }
+      if (value) setTestCodeError("Invalid test selected");
+      else setTestCodeError("");
     }
   }
 
@@ -138,9 +107,9 @@ function MarksPageContent() {
     } else setTotalError("");
 
     if (!testCode.trim()) {
-      setTestCodeError("Enter test code");
+      setTestCodeError("Select test code");
       hasError = true;
-    }
+    } else setTestCodeError("");
 
     if (hasError) return;
 
@@ -237,20 +206,30 @@ function MarksPageContent() {
 
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Test Code
               </label>
-              <input
-                type="text"
-                placeholder="Example: C11M50C10"
+
+              <select
                 className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 ${
                   testCodeError ? "border-red-500" : "border-gray-300"
                 }`}
                 value={testCode}
                 onChange={(e) => handleTestCode(e.target.value)}
-              />
+                disabled={loadingTests}
+              >
+                <option value="">
+                  {loadingTests ? "Loading tests..." : "Select Test Code"}
+                </option>
+
+                {tests.map((t) => (
+                  <option key={t.test_code} value={t.test_code}>
+                    {t.test_code} — {t.class} — {t.board}
+                  </option>
+                ))}
+              </select>
+
               {testCodeError && (
                 <p className="text-red-500 text-xs mt-1">{testCodeError}</p>
               )}
@@ -260,53 +239,113 @@ function MarksPageContent() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Class
               </label>
+
               <select
-                className="w-full border rounded-lg px-4 py-3"
+                className={`w-full border rounded-lg px-4 py-3 ${
+                  classError ? "border-red-500" : "border-gray-300"
+                }`}
                 value={classBoard}
                 onChange={(e) => setClassBoard(e.target.value)}
+                disabled={loadingClasses}
               >
-                <option value="">Select Class</option>
+                <option value="">
+                  {loadingClasses ? "Loading classes..." : "Select Class"}
+                </option>
+
                 {classes.map((c, i) => (
                   <option key={i} value={c.class}>
                     {c.class} — {c.board}
                   </option>
                 ))}
               </select>
+
+              {classError && (
+                <p className="text-red-500 text-xs mt-1">{classError}</p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Total Marks
               </label>
+
               <input
                 type="number"
-                className="w-full border rounded-lg px-4 py-3"
+                className={`w-full border rounded-lg px-4 py-3 ${
+                  totalError ? "border-red-500" : "border-gray-300"
+                }`}
                 value={manualTotal || totalMarks || ""}
                 onChange={(e) => setManualTotal(e.target.value)}
               />
+
+              {totalError && (
+                <p className="text-red-500 text-xs mt-1">{totalError}</p>
+              )}
             </div>
 
             <div className="flex items-end">
               <button
                 onClick={loadStudents}
-                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg"
+                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700"
               >
                 Load Students
               </button>
             </div>
-
           </div>
         </div>
 
         {students.length > 0 && (
-          <button
-            onClick={submitMarks}
-            className="mt-8 bg-green-600 text-white px-8 py-3 rounded-lg"
-          >
-            Save Marks
-          </button>
-        )}
+          <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] border-collapse">
+                <thead className="bg-blue-700 text-white">
+                  <tr>
+                    <th className="p-3 text-left">Roll No</th>
+                    <th className="p-3 text-left">Student Name</th>
+                    <th className="p-3 text-left">Marks</th>
+                    <th className="p-3 text-left">Comment</th>
+                    <th className="p-3 text-left">Error</th>
+                  </tr>
+                </thead>
 
+                <tbody>
+                  {students.map((s) => (
+                    <tr key={s.roll_no} className="border-b text-gray-700">
+                      <td className="p-3">{s.roll_no}</td>
+                      <td className="p-3">{s.name}</td>
+
+                      <td className="p-3">
+                        <input
+                          type="text"
+                          value={marks[s.roll_no] ?? ""}
+                          onChange={(e) =>
+                            handleMarks(s.roll_no, e.target.value)
+                          }
+                          className="border rounded-lg px-3 py-2 w-24"
+                        />
+                      </td>
+
+                      <td className="p-3">
+                        {comments[s.roll_no] || "-"}
+                      </td>
+
+                      <td className="p-3 text-red-500 text-sm">
+                        {errors[s.roll_no] || ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              onClick={submitMarks}
+              className="mt-8 bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700"
+            >
+              Save Marks
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
