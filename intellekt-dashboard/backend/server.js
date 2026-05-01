@@ -1167,6 +1167,37 @@ app.put('/attendance', async (req, res) => {
 /* =========================================================
    POST TEST WITH SLOT LINK + DURATION + REGISTRATION DATES
 ========================================================= */
+// ================== GET ALL POSTED TESTS ==================
+app.get('/posted-tests', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT
+				test_code,
+				subject_id,
+				CASE 
+					WHEN subject_id = 1 THEN 'Maths'
+					WHEN subject_id = 2 THEN 'Physics'
+					ELSE 'Unknown'
+				END AS subject_name,
+				test_date,
+				total_marks,
+				portion,
+				created_by,
+				class,
+				board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till
+			FROM tests
+			ORDER BY test_date DESC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /posted-tests error:', err);
+		res.status(500).json({ error: 'Failed to fetch tests' });
+	}
+});
 app.post('/post-test', async (req, res) => {
 	const client = await pool.connect();
 
