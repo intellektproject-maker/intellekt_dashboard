@@ -1,465 +1,285 @@
-'use client';
+function splitClassBoard(classBoard) {
+	if (!classBoard) return { board: null, classOnly: null };
 
-import { useEffect, useMemo, useState } from 'react';
+	const value = String(classBoard).trim();
+	const lastDash = value.lastIndexOf('-');
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ||
-  'https://responsible-wonder-production.up.railway.app';
+	if (lastDash === -1) {
+		return { board: null, classOnly: value };
+	}
 
-const CLASS_OPTIONS = ['10', '11', '12'];
-const BOARD_OPTIONS = ['CBSE', 'ICSE', 'State Board', 'SB', 'ISC'];
-
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
+	return {
+		board: value.slice(0, lastDash).trim(),
+		classOnly: value.slice(lastDash + 1).trim()
+	};
 }
 
-async function generatePDF(filteredData) {
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+app.get('/classes', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT DISTINCT class, board
+			FROM students
+			WHERE class IS NOT NULL
+			  AND board IS NOT NULL
+			ORDER BY board ASC, class ASC
+		`);
 
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /classes error:', err);
+		res.status(500).json({ error: 'Failed to fetch classes' });
+	}
+});
 
-  const tableColumns = [
-    { header: 'Student Name', dataKey: 'student_name' },
-    { header: 'Class & Board', dataKey: 'class_board' },
-    { header: 'Mode', dataKey: 'mode_of_education' },
-    { header: 'Area', dataKey: 'area' },
-    { header: 'School Name', dataKey: 'school_name' },
-    { header: 'Subjects', dataKey: 'subjects' },
-    { header: 'Parent Name', dataKey: 'parent_name' },
-    { header: 'Mobile', dataKey: 'mobile_number' },
-    { header: 'Status', dataKey: 'status' },
-    { header: 'Reason', dataKey: 'comment' },
-    { header: 'Enquiry Date', dataKey: 'created_at' },
-  ];
+app.get('/attendance', async (req, res) => {
+	const { mode, class: classBoard, subject, date, from, to } = req.query;
+	const { board, classOnly } = splitClassBoard(classBoard);
 
-  const tableRows = filteredData.map((item) => ({
-    student_name: item.student_name || '-',
-    class_board: item.class_board || '-',
-    mode_of_education: item.mode_of_education || '-',
-    area: item.area || '-',
-    school_name: item.school_name || '-',
-    subjects: item.subjects || '-',
-    parent_name: item.parent_name || '-',
-    mobile_number: item.mobile_number || '-',
-    status: item.status || 'Pending',
-    comment: item.comment || item.reason || '-',
-    created_at: item.created_at
-      ? new Date(item.created_at).toLocaleDateString('en-IN')
-      : '-',
-  }));
+	try {
+		if (mode === 'report') {
+			if (!classBoard) {
+				return res.status(400).json({
+					error: 'class is required for report mode'
+				});
+			}
 
-  doc.autoTable({
-    columns: tableColumns,
-    body: tableRows,
-    startY: 10,
-    margin: { left: 8, right: 8 },
-    styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
-    headStyles: {
-      fillColor: [29, 78, 216],
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-    },
-    alternateRowStyles: { fillColor: [245, 247, 255] },
-  });
+			let query = `
+				SELECT
+					a.roll_no,
+					s.name,
+					s.class,
+					s.board,
+					a.subject_id,
+					TO_CHAR(a.attendance_date, 'YYYY-MM-DD') AS attendance_date,
+					a.status,
+					a.updated_by
+				FROM attendance a
+				JOIN students s ON s.roll_no = a.roll_no
+				WHERE 1 = 1
+			`;
 
-  doc.save('Enquiry_Table.pdf');
-}
+			const values = [];
+			let index = 1;
 
-export default function EnquiriesPage() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [pdfLoading, setPdfLoading] = useState(false);
+			if (board && classOnly) {
+				query += ` AND UPPER(s.board) = UPPER($${index})`;
+				values.push(board);
+				index++;
 
-  const [classFilter, setClassFilter] = useState('');
-  const [boardFilter, setBoardFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+				query += ` AND s.class::text = $${index}`;
+				values.push(classOnly);
+				index++;
+			} else if (classOnly) {
+				query += ` AND s.class::text = $${index}`;
+				values.push(classOnly);
+				index++;
+			}
 
-  useEffect(() => {
-    loadData();
-  }, []);
+			if (subject) {
+				query += ` AND a.subject_id = $${index}`;
+				values.push(subject);
+				index++;
+			}
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
+			if (from) {
+				query += ` AND a.attendance_date >= $${index}`;
+				values.push(from);
+				index++;
+			}
 
-      const res = await fetch(`${API_BASE}/enquiries`, {
-        cache: 'no-store',
-      });
+			if (to) {
+				query += ` AND a.attendance_date <= $${index}`;
+				values.push(to);
+				index++;
+			}
 
-      const json = await res.json();
+			query += ` ORDER BY a.attendance_date DESC, a.roll_no ASC`;
 
-      if (!res.ok) {
-        alert(json.error || 'Failed to fetch enquiries');
-        setData([]);
-        return;
-      }
+			const result = await pool.query(query, values);
+			return res.json(result.rows);
+		}
 
-      setData(Array.isArray(json) ? json : []);
-    } catch (err) {
-      console.error('Fetch enquiries error:', err);
-      alert('Unable to connect to server');
-      setData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+		if (!classBoard || !subject || !date) {
+			return res.status(400).json({
+				error: 'class, subject and date are required'
+			});
+		}
 
-  const handleDelete = async (id) => {
-    try {
-      const confirmDelete = window.confirm(
-        'Are you sure you want to reject and delete this enquiry?'
-      );
+		let query = `
+			SELECT
+				s.roll_no,
+				s.name,
+				a.status
+			FROM students s
+			LEFT JOIN attendance a
+				ON s.roll_no = a.roll_no
+				AND a.subject_id = $1
+				AND a.attendance_date = $2
+			WHERE 1 = 1
+		`;
 
-      if (!confirmDelete) return;
+		const values = [subject, date];
+		let index = 3;
 
-      const res = await fetch(`${API_BASE}/enquiries/${id}`, {
-        method: 'DELETE',
-      });
+		if (board && classOnly) {
+			query += ` AND UPPER(s.board) = UPPER($${index})`;
+			values.push(board);
+			index++;
 
-      const result = await res.json();
+			query += ` AND s.class::text = $${index}`;
+			values.push(classOnly);
+			index++;
+		} else if (classOnly) {
+			query += ` AND s.class::text = $${index}`;
+			values.push(classOnly);
+			index++;
+		}
 
-      if (!res.ok) {
-        alert(result.error || 'Failed to delete enquiry');
-        return;
-      }
+		query += ` ORDER BY s.roll_no ASC`;
 
-      alert('Rejected enquiry deleted successfully');
-      setData((prev) => prev.filter((item) => item.id !== id));
-    } catch (err) {
-      console.error('Delete error:', err);
-      alert('Error deleting enquiry');
-    }
-  };
+		const result = await pool.query(query, values);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /attendance error:', err);
+		res.status(500).json({ error: 'Failed to fetch attendance' });
+	}
+});
 
-  const handleUpdate = async (id, status, comment) => {
-    if (status === 'Rejected') {
-      await handleDelete(id);
-      return;
-    }
+app.post('/attendance', async (req, res) => {
+	const { records, subject, facultyId, overwrite = false } = req.body;
+	const selectedDate = req.body.date || req.body.attendanceDate;
 
-    try {
-      const payload = {
-        status,
-        comment: status === 'Pending' ? comment : '',
-        reason: status === 'Pending' ? comment : '',
-      };
+	if (!records || !Array.isArray(records) || records.length === 0) {
+		return res.status(400).json({ error: 'records are required' });
+	}
 
-      const res = await fetch(`${API_BASE}/enquiries/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+	if (!subject) {
+		return res.status(400).json({ error: 'subject is required' });
+	}
 
-      const result = await res.json();
+	if (!facultyId) {
+		return res.status(400).json({ error: 'facultyId is required' });
+	}
 
-      if (!res.ok) {
-        alert(result.error || 'Failed to update enquiry');
-        return;
-      }
+	if (!selectedDate) {
+		return res.status(400).json({ error: 'date is required' });
+	}
 
-      alert('Saved successfully');
-      await loadData();
-    } catch (err) {
-      console.error('Update error:', err);
-      alert('Error updating enquiry');
-    }
-  };
+	const client = await pool.connect();
 
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      const itemClass = getClassValue(item.class_board);
-      const itemBoard = getBoardValue(item.class_board);
-      const itemStatus = (item.status || 'Pending').trim();
+	try {
+		await client.query('BEGIN');
 
-      return (
-        (!classFilter || itemClass === classFilter) &&
-        (!boardFilter || normalizeBoard(itemBoard) === normalizeBoard(boardFilter)) &&
-        (!statusFilter || itemStatus === statusFilter)
-      );
-    });
-  }, [data, classFilter, boardFilter, statusFilter]);
+		let duplicateFound = false;
+		const existingStudents = [];
 
-  const clearFilters = () => {
-    setClassFilter('');
-    setBoardFilter('');
-    setStatusFilter('');
-  };
+		for (const record of records) {
+			const exists = await client.query(
+				`
+				SELECT 1
+				FROM attendance
+				WHERE roll_no = $1
+				  AND subject_id = $2
+				  AND attendance_date = $3
+				`,
+				[record.roll_no, subject, selectedDate]
+			);
 
-  const handleGeneratePDF = async () => {
-    if (filteredData.length === 0) {
-      alert('No data to export.');
-      return;
-    }
+			if (exists.rows.length > 0) {
+				duplicateFound = true;
+				existingStudents.push(record.roll_no);
 
-    try {
-      setPdfLoading(true);
-      await generatePDF(filteredData);
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Failed to generate PDF');
-    } finally {
-      setPdfLoading(false);
-    }
-  };
+				if (overwrite) {
+					await client.query(
+						`
+						UPDATE attendance
+						SET status = $1,
+						    updated_by = $2
+						WHERE roll_no = $3
+						  AND subject_id = $4
+						  AND attendance_date = $5
+						`,
+						[record.status, facultyId, record.roll_no, subject, selectedDate]
+					);
+				}
+			} else {
+				await client.query(
+					`
+					INSERT INTO attendance
+						(roll_no, subject_id, attendance_date, status, updated_by)
+					VALUES ($1, $2, $3, $4, $5)
+					`,
+					[record.roll_no, subject, selectedDate, record.status, facultyId]
+				);
+			}
+		}
 
-  if (loading) {
-    return <div className="p-6 md:p-10 text-gray-700">Loading...</div>;
-  }
+		if (duplicateFound && !overwrite) {
+			await client.query('ROLLBACK');
 
-  return (
-    <div className="p-4 md:p-10">
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <h2 className="text-2xl md:text-3xl font-bold text-blue-800">
-          Enquiries
-        </h2>
+			return res.status(409).json({
+				error: 'Attendance already marked for one or more students',
+				duplicateFound: true,
+				existingStudents
+			});
+		}
 
-        <div className="hidden md:block">
-          <button
-            onClick={handleGeneratePDF}
-            disabled={pdfLoading || filteredData.length === 0}
-            className="rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 transition"
-          >
-            {pdfLoading ? 'Generating PDF...' : 'Export PDF'}
-          </button>
-        </div>
-      </div>
+		await client.query('COMMIT');
 
-      <div className="mb-6 rounded-xl bg-white p-4 shadow-md border border-gray-200">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">All Classes</option>
-            {CLASS_OPTIONS.map((c) => (
-              <option key={c} value={c}>
-                Class {c}
-              </option>
-            ))}
-          </select>
+		res.json({
+			message: overwrite
+				? 'Attendance overwritten successfully'
+				: 'Attendance saved successfully'
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /attendance error:', err);
+		res.status(500).json({ error: 'Failed to save attendance' });
+	} finally {
+		client.release();
+	}
+});
 
-          <select
-            value={boardFilter}
-            onChange={(e) => setBoardFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">All Boards</option>
-            {BOARD_OPTIONS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+app.put('/attendance', async (req, res) => {
+	const { records, subject, facultyId } = req.body;
+	const selectedDate = req.body.date || req.body.attendanceDate;
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">All Status</option>
-            <option value="Admitted">Admitted</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Pending">Pending</option>
-          </select>
+	if (!records || !Array.isArray(records) || records.length === 0) {
+		return res.status(400).json({ error: 'records are required' });
+	}
 
-          <button
-            onClick={clearFilters}
-            className="rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            Clear
-          </button>
-        </div>
-      </div>
+	if (!subject || !facultyId || !selectedDate) {
+		return res.status(400).json({
+			error: 'subject, facultyId and date are required'
+		});
+	}
 
-      <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-gray-300">
-                <th className="w-[16%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Student
-                </th>
-                <th className="w-[14%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Class
-                </th>
-                <th className="w-[10%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mode
-                </th>
-                <th className="w-[14%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mobile
-                </th>
-                <th className="w-[16%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Status
-                </th>
-                <th className="w-[18%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Pending Reason
-                </th>
-                <th className="w-[12%] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Action
-                </th>
-              </tr>
-            </thead>
+	const client = await pool.connect();
 
-            <tbody>
-              {filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="px-4 py-6 text-center text-gray-600">
-                    No enquiries found
-                  </td>
-                </tr>
-              ) : (
-                filteredData.map((item) => (
-                  <Row key={item.id} item={item} onSave={handleUpdate} />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+	try {
+		await client.query('BEGIN');
 
-      <div className="mt-6 md:hidden">
-        <button
-          onClick={handleGeneratePDF}
-          disabled={pdfLoading || filteredData.length === 0}
-          className="w-full rounded-lg bg-blue-700 py-3 text-sm font-semibold text-white shadow hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 transition"
-        >
-          {pdfLoading ? 'Generating PDF...' : `Export PDF (${filteredData.length})`}
-        </button>
-      </div>
-    </div>
-  );
-}
+		for (const record of records) {
+			await client.query(
+				`
+				UPDATE attendance
+				SET status = $1,
+				    updated_by = $2
+				WHERE roll_no = $3
+				  AND subject_id = $4
+				  AND attendance_date = $5
+				`,
+				[record.status, facultyId, record.roll_no, subject, selectedDate]
+			);
+		}
 
-function normalizeBoard(board) {
-  const value = String(board || '').trim().toUpperCase();
-
-  if (value === 'STATE BOARD' || value === 'STATEBOARD') return 'SB';
-  return value;
-}
-
-function getBoardValue(classBoard) {
-  if (!classBoard) return '';
-
-  const value = classBoard.trim();
-  const lastDash = value.lastIndexOf('-');
-
-  if (lastDash === -1) return value.toUpperCase();
-
-  return value.slice(0, lastDash).toUpperCase();
-}
-
-function getClassValue(classBoard) {
-  if (!classBoard) return '';
-
-  const value = classBoard.trim();
-  const lastDash = value.lastIndexOf('-');
-
-  if (lastDash === -1) return value.toUpperCase();
-
-  return value.slice(lastDash + 1).toUpperCase();
-}
-
-function Row({ item, onSave }) {
-  const [status, setStatus] = useState(item.status || 'Pending');
-  const [comment, setComment] = useState(item.comment || item.reason || '');
-
-  useEffect(() => {
-    setStatus(item.status || 'Pending');
-    setComment(item.comment || item.reason || '');
-  }, [item]);
-
-  const handleSave = () => {
-    if (status === 'Pending' && !comment.trim()) {
-      alert('Please enter the reason for pending');
-      return;
-    }
-
-    onSave(item.id, status, status === 'Pending' ? comment : '');
-  };
-
-  return (
-    <tr className="border-b border-gray-300">
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.student_name || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.class_board || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        <span
-          className={`inline-block rounded-md px-3 py-1 text-xs font-semibold ${
-            item.mode_of_education === 'Online'
-              ? 'bg-blue-100 text-blue-700'
-              : item.mode_of_education === 'Offline'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          {item.mode_of_education || '-'}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.mobile_number || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        <select
-          value={status}
-          onChange={(e) => {
-            const value = e.target.value;
-            setStatus(value);
-
-            if (value !== 'Pending') {
-              setComment('');
-            }
-          }}
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
-        >
-          <option value="Pending">Pending</option>
-          <option value="Admitted">Admitted</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        {status === 'Pending' ? (
-          <input
-            type="text"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Enter reason for pending"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
-          />
-        ) : (
-          <span className="text-gray-400">—</span>
-        )}
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        <button
-          onClick={handleSave}
-          className="rounded-md px-3 py-2 text-gray-900 hover:bg-gray-100"
-        >
-          Save
-        </button>
-      </td>
-    </tr>
-  );
-}
+		await client.query('COMMIT');
+		res.json({ message: 'Attendance updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /attendance error:', err);
+		res.status(500).json({ error: 'Failed to update attendance' });
+	} finally {
+		client.release();
+	}
+});
