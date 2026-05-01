@@ -21,6 +21,7 @@ function PostTestInner() {
   const [writingAllowedTill, setWritingAllowedTill] = useState("");
   const [classes, setClasses] = useState([]);
   const [loadingClasses, setLoadingClasses] = useState(true);
+  const [postedTests, setPostedTests] = useState([]);
 
   useEffect(() => {
     async function loadClasses() {
@@ -37,6 +38,24 @@ function PostTestInner() {
     }
 
     loadClasses();
+  }, []);
+
+  async function loadPostedTests() {
+    try {
+      const res = await fetch(`${API_BASE}/posted-tests`, {
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+      setPostedTests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error loading posted tests:", err);
+      setPostedTests([]);
+    }
+  }
+
+  useEffect(() => {
+    loadPostedTests();
   }, []);
 
   function handleClassChange(e) {
@@ -87,6 +106,13 @@ function PostTestInner() {
     const value = e.target.value.toUpperCase();
     setTestCode(value);
     applyParsedTestCode(value);
+  }
+
+  function formatDate(dateValue) {
+    if (!dateValue) return "-";
+    const d = new Date(dateValue);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("en-IN");
   }
 
   async function postTest() {
@@ -165,6 +191,8 @@ function PostTestInner() {
       setDuration("");
       setRegistrationEndDate("");
       setWritingAllowedTill("");
+
+      await loadPostedTests();
     } catch (err) {
       console.error("Post test error:", err);
       alert("Something went wrong");
@@ -289,6 +317,56 @@ function PostTestInner() {
         >
           Create Test
         </button>
+      </div>
+
+      <div className="mt-10">
+        <h2 className="text-2xl font-bold text-blue-800 mb-5">
+          Posted Tests
+        </h2>
+
+        {postedTests.length === 0 ? (
+          <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
+            <p className="text-gray-600">No tests posted yet.</p>
+          </div>
+        ) : (
+          <div className="bg-white shadow-md rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-blue-700 text-white">
+                <tr>
+                  <th className="p-3">Code</th>
+                  <th className="p-3">Subject</th>
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Marks</th>
+                  <th className="p-3">Class</th>
+                  <th className="p-3">Board</th>
+                  <th className="p-3">Duration</th>
+                  <th className="p-3">By</th>
+                  <th className="p-3">Portion</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {postedTests.map((t) => (
+                  <tr key={t.test_code} className="border-b hover:bg-gray-50">
+                    <td className="p-3 text-blue-700 font-semibold">
+                      {t.test_code}
+                    </td>
+                    <td className="p-3">{t.subject_name}</td>
+                    <td className="p-3">{formatDate(t.test_date)}</td>
+                    <td className="p-3">{t.total_marks}</td>
+                    <td className="p-3">{t.class}</td>
+                    <td className="p-3">{t.board}</td>
+                    <td className="p-3">
+                      {t.duration_minutes ? `${t.duration_minutes} mins` : "-"}
+                    </td>
+                    <td className="p-3">{t.created_by}</td>
+                    <td className="p-3">{t.portion}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
