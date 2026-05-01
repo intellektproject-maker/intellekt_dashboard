@@ -267,33 +267,28 @@ app.get('/test-schedule/:roll', async (req, res) => {
 
 		const testsRes = await pool.query(
 			`
-			SELECT 
-				t.test_code,
-				t.subject_id,
-				CASE 
-					WHEN t.subject_id = 1 THEN 'Maths'
-					WHEN t.subject_id = 2 THEN 'Physics'
-					ELSE 'Unknown'
-				END AS subject_name,
-				t.test_date,
-				t.total_marks,
-				t.portion,
-				t.duration_minutes,
-				t.registration_end_date,
-				t.writing_allowed_till,
-				t.test_slot_link,
-				r.slot_start,
-				r.slot_end,
-				r.writing_date
-			FROM tests t
-			LEFT JOIN test_registrations r
-				ON UPPER(TRIM(r.test_code)) = UPPER(TRIM(t.test_code))
-				AND UPPER(TRIM(r.roll_no)) = UPPER(TRIM($1))
-			WHERE LOWER(REPLACE(TRIM(t.class), ' ', '')) = LOWER(REPLACE(TRIM($2), ' ', ''))
-			  AND LOWER(REPLACE(TRIM(t.board), ' ', '')) = LOWER(REPLACE(TRIM($3), ' ', ''))
-			ORDER BY t.test_date ASC
-			`,
-			[roll, className, board]
+      SELECT 
+        t.test_code,
+        t.subject_id,
+        t.test_date,
+        t.total_marks,
+        t.portion,
+        t.duration_minutes,
+        t.registration_end_date,
+        t.writing_allowed_till,
+        t.test_slot_link,
+        r.slot_start,
+        r.slot_end,
+        r.writing_date
+      FROM tests t
+      LEFT JOIN test_registrations r
+        ON r.test_code = t.test_code
+        AND r.roll_no = $1
+      WHERE t.class = $2
+        AND t.board = $3
+      ORDER BY t.test_date ASC
+      `,
+			[ roll, className, board ]
 		);
 
 		const formatted = testsRes.rows.map((row) => ({
