@@ -20,23 +20,13 @@ function PostTestInner() {
   const [registrationEndDate, setRegistrationEndDate] = useState("");
   const [writingAllowedTill, setWritingAllowedTill] = useState("");
   const [classes, setClasses] = useState([]);
-  const [loadingClasses, setLoadingClasses] = useState(true);
   const [postedTests, setPostedTests] = useState([]);
 
   useEffect(() => {
-    async function loadClasses() {
-      try {
-        const res = await fetch(`${API_BASE}/classes`);
-        const data = await res.json();
-        setClasses(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error("Error loading classes:", err);
-      } finally {
-        setLoadingClasses(false);
-      }
-    }
-
-    loadClasses();
+    fetch(`${API_BASE}/classes`)
+      .then((res) => res.json())
+      .then((data) => setClasses(data || []))
+      .catch(() => setClasses([]));
   }, []);
 
   async function loadPostedTests() {
@@ -47,7 +37,7 @@ function PostTestInner() {
       const data = await res.json();
       setPostedTests(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Error loading posted tests:", err);
+      console.error(err);
     }
   }
 
@@ -58,14 +48,9 @@ function PostTestInner() {
   function handleClassChange(e) {
     const val = e.target.value;
     if (!val) return;
-
     const [cls, brd] = val.split("||");
     setClassName(cls);
     setBoard(brd);
-  }
-
-  function handleTestCodeChange(e) {
-    setTestCode(e.target.value.toUpperCase());
   }
 
   function formatDate(dateValue) {
@@ -100,14 +85,27 @@ function PostTestInner() {
         return;
       }
 
-      alert("Test posted!");
+      alert("Test posted successfully");
+
+      // reset
+      setTestCode("");
+      setSubject("");
+      setDate("");
+      setMarks("");
+      setPortion("");
+      setClassName("");
+      setBoard("");
+      setDuration("");
+      setRegistrationEndDate("");
+      setWritingAllowedTill("");
+
       loadPostedTests();
     } catch (err) {
       console.error(err);
     }
   }
 
-  // ✅ DELETE FUNCTION
+  // ✅ DELETE
   async function deleteTest(testCode) {
     if (!window.confirm(`Delete test ${testCode}?`)) return;
 
@@ -127,70 +125,109 @@ function PostTestInner() {
       loadPostedTests();
     } catch (err) {
       console.error(err);
-      alert("Error deleting test");
     }
   }
 
   return (
-    <div className="p-6 md:p-10 bg-gray-50">
+    <div className="p-6 md:p-10 bg-gray-50 min-h-screen">
+
       <h1 className="text-2xl md:text-3xl font-bold text-blue-800 mb-8">
         Post Test
       </h1>
 
       {/* FORM */}
-      <div className="bg-white shadow-md rounded-xl border p-6">
+      <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
           <input
-            placeholder="Test Code"
+            placeholder="Test Code (Example: C12P35)"
             value={testCode}
-            onChange={handleTestCodeChange}
-            className="border px-4 py-3 rounded-lg"
+            onChange={(e) => setTestCode(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
           />
 
           <select
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="border px-4 py-3 rounded-lg"
+            className="border rounded-lg px-4 py-3 text-gray-700 bg-white"
           >
-            <option value="">Subject</option>
+            <option value="">Select Subject</option>
             <option value="1">Maths</option>
             <option value="2">Physics</option>
           </select>
 
-          <input type="date" onChange={(e) => setDate(e.target.value)} />
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
+          />
+
           <input
             type="number"
-            placeholder="Marks"
+            placeholder="Total Marks"
+            value={marks}
             onChange={(e) => setMarks(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
           />
 
           <input
             placeholder="Portion"
+            value={portion}
             onChange={(e) => setPortion(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
           />
 
-          <select onChange={handleClassChange}>
-            <option>Select Class</option>
+          <select
+            value={className ? `${className}||${board}` : ""}
+            onChange={handleClassChange}
+            className="border rounded-lg px-4 py-3 text-gray-700 bg-white"
+          >
+            <option value="">Select Class</option>
             {classes.map((c, i) => (
               <option key={i} value={`${c.class}||${c.board}`}>
-                {c.class} - {c.board}
+                {c.class} — {c.board}
               </option>
             ))}
           </select>
 
-          <input value={board} readOnly />
           <input
-            placeholder="Duration"
-            onChange={(e) => setDuration(e.target.value)}
+            placeholder="Board"
+            value={board}
+            readOnly
+            className="border rounded-lg px-4 py-3 bg-gray-100 text-gray-700"
           />
 
-          <input type="date" onChange={(e) => setRegistrationEndDate(e.target.value)} />
-          <input type="date" onChange={(e) => setWritingAllowedTill(e.target.value)} />
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700 bg-white"
+          >
+            <option value="">Duration (minutes)</option>
+            <option value="90">90 mins</option>
+            <option value="180">180 mins</option>
+          </select>
+
+          <input
+            type="date"
+            value={registrationEndDate}
+            onChange={(e) => setRegistrationEndDate(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
+          />
+
+          <input
+            type="date"
+            value={writingAllowedTill}
+            onChange={(e) => setWritingAllowedTill(e.target.value)}
+            className="border rounded-lg px-4 py-3 text-gray-700"
+          />
+
         </div>
 
         <button
           onClick={postTest}
-          className="mt-6 w-full bg-blue-700 text-white py-3 rounded-lg"
+          className="mt-6 w-full bg-blue-700 text-white py-3 rounded-lg hover:bg-blue-800"
         >
           Create Test
         </button>
@@ -198,12 +235,15 @@ function PostTestInner() {
 
       {/* TABLE */}
       <div className="mt-10">
-        <h2 className="text-xl font-bold text-blue-800 mb-4">
+
+        <h2 className="text-xl font-bold text-blue-800 mb-5">
           Posted Tests
         </h2>
 
-        <div className="bg-white shadow-md rounded-xl border overflow-x-auto">
-          <table className="w-full">
+        <div className="bg-white shadow-md rounded-xl border border-gray-200 overflow-x-auto">
+
+          <table className="w-full text-left">
+
             <thead className="bg-blue-700 text-white">
               <tr>
                 <th className="p-3">Code</th>
@@ -221,8 +261,12 @@ function PostTestInner() {
 
             <tbody>
               {postedTests.map((t) => (
-                <tr key={t.test_code} className="border-b">
-                  <td className="p-3 text-blue-700">{t.test_code}</td>
+                <tr key={t.test_code} className="border-b hover:bg-gray-50">
+
+                  <td className="p-3 text-blue-700 font-semibold">
+                    {t.test_code}
+                  </td>
+
                   <td className="p-3">{t.subject_name}</td>
                   <td className="p-3">{formatDate(t.test_date)}</td>
                   <td className="p-3">{t.total_marks}</td>
@@ -235,14 +279,16 @@ function PostTestInner() {
                   <td className="p-3">
                     <button
                       onClick={() => deleteTest(t.test_code)}
-                      className="bg-red-600 text-white px-3 py-1 rounded"
+                      className="bg-red-600 text-white px-3 py-1 rounded-lg hover:bg-red-700"
                     >
                       Delete
                     </button>
                   </td>
+
                 </tr>
               ))}
             </tbody>
+
           </table>
         </div>
       </div>
@@ -252,7 +298,7 @@ function PostTestInner() {
 
 export default function PostTest() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
       <PostTestInner />
     </Suspense>
   );
