@@ -38,20 +38,18 @@ function AttendancePageInner() {
 
 				const rows = await res.json();
 
-				const prefix = selectedMonth + '-';
-
 				const filtered = Array.isArray(rows)
-	? rows.filter((r) => {
-			const d = new Date(r.attendance_date);
-			if (isNaN(d)) return false;
+					? rows.filter((r) => {
+							const d = new Date(r.attendance_date);
+							if (isNaN(d)) return false;
 
-			const rowMonth = `${d.getFullYear()}-${String(
-				d.getMonth() + 1
-			).padStart(2, '0')}`;
+							const rowMonth = `${d.getFullYear()}-${String(
+								d.getMonth() + 1
+							).padStart(2, '0')}`;
 
-			return rowMonth === selectedMonth;
-	  })
-	: [];
+							return rowMonth === selectedMonth;
+					  })
+					: [];
 
 				setAttendance(filtered);
 			} catch (err) {
@@ -70,6 +68,7 @@ function AttendancePageInner() {
 		const day = String(d.getDate()).padStart(2, '0');
 		const month = String(d.getMonth() + 1).padStart(2, '0');
 		const year = d.getFullYear();
+
 		return `${day}-${month}-${year}`;
 	};
 
@@ -82,7 +81,7 @@ function AttendancePageInner() {
 
 	const subjectMap = {
 		1: 'Maths',
-		2: 'Physics'
+		2: 'Physics',
 	};
 
 	const presentDates = attendance
@@ -95,6 +94,7 @@ function AttendancePageInner() {
 
 	const filteredPresentDates = presentDates.filter((a) => {
 		if (!presentSubjectFilter) return true;
+
 		return (
 			(subjectMap[a.subject_id] || '').toLowerCase() ===
 			presentSubjectFilter.toLowerCase()
@@ -103,6 +103,7 @@ function AttendancePageInner() {
 
 	const filteredAbsentDates = absentDates.filter((a) => {
 		if (!absentSubjectFilter) return true;
+
 		return (
 			(subjectMap[a.subject_id] || '').toLowerCase() ===
 			absentSubjectFilter.toLowerCase()
@@ -118,9 +119,9 @@ function AttendancePageInner() {
 			{
 				data: [present, absent, notEntered],
 				backgroundColor: ['#22c55e', '#ef4444', '#9ca3af'],
-				borderWidth: 1
-			}
-		]
+				borderWidth: 1,
+			},
+		],
 	};
 
 	return (
@@ -129,7 +130,6 @@ function AttendancePageInner() {
 				Attendance
 			</h2>
 
-			{/* Month Filter */}
 			<div className="flex items-center gap-4 mb-6 flex-wrap">
 				<label className="text-sm font-medium">Month</label>
 				<input
@@ -140,7 +140,6 @@ function AttendancePageInner() {
 				/>
 			</div>
 
-			{/* Summary */}
 			<div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-8">
 				<h3 className="text-lg font-semibold text-blue-700 mb-4">
 					Attendance Summary
@@ -152,14 +151,14 @@ function AttendancePageInner() {
 							<span className="font-medium text-green-600">Present:</span>{' '}
 							{present}
 						</div>
+
 						<div>
 							<span className="font-medium text-red-600">Absent:</span>{' '}
 							{absent}
 						</div>
+
 						<div>
-							<span className="font-medium text-gray-500">
-								Not Entered:
-							</span>{' '}
+							<span className="font-medium text-gray-500">Not Entered:</span>{' '}
 							{notEntered}
 						</div>
 					</div>
@@ -176,14 +175,11 @@ function AttendancePageInner() {
 				<p className="mt-6 text-gray-600">
 					Last Attendance Updated Date:{' '}
 					{attendance.length > 0
-						? formatDate(
-								attendance[attendance.length - 1].attendance_date
-						  )
+						? formatDate(attendance[0].attendance_date)
 						: 'No Data'}
 				</p>
 			</div>
 
-			{/* PRESENTS */}
 			<div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-6">
 				<div className="flex justify-between items-center mb-4">
 					<h3 className="text-lg font-semibold text-blue-700 mb-2">
@@ -208,14 +204,13 @@ function AttendancePageInner() {
 						filteredPresentDates.map((a, i) => (
 							<div key={i} className="flex justify-between py-1">
 								<span>{formatDate(a.attendance_date)}</span>
-								<span>{subjectMap[a.subject_id]}</span>
+								<span>{subjectMap[a.subject_id] || 'Unknown'}</span>
 							</div>
 						))
 					)}
 				</div>
 			</div>
 
-			{/* ABSENTS */}
 			<div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
 				<div className="flex justify-between items-center mb-4">
 					<h3 className="text-lg font-semibold text-blue-700 mb-2">
@@ -240,7 +235,7 @@ function AttendancePageInner() {
 						filteredAbsentDates.map((a, i) => (
 							<div key={i} className="flex justify-between py-1">
 								<span>{formatDate(a.attendance_date)}</span>
-								<span>{subjectMap[a.subject_id]}</span>
+								<span>{subjectMap[a.subject_id] || 'Unknown'}</span>
 							</div>
 						))
 					)}
