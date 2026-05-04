@@ -7,7 +7,9 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const API_BASE = '/backend-api';
+const API_BASE =
+	process.env.NEXT_PUBLIC_API_BASE ||
+	'https://responsible-wonder-production.up.railway.app';
 
 function AttendancePageInner() {
 	const searchParams = useSearchParams();
@@ -39,10 +41,17 @@ function AttendancePageInner() {
 				const prefix = selectedMonth + '-';
 
 				const filtered = Array.isArray(rows)
-					? rows.filter((r) =>
-							String(r.attendance_date || '').startsWith(prefix)
-					  )
-					: [];
+	? rows.filter((r) => {
+			const d = new Date(r.attendance_date);
+			if (isNaN(d)) return false;
+
+			const rowMonth = `${d.getFullYear()}-${String(
+				d.getMonth() + 1
+			).padStart(2, '0')}`;
+
+			return rowMonth === selectedMonth;
+	  })
+	: [];
 
 				setAttendance(filtered);
 			} catch (err) {
