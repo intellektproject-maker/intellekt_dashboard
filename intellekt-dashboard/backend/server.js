@@ -911,120 +911,26 @@ app.get('/classes', async (req, res) => {
 	}
 });
 
-app.get('/attendance', async (req, res) => {
-	const { mode, class: classBoard, subject, date, from, to } = req.query;
-	const { board, classOnly } = splitClassBoard(classBoard);
+app.get('/attendance/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
 
 	try {
-		if (mode === 'report') {
-			if (!classBoard) {
-				return res.status(400).json({
-					error: 'class is required for report mode'
-				});
-			}
+		const result = await pool.query(
+			`
+			SELECT roll_no, subject_id, attendance_date, status, updated_by
+			FROM attendance
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			ORDER BY attendance_date DESC
+			`,
+			[rollNo]
+		);
 
-			let query = `
-				SELECT
-					a.roll_no,
-					s.name,
-					s.class,
-					s.board,
-					a.subject_id,
-					TO_CHAR(a.attendance_date, 'YYYY-MM-DD') AS attendance_date,
-					a.status,
-					a.updated_by
-				FROM attendance a
-				JOIN students s ON s.roll_no = a.roll_no
-				WHERE 1 = 1
-			`;
-
-			const values = [];
-			let index = 1;
-
-			if (board && classOnly) {
-				query += ` AND UPPER(s.board) = UPPER($${index})`;
-				values.push(board);
-				index++;
-
-				query += ` AND s.class::text = $${index}`;
-				values.push(classOnly);
-				index++;
-			} else if (classOnly) {
-				query += ` AND s.class::text = $${index}`;
-				values.push(classOnly);
-				index++;
-			}
-
-			if (subject) {
-				query += ` AND a.subject_id = $${index}`;
-				values.push(subject);
-				index++;
-			}
-
-			if (from) {
-				query += ` AND a.attendance_date >= $${index}`;
-				values.push(from);
-				index++;
-			}
-
-			if (to) {
-				query += ` AND a.attendance_date <= $${index}`;
-				values.push(to);
-				index++;
-			}
-
-			query += ` ORDER BY a.attendance_date DESC, a.roll_no ASC`;
-
-			const result = await pool.query(query, values);
-			return res.json(result.rows);
-		}
-
-		if (!classBoard || !subject || !date) {
-			return res.status(400).json({
-				error: 'class, subject and date are required'
-			});
-		}
-
-		let query = `
-			SELECT
-				s.roll_no,
-				s.name,
-				a.status
-			FROM students s
-			LEFT JOIN attendance a
-				ON s.roll_no = a.roll_no
-				AND a.subject_id = $1
-				AND a.attendance_date = $2
-			WHERE 1 = 1
-		`;
-
-		const values = [subject, date];
-		let index = 3;
-
-		if (board && classOnly) {
-			query += ` AND UPPER(s.board) = UPPER($${index})`;
-			values.push(board);
-			index++;
-
-			query += ` AND s.class::text = $${index}`;
-			values.push(classOnly);
-			index++;
-		} else if (classOnly) {
-			query += ` AND s.class::text = $${index}`;
-			values.push(classOnly);
-			index++;
-		}
-
-		query += ` ORDER BY s.roll_no ASC`;
-
-		const result = await pool.query(query, values);
 		res.json(result.rows);
 	} catch (err) {
-		console.error('GET /attendance error:', err);
-		res.status(500).json({ error: 'Failed to fetch attendance' });
+		console.error('GET /attendance/:rollNo error:', err);
+		res.status(500).json({ error: 'Server error' });
 	}
 });
-
 app.post('/attendance', async (req, res) => {
 	const { records, subject, facultyId, overwrite = false } = req.body;
 	const selectedDate = req.body.date || req.body.attendanceDate;
@@ -1167,8 +1073,7 @@ app.put('/attendance', async (req, res) => {
    POST TEST WITH SLOT LINK + DURATION + REGISTRATION DATES
 ========================================================= */
 // ================== GET ALL POSTED TESTS ==================
-app.get('/posted-tests', async (req, res) => {
-
+app.get('/tests', async (req, res) => {
 	try {
 		const result = await pool.query(`
 			SELECT
@@ -1183,8 +1088,39 @@ app.get('/posted-tests', async (req, res) => {
 				total_marks,
 				portion,
 				created_by,
-				class,
-				board,
+				TRIM(class) AS class,
+				TRIM(board) AS board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till
+			FROM tests
+			ORDER BY test_date DESC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /tests error:', err);
+		res.status(500).json({ error: 'Failed to fetch tests' });
+	}
+});
+
+app.get('/posted-tests', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT
+				test_code,
+				subject_id,
+				CASE 
+					WHEN subject_id = 1 THEN 'Maths'
+					WHEN subject_id = 2 THEN 'Physics'
+					ELSE 'Unknown'
+				END AS subject_name,
+				test_date,
+				total_marks,
+				portion,
+				created_by,
+				TRIM(class) AS class,
+				TRIM(board) AS board,
 				duration_minutes,
 				registration_end_date,
 				writing_allowed_till
@@ -1195,9 +1131,10 @@ app.get('/posted-tests', async (req, res) => {
 		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /posted-tests error:', err);
-		res.status(500).json({ error: 'Failed to fetch tests' });
+		res.status(500).json({ error: 'Failed to fetch posted tests' });
 	}
 });
+
 app.delete('/posted-tests/:testCode', async (req, res) => {
 	const { testCode } = req.params;
 
@@ -1217,14 +1154,17 @@ app.delete('/posted-tests/:testCode', async (req, res) => {
 
 		res.json({ message: 'Test deleted successfully' });
 	} catch (err) {
-		console.error('DELETE /posted-tests error:', err);
+		console.error('DELETE /posted-tests/:testCode error:', err);
 		res.status(500).json({ error: 'Failed to delete test' });
 	}
 });
+
 app.post('/post-test', async (req, res) => {
 	const client = await pool.connect();
 
 	try {
+		await client.query('BEGIN');
+
 		const {
 			test_code,
 			subject_id,
@@ -1241,73 +1181,103 @@ app.post('/post-test', async (req, res) => {
 
 		console.log('POST /post-test BODY:', req.body);
 
-		if (!test_code || !subject_id || !test_date || !total_marks || !created_by || !class_name || !board) {
+		if (
+			!test_code ||
+			!subject_id ||
+			!test_date ||
+			!total_marks ||
+			!created_by ||
+			!class_name ||
+			!board
+		) {
+			await client.query('ROLLBACK');
 			return res.status(400).json({
 				error: 'Required fields are missing'
 			});
 		}
 
-		const testDateObj = new Date(test_date);
-		const regEndObj = new Date(registration_end_date);
+		if (registration_end_date) {
+			const testDateObj = new Date(test_date);
+			const regEndObj = new Date(registration_end_date);
 
-		testDateObj.setHours(0, 0, 0, 0);
-		regEndObj.setHours(0, 0, 0, 0);
+			testDateObj.setHours(0, 0, 0, 0);
+			regEndObj.setHours(0, 0, 0, 0);
 
-		if (registration_end_date && regEndObj >= testDateObj) {
+			if (regEndObj >= testDateObj) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: 'Registration must end BEFORE test date'
+				});
+			}
+		}
+
+		const cleanTestCode = String(test_code).trim().toUpperCase();
+		const cleanClassName = String(class_name).trim();
+		const cleanBoard = String(board).trim();
+
+		const existingTest = await client.query(
+			`
+			SELECT test_code
+			FROM tests
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+			`,
+			[cleanTestCode]
+		);
+
+		if (existingTest.rows.length > 0) {
+			await client.query('ROLLBACK');
 			return res.status(400).json({
-				error: 'Registration must end BEFORE test date'
+				error: 'Test code already exists'
 			});
 		}
 
 		const existingLink = await client.query(
 			`
-      SELECT test_slot_link
-      FROM tests
-      WHERE test_date = $1
-        AND test_slot_link IS NOT NULL
-      LIMIT 1
-      `,
-			[ test_date ]
+			SELECT test_slot_link
+			FROM tests
+			WHERE test_date = $1
+			  AND test_slot_link IS NOT NULL
+			LIMIT 1
+			`,
+			[test_date]
 		);
 
 		let link;
 
 		if (existingLink.rows.length > 0) {
 			link = existingLink.rows[0].test_slot_link;
-			console.log('Using existing link:', link);
 		} else {
-			link = `https://responsible-wonder-production.up.railway.app.1.26:3000/register-test?date=${test_date}`;
-			console.log('Created new link:', link);
+			link = `https://responsible-wonder-production.up.railway.app/register-test?date=${test_date}`;
 		}
 
 		const insertResult = await client.query(
 			`
-      INSERT INTO tests (
-        test_code,
-        subject_id,
-        test_date,
-        total_marks,
-        portion,
-        created_by,
-        class,
-        board,
-        test_slot_link,
-        duration_minutes,
-        registration_end_date,
-        writing_allowed_till
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      RETURNING *
-      `,
-			[
+			INSERT INTO tests (
 				test_code,
 				subject_id,
 				test_date,
 				total_marks,
 				portion,
 				created_by,
-				class_name,
+				class,
 				board,
+				test_slot_link,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			RETURNING *
+			`,
+			[
+				cleanTestCode,
+				subject_id,
+				test_date,
+				total_marks,
+				portion || '',
+				created_by,
+				cleanClassName,
+				cleanBoard,
 				link,
 				duration_minutes || null,
 				registration_end_date || null,
@@ -1340,7 +1310,6 @@ app.post('/post-test', async (req, res) => {
 		client.release();
 	}
 });
-
 /* =========================================================
    FACULTY MANAGEMENT
 ========================================================= */
