@@ -197,12 +197,12 @@ app.get('/attendance/:rollNo', async (req, res) => {
 	try {
 		const result = await pool.query(
 			`
-      SELECT roll_no, subject_id, attendance_date, status, updated_by
-      FROM attendance
-      WHERE roll_no = $1
-      ORDER BY attendance_date DESC
-      `,
-			[ rollNo ]
+			SELECT roll_no, subject_id, attendance_date, status, updated_by
+			FROM attendance
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			ORDER BY attendance_date DESC
+			`,
+			[rollNo]
 		);
 
 		res.json(result.rows);
@@ -211,7 +211,6 @@ app.get('/attendance/:rollNo', async (req, res) => {
 		res.status(500).json({ error: 'Server error' });
 	}
 });
-
 /* =========================================================
    STUDENT MARKS
 ========================================================= */
