@@ -2261,7 +2261,7 @@ app.put('/enquiries/:id', async (req, res) => {
       WHERE id = $4
       RETURNING *
       `,
-			[ status || 'Pending', comment || null, reason || null, id ]
+			[status || 'Pending', comment || null, reason || null, id]
 		);
 
 		if (result.rowCount === 0) {
@@ -2295,7 +2295,7 @@ app.delete('/enquiries/:id', async (req, res) => {
       WHERE id = $1
       RETURNING *
       `,
-			[ id ]
+			[id]
 		);
 
 		if (result.rowCount === 0) {
@@ -2330,7 +2330,9 @@ app.post('/enquiries', async (req, res) => {
 			modeOfEducation,
 			parentName,
 			mobileNumber,
-			area
+			secondaryContact,
+			area,
+			reference
 		} = req.body;
 
 		const result = await pool.query(
@@ -2343,13 +2345,26 @@ app.post('/enquiries', async (req, res) => {
         school_name,
         subjects,
         parent_name,
+        secondary_contact,
         area,
-        mode_of_education
+        mode_of_education,
+        reference
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING *
       `,
-			[ studentName, mobileNumber, classBoard, schoolName, subjects, parentName, area, modeOfEducation ]
+			[
+				studentName,
+				mobileNumber,
+				classBoard,
+				schoolName,
+				subjects,
+				parentName,
+				secondaryContact || null,
+				area,
+				modeOfEducation,
+				reference || null
+			]
 		);
 
 		res.status(201).json(result.rows[0]);
@@ -2376,7 +2391,8 @@ app.get('/enquiries', async (req, res) => {
         status,
         comment,
         reason,
-        area
+        area,
+        reference
       FROM enquiries
       ORDER BY created_at DESC
     `);
@@ -2387,7 +2403,6 @@ app.get('/enquiries', async (req, res) => {
 		res.status(500).json({ error: err.message });
 	}
 });
-
 /* =========================================================
    ANSWER SHEET REQUESTS
 ========================================================= */

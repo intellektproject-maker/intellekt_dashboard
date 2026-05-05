@@ -59,7 +59,9 @@ export default function Home() {
     modeOfEducation: "",
     parentName: "",
     mobileNumber: "",
+    secondaryContact: "",
     area: "",
+    reference: "",
   });
 
   const [phoneError, setPhoneError] = useState("");
@@ -131,6 +133,13 @@ export default function Home() {
     return value.replace(/\D/g, "").slice(0, 10);
   };
 
+  const sanitizeReference = (value) => {
+    return value
+      .replace(/[^A-Za-z0-9\s.,&()'-]/g, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/^\s+/, "");
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     let cleanedValue = value;
@@ -141,6 +150,8 @@ export default function Home() {
       cleanedValue = sanitizeSchoolName(value);
     } else if (name === "area") {
       cleanedValue = sanitizeArea(value);
+    } else if (name === "reference") {
+      cleanedValue = sanitizeReference(value);
     } else if (name === "mobileNumber") {
       cleanedValue = sanitizePhone(value);
 
@@ -149,6 +160,8 @@ export default function Home() {
       } else {
         setPhoneError("");
       }
+    } else if (name === "secondaryContact") {
+      cleanedValue = sanitizePhone(value);
     }
 
     setFormData((prev) => ({
@@ -163,6 +176,7 @@ export default function Home() {
     const schoolName = formData.schoolName.trim();
     const area = formData.area.trim();
     const mobileNumber = formData.mobileNumber.trim();
+    const secondaryContact = formData.secondaryContact.trim();
 
     if (!studentName || !/^[A-Za-z\s]+$/.test(studentName)) {
       alert("Student name should contain only letters and spaces.");
@@ -207,6 +221,11 @@ export default function Home() {
       return false;
     }
 
+    if (secondaryContact && !/^\d{10}$/.test(secondaryContact)) {
+      alert("Secondary contact must contain exactly 10 digits.");
+      return false;
+    }
+
     if (!area || !/^[A-Za-z0-9\s,.-]+$/.test(area)) {
       alert("Area should contain only valid characters.");
       return false;
@@ -236,7 +255,9 @@ export default function Home() {
           modeOfEducation: formData.modeOfEducation,
           parentName: formData.parentName.trim(),
           mobileNumber: formData.mobileNumber.trim(),
+          secondaryContact: formData.secondaryContact.trim(),
           area: formData.area.trim(),
+          reference: formData.reference.trim(),
         }),
       });
 
@@ -258,7 +279,9 @@ export default function Home() {
         modeOfEducation: "",
         parentName: "",
         mobileNumber: "",
+        secondaryContact: "",
         area: "",
+        reference: "",
       });
       setPhoneError("");
     } catch (error) {
@@ -372,7 +395,9 @@ export default function Home() {
                   key={index}
                   onClick={() => setCurrentCard(index)}
                   className={`h-2.5 rounded-full transition-all ${
-                    currentCard === index ? "w-8 bg-blue-700" : "w-2.5 bg-blue-200"
+                    currentCard === index
+                      ? "w-8 bg-blue-700"
+                      : "w-2.5 bg-blue-200"
                   }`}
                   aria-label={`Go to slide ${index + 1}`}
                 />
@@ -511,7 +536,7 @@ export default function Home() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Subjects
+                  Subjects Looking for
                 </label>
                 <select
                   name="subjects"
@@ -586,6 +611,23 @@ export default function Home() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Secondary Contact
+                </label>
+                <input
+                  type="tel"
+                  name="secondaryContact"
+                  value={formData.secondaryContact}
+                  onChange={handleChange}
+                  placeholder="Enter secondary contact"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                  inputMode="numeric"
+                  maxLength={10}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Area
                 </label>
                 <input
@@ -597,6 +639,22 @@ export default function Home() {
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
                   required
                   maxLength={80}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Reference
+                </label>
+                <input
+                  type="text"
+                  name="reference"
+                  value={formData.reference}
+                  onChange={handleChange}
+                  placeholder="Enter reference"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                  maxLength={100}
                   autoComplete="off"
                 />
               </div>
