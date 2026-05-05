@@ -32,28 +32,32 @@ async function generatePDF(filteredData) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
   const tableColumns = [
-    { header: 'Student Name', dataKey: 'student_name' },
-    { header: 'Class & Board', dataKey: 'class_board' },
+    { header: 'Student', dataKey: 'student_name' },
+    { header: 'Class', dataKey: 'class_board' },
     { header: 'Mode', dataKey: 'mode_of_education' },
-    { header: 'Area', dataKey: 'area' },
-    { header: 'School Name', dataKey: 'school_name' },
-    { header: 'Subjects', dataKey: 'subjects' },
-    { header: 'Parent Name', dataKey: 'parent_name' },
     { header: 'Mobile', dataKey: 'mobile_number' },
+    { header: 'Secondary Contact', dataKey: 'secondary_contact' },
+    { header: 'Area', dataKey: 'area' },
+    { header: 'School', dataKey: 'school_name' },
+    { header: 'Subjects Looking For', dataKey: 'subjects' },
+    { header: 'Parent', dataKey: 'parent_name' },
+    { header: 'Reference', dataKey: 'reference' },
     { header: 'Status', dataKey: 'status' },
-    { header: 'Reason', dataKey: 'comment' },
-    { header: 'Enquiry Date', dataKey: 'created_at' },
+    { header: 'Pending Reason', dataKey: 'comment' },
+    { header: 'Date', dataKey: 'created_at' },
   ];
 
   const tableRows = filteredData.map((item) => ({
     student_name: item.student_name || '-',
     class_board: item.class_board || '-',
     mode_of_education: item.mode_of_education || '-',
+    mobile_number: item.mobile_number || '-',
+    secondary_contact: item.secondary_contact || '-',
     area: item.area || '-',
     school_name: item.school_name || '-',
     subjects: item.subjects || '-',
     parent_name: item.parent_name || '-',
-    mobile_number: item.mobile_number || '-',
+    reference: item.reference || '-',
     status: item.status || 'Pending',
     comment: item.comment || item.reason || '-',
     created_at: item.created_at
@@ -65,8 +69,8 @@ async function generatePDF(filteredData) {
     columns: tableColumns,
     body: tableRows,
     startY: 10,
-    margin: { left: 8, right: 8 },
-    styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+    margin: { left: 5, right: 5 },
+    styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
     headStyles: {
       fillColor: [29, 78, 216],
       textColor: [255, 255, 255],
@@ -347,28 +351,49 @@ export default function EnquiriesPage() {
 
       <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] table-fixed border-collapse">
+          <table className="w-full min-w-[2100px] table-fixed border-collapse">
             <thead>
               <tr className="border-b border-gray-300">
-                <th className="w-[16%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Student
                 </th>
-                <th className="w-[14%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Class
                 </th>
-                <th className="w-[10%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Mode
                 </th>
-                <th className="w-[14%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Mobile
                 </th>
-                <th className="w-[16%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Secondary Contact
+                </th>
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Area
+                </th>
+                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  School
+                </th>
+                <th className="w-[170px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Subjects Looking For
+                </th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Parent
+                </th>
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Reference
+                </th>
+                <th className="w-[120px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Date
+                </th>
+                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Status
                 </th>
-                <th className="w-[18%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[230px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Pending Reason
                 </th>
-                <th className="w-[12%] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Action
                 </th>
               </tr>
@@ -377,7 +402,7 @@ export default function EnquiriesPage() {
             <tbody>
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-4 py-6 text-center text-gray-600">
+                  <td colSpan="14" className="px-4 py-6 text-center text-gray-600">
                     No enquiries found
                   </td>
                 </tr>
@@ -477,6 +502,34 @@ function Row({ item, onSave }) {
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
         {item.mobile_number || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.secondary_contact || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.area || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.school_name || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.subjects || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.parent_name || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.reference || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : '-'}
       </td>
 
       <td className="px-4 py-3 text-left align-top">
