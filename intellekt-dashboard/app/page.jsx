@@ -221,8 +221,18 @@ export default function Home() {
       return false;
     }
 
-    if (secondaryContact && !/^\d{10}$/.test(secondaryContact)) {
+    if (!secondaryContact) {
+      alert("Secondary contact is required.");
+      return false;
+    }
+
+    if (!/^\d{10}$/.test(secondaryContact)) {
       alert("Secondary contact must contain exactly 10 digits.");
+      return false;
+    }
+
+    if (secondaryContact === mobileNumber) {
+      alert("Primary and Secondary contact numbers cannot be the same.");
       return false;
     }
 
@@ -620,6 +630,7 @@ export default function Home() {
                   onChange={handleChange}
                   placeholder="Enter secondary contact"
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                  required
                   inputMode="numeric"
                   maxLength={10}
                   autoComplete="off"

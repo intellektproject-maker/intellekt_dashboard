@@ -2335,6 +2335,38 @@ app.post('/enquiries', async (req, res) => {
 			reference
 		} = req.body;
 
+		// ✅ CLEAN INPUT
+		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
+		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+
+		// ✅ PRIMARY VALIDATION
+		if (!/^\d{10}$/.test(cleanMobile)) {
+			return res.status(400).json({
+				message: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		// ✅ SECONDARY REQUIRED
+		if (!cleanSecondary) {
+			return res.status(400).json({
+				message: 'Secondary contact is required'
+			});
+		}
+
+		// ✅ SECONDARY FORMAT
+		if (!/^\d{10}$/.test(cleanSecondary)) {
+			return res.status(400).json({
+				message: 'Secondary contact must contain exactly 10 digits'
+			});
+		}
+
+		// ✅ MUST NOT BE SAME
+		if (cleanMobile === cleanSecondary) {
+			return res.status(400).json({
+				message: 'Primary and Secondary contact numbers cannot be the same'
+			});
+		}
+
 		const result = await pool.query(
 			`
       INSERT INTO enquiries
@@ -2355,12 +2387,12 @@ app.post('/enquiries', async (req, res) => {
       `,
 			[
 				studentName,
-				mobileNumber,
+				cleanMobile,
 				classBoard,
 				schoolName,
 				subjects,
 				parentName,
-				secondaryContact || null,
+				cleanSecondary,
 				area,
 				modeOfEducation,
 				reference || null
@@ -2373,7 +2405,6 @@ app.post('/enquiries', async (req, res) => {
 		res.status(500).json({ message: 'Failed to submit enquiry' });
 	}
 });
-
 app.get('/enquiries', async (req, res) => {
 	try {
 		const result = await pool.query(`
