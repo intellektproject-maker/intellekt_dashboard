@@ -6,16 +6,9 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
   'https://responsible-wonder-production.up.railway.app';
 
-const FALLBACK_CLASS_OPTIONS = ['10', '11', '12'];
-const FALLBACK_BOARD_OPTIONS = ['CBSE', 'ICSE', 'ISC', 'SB', 'State Board'];
-
 function loadScript(src) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
     const script = document.createElement('script');
     script.src = src;
     script.onload = resolve;
@@ -24,555 +17,203 @@ function loadScript(src) {
   });
 }
 
+// ✅ PDF
 async function generatePDF(filteredData) {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'landscape' });
 
-  const tableColumns = [
-    { header: 'Student', dataKey: 'student_name' },
-    { header: 'Class', dataKey: 'class_board' },
-    { header: 'Mode', dataKey: 'mode_of_education' },
-    { header: 'Mobile', dataKey: 'mobile_number' },
-    { header: 'Secondary Contact', dataKey: 'secondary_contact' },
-    { header: 'Area', dataKey: 'area' },
-    { header: 'School', dataKey: 'school_name' },
-    { header: 'Subjects Looking For', dataKey: 'subjects' },
-    { header: 'Parent', dataKey: 'parent_name' },
-    { header: 'Reference', dataKey: 'reference' },
-    { header: 'Status', dataKey: 'status' },
-    { header: 'Pending Reason', dataKey: 'comment' },
-    { header: 'Date', dataKey: 'created_at' },
-  ];
+  const headers = [[
+    "Student","Class","Mode","Mobile","Secondary",
+    "Area","School","Subjects","Parent","Reference",
+    "Status","Reason","Date"
+  ]];
 
-  const tableRows = filteredData.map((item) => ({
-    student_name: item.student_name || '-',
-    class_board: item.class_board || '-',
-    mode_of_education: item.mode_of_education || '-',
-    mobile_number: item.mobile_number || '-',
-    secondary_contact: item.secondary_contact || '-',
-    area: item.area || '-',
-    school_name: item.school_name || '-',
-    subjects: item.subjects || '-',
-    parent_name: item.parent_name || '-',
-    reference: item.reference || '-',
-    status: item.status || 'Pending',
-    comment: item.comment || item.reason || '-',
-    created_at: item.created_at
-      ? new Date(item.created_at).toLocaleDateString('en-IN')
-      : '-',
-  }));
+  const rows = filteredData.map(item => [
+    item.student_name || '',
+    item.class_board || '',
+    item.mode_of_education || '',
+    item.mobile_number || '',
+    item.secondary_contact || '',
+    item.area || '',
+    item.school_name || '',
+    item.subjects || '',
+    item.parent_name || '',
+    item.reference || '',
+    item.status || 'Pending',
+    item.comment || item.reason || '',
+    item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : ''
+  ]);
 
   doc.autoTable({
-    columns: tableColumns,
-    body: tableRows,
-    startY: 10,
-    margin: { left: 5, right: 5 },
-    styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
-    headStyles: {
-      fillColor: [29, 78, 216],
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-    },
-    alternateRowStyles: { fillColor: [245, 247, 255] },
+    head: headers,
+    body: rows,
+    styles: { fontSize: 7 }
   });
 
-  doc.save('Enquiry_Table.pdf');
+  doc.save('Enquiries.pdf');
+}
+
+// ✅ CSV (Excel)
+function generateCSV(data) {
+  const headers = [
+    "Student","Class","Mode","Mobile","Secondary Contact",
+    "Area","School","Subjects","Parent","Reference",
+    "Status","Pending Reason","Date"
+  ];
+
+  const rows = data.map(item => [
+    item.student_name,
+    item.class_board,
+    item.mode_of_education,
+    item.mobile_number,
+    item.secondary_contact,
+    item.area,
+    item.school_name,
+    item.subjects,
+    item.parent_name,
+    item.reference,
+    item.status,
+    item.comment || item.reason,
+    item.created_at
+      ? new Date(item.created_at).toLocaleDateString('en-IN')
+      : ''
+  ]);
+
+  const csv =
+    [headers, ...rows]
+      .map(r => r.map(x => `"${x || ''}"`).join(','))
+      .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'Enquiries.csv';
+  link.click();
 }
 
 export default function EnquiriesPage() {
   const [data, setData] = useState([]);
-  const [classOptions, setClassOptions] = useState(FALLBACK_CLASS_OPTIONS);
-  const [boardOptions, setBoardOptions] = useState(FALLBACK_BOARD_OPTIONS);
-
   const [loading, setLoading] = useState(true);
-  const [dropdownLoading, setDropdownLoading] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
 
-  const [classFilter, setClassFilter] = useState('');
-  const [boardFilter, setBoardFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
 
   useEffect(() => {
-    loadInitialData();
+    fetchData();
   }, []);
 
-  async function loadInitialData() {
-    await Promise.all([loadData(), loadDropdowns()]);
+  async function fetchData() {
+    const res = await fetch(`${API_BASE}/enquiries`);
+    const json = await res.json();
+    setData(json);
+    setLoading(false);
   }
 
-  async function loadDropdowns() {
-    try {
-      setDropdownLoading(true);
+  const filteredData = useMemo(() => data, [data]);
 
-      const res = await fetch(`${API_BASE}/classes`, {
-        cache: 'no-store',
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || !Array.isArray(json)) {
-        setClassOptions(FALLBACK_CLASS_OPTIONS);
-        setBoardOptions(FALLBACK_BOARD_OPTIONS);
-        return;
-      }
-
-      const classes = json
-        .map((item) => String(item.class || item.class_name || '').trim())
-        .filter(Boolean);
-
-      const boards = json
-        .map((item) => String(item.board || '').trim())
-        .filter(Boolean);
-
-      const uniqueClasses = [...new Set(classes)].sort((a, b) =>
-        Number(a) - Number(b)
-      );
-
-      const uniqueBoards = [...new Set(boards)].sort();
-
-      setClassOptions(
-        uniqueClasses.length > 0 ? uniqueClasses : FALLBACK_CLASS_OPTIONS
-      );
-
-      setBoardOptions(
-        uniqueBoards.length > 0 ? uniqueBoards : FALLBACK_BOARD_OPTIONS
-      );
-    } catch (err) {
-      console.error('Fetch dropdowns error:', err);
-      setClassOptions(FALLBACK_CLASS_OPTIONS);
-      setBoardOptions(FALLBACK_BOARD_OPTIONS);
-    } finally {
-      setDropdownLoading(false);
-    }
-  }
-
-  async function loadData() {
-    try {
-      setLoading(true);
-
-      const res = await fetch(`${API_BASE}/enquiries`, {
-        cache: 'no-store',
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        alert(json.error || 'Failed to fetch enquiries');
-        setData([]);
-        return;
-      }
-
-      setData(Array.isArray(json) ? json : []);
-    } catch (err) {
-      console.error('Fetch enquiries error:', err);
-      alert('Unable to connect to server');
-      setData([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDelete(id) {
-    try {
-      const confirmDelete = window.confirm(
-        'Are you sure you want to reject and delete this enquiry?'
-      );
-
-      if (!confirmDelete) return;
-
-      const res = await fetch(`${API_BASE}/enquiries/${id}`, {
-        method: 'DELETE',
-      });
-
-      const result = await res.json();
-
-      if (!res.ok) {
-        alert(result.error || 'Failed to delete enquiry');
-        return;
-      }
-
-      alert('Rejected enquiry deleted successfully');
-      setData((prev) => prev.filter((item) => item.id !== id));
-    } catch (err) {
-      console.error('Delete error:', err);
-      alert('Error deleting enquiry');
-    }
-  }
-
-  async function handleUpdate(id, status, comment) {
-    if (status === 'Rejected') {
-      await handleDelete(id);
-      return;
-    }
-
-    try {
-      const payload = {
-        status,
-        comment: status === 'Pending' ? comment : '',
-        reason: status === 'Pending' ? comment : '',
-      };
-
-      const res = await fetch(`${API_BASE}/enquiries/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok) {
-        alert(result.error || 'Failed to update enquiry');
-        return;
-      }
-
-      alert('Saved successfully');
-      await loadData();
-    } catch (err) {
-      console.error('Update error:', err);
-      alert('Error updating enquiry');
-    }
-  }
-
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      const itemClass = getClassValue(item.class_board);
-      const itemBoard = getBoardValue(item.class_board);
-      const itemStatus = (item.status || 'Pending').trim();
-
-      return (
-        (!classFilter || itemClass === classFilter) &&
-        (!boardFilter || normalizeBoard(itemBoard) === normalizeBoard(boardFilter)) &&
-        (!statusFilter || itemStatus === statusFilter)
-      );
-    });
-  }, [data, classFilter, boardFilter, statusFilter]);
-
-  function clearFilters() {
-    setClassFilter('');
-    setBoardFilter('');
-    setStatusFilter('');
-  }
-
-  async function handleGeneratePDF() {
-    if (filteredData.length === 0) {
-      alert('No data to export.');
-      return;
-    }
-
-    try {
-      setPdfLoading(true);
-      await generatePDF(filteredData);
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Failed to generate PDF');
-    } finally {
-      setPdfLoading(false);
-    }
-  }
-
-  if (loading) {
-    return <div className="p-6 md:p-10 text-gray-700">Loading...</div>;
-  }
+  if (loading) return <div className="p-6">Loading...</div>;
 
   return (
-    <div className="p-4 md:p-10">
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <h2 className="text-2xl md:text-3xl font-bold text-blue-800">
-          Enquiries
-        </h2>
+    <div className="p-6">
 
-        <div className="hidden md:block">
-          <button
-            onClick={handleGeneratePDF}
-            disabled={pdfLoading || filteredData.length === 0}
-            className="rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 transition"
-          >
-            {pdfLoading ? 'Generating PDF...' : 'Export PDF'}
-          </button>
-        </div>
+      {/* HEADER */}
+      <div className="flex justify-between mb-6">
+        <h2 className="text-3xl font-bold text-blue-800">Enquiries</h2>
+
+        <button
+          onClick={() => setShowExportModal(true)}
+          className="bg-blue-700 text-white px-5 py-2 rounded-lg"
+        >
+          Export
+        </button>
       </div>
 
-      <div className="mb-6 rounded-xl bg-white p-4 shadow-md border border-gray-200">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">
-              {dropdownLoading ? 'Loading Classes...' : 'All Classes'}
-            </option>
+      {/* TABLE */}
+      <div className="overflow-x-auto bg-white p-4 rounded-xl shadow">
+        <table className="min-w-[1500px] w-full">
+          <thead>
+            <tr className="text-blue-700 font-semibold border-b">
+              <th>Student</th>
+              <th>Class</th>
+              <th>Mode</th>
+              <th>Mobile</th>
+              <th>Secondary</th>
+              <th>Area</th>
+              <th>School</th>
+              <th>Subjects</th>
+              <th>Parent</th>
+              <th>Reference</th>
+              <th>Status</th>
+              <th>Reason</th>
+              <th>Date</th>
+            </tr>
+          </thead>
 
-            {classOptions.map((c) => (
-              <option key={c} value={c}>
-                Class {c}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={boardFilter}
-            onChange={(e) => setBoardFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">
-              {dropdownLoading ? 'Loading Boards...' : 'All Boards'}
-            </option>
-
-            {boardOptions.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
-          >
-            <option value="">All Status</option>
-            <option value="Admitted">Admitted</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Pending">Pending</option>
-          </select>
-
-          <button
-            onClick={clearFilters}
-            className="rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[2100px] table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-gray-300">
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Student
-                </th>
-                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Class
-                </th>
-                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mode
-                </th>
-                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mobile
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Secondary Contact
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Area
-                </th>
-                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  School
-                </th>
-                <th className="w-[170px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Subjects Looking For
-                </th>
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Parent
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Reference
-                </th>
-                <th className="w-[120px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Date
-                </th>
-                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Status
-                </th>
-                <th className="w-[230px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Pending Reason
-                </th>
-                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Action
-                </th>
+          <tbody>
+            {filteredData.map(item => (
+              <tr key={item.id} className="border-b text-sm">
+                <td>{item.student_name}</td>
+                <td>{item.class_board}</td>
+                <td>{item.mode_of_education}</td>
+                <td>{item.mobile_number}</td>
+                <td>{item.secondary_contact}</td>
+                <td>{item.area}</td>
+                <td>{item.school_name}</td>
+                <td>{item.subjects}</td>
+                <td>{item.parent_name}</td>
+                <td>{item.reference}</td>
+                <td>{item.status}</td>
+                <td>{item.comment || item.reason}</td>
+                <td>
+                  {item.created_at
+                    ? new Date(item.created_at).toLocaleDateString('en-IN')
+                    : ''}
+                </td>
               </tr>
-            </thead>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-            <tbody>
-              {filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan="14" className="px-4 py-6 text-center text-gray-600">
-                    No enquiries found
-                  </td>
-                </tr>
-              ) : (
-                filteredData.map((item) => (
-                  <Row key={item.id} item={item} onSave={handleUpdate} />
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* EXPORT MODAL */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-xl w-[300px] shadow-lg">
+            <h3 className="text-lg font-bold mb-4 text-center">
+              Export Options
+            </h3>
+
+            <button
+              onClick={() => {
+                setShowExportModal(false);
+                generatePDF(filteredData);
+              }}
+              className="w-full bg-blue-700 text-white py-2 rounded mb-3"
+            >
+              Export as PDF
+            </button>
+
+            <button
+              onClick={() => {
+                setShowExportModal(false);
+                generateCSV(filteredData);
+              }}
+              className="w-full bg-green-600 text-white py-2 rounded mb-3"
+            >
+              Export as Excel (CSV)
+            </button>
+
+            <button
+              onClick={() => setShowExportModal(false)}
+              className="w-full text-gray-600 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="mt-6 md:hidden">
-        <button
-          onClick={handleGeneratePDF}
-          disabled={pdfLoading || filteredData.length === 0}
-          className="w-full rounded-lg bg-blue-700 py-3 text-sm font-semibold text-white shadow hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 transition"
-        >
-          {pdfLoading ? 'Generating PDF...' : `Export PDF (${filteredData.length})`}
-        </button>
-      </div>
+      )}
     </div>
-  );
-}
-
-function normalizeBoard(board) {
-  const value = String(board || '').trim().toUpperCase();
-
-  if (value === 'STATE BOARD' || value === 'STATEBOARD') return 'SB';
-  return value;
-}
-
-function getBoardValue(classBoard) {
-  if (!classBoard) return '';
-
-  const value = String(classBoard).trim();
-  const lastDash = value.lastIndexOf('-');
-
-  if (lastDash === -1) return value.toUpperCase();
-
-  return value.slice(0, lastDash).toUpperCase();
-}
-
-function getClassValue(classBoard) {
-  if (!classBoard) return '';
-
-  const value = String(classBoard).trim();
-  const lastDash = value.lastIndexOf('-');
-
-  if (lastDash === -1) return value.toUpperCase();
-
-  return value.slice(lastDash + 1).toUpperCase();
-}
-
-function Row({ item, onSave }) {
-  const [status, setStatus] = useState(item.status || 'Pending');
-  const [comment, setComment] = useState(item.comment || item.reason || '');
-
-  useEffect(() => {
-    setStatus(item.status || 'Pending');
-    setComment(item.comment || item.reason || '');
-  }, [item]);
-
-  function handleSave() {
-    if (status === 'Pending' && !comment.trim()) {
-      alert('Please enter the reason for pending');
-      return;
-    }
-
-    onSave(item.id, status, status === 'Pending' ? comment : '');
-  }
-
-  return (
-    <tr className="border-b border-gray-300">
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.student_name || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.class_board || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        <span
-          className={`inline-block rounded-md px-3 py-1 text-xs font-semibold ${
-            item.mode_of_education === 'Online'
-              ? 'bg-blue-100 text-blue-700'
-              : item.mode_of_education === 'Offline'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          {item.mode_of_education || '-'}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.mobile_number || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.secondary_contact || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.area || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.school_name || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.subjects || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.parent_name || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.reference || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        <select
-          value={status}
-          onChange={(e) => {
-            const value = e.target.value;
-            setStatus(value);
-
-            if (value !== 'Pending') {
-              setComment('');
-            }
-          }}
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
-        >
-          <option value="Pending">Pending</option>
-          <option value="Admitted">Admitted</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        {status === 'Pending' ? (
-          <input
-            type="text"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Enter reason for pending"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
-          />
-        ) : (
-          <span className="text-gray-400">—</span>
-        )}
-      </td>
-
-      <td className="px-4 py-3 text-left align-top">
-        <button
-          onClick={handleSave}
-          className="rounded-md px-3 py-2 text-gray-900 hover:bg-gray-100"
-        >
-          Save
-        </button>
-      </td>
-    </tr>
   );
 }
