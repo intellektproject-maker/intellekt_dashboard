@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';  
 const API_BASE = 'https://responsible-wonder-production.up.railway.app';
 
 function FacultyProfileInner() {
@@ -18,6 +18,7 @@ const [myTaskFilter, setMyTaskFilter] = useState('All');
 const [allTaskFilter, setAllTaskFilter] = useState('All');
 const canAccessAllTasks =
 loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
+const profileTitle = canAccessAllTasks ? 'Admin Profile' : 'Faculty Profile';
 const [activeSection, setActiveSection] = useState('');
 const classOptions = [
 'SB12',
@@ -27,9 +28,10 @@ const classOptions = [
 'CBSE11',
 'CBSE10',
 'ISC12',
-'ISC11'
+'ISC11',
+'Others'
     ];
-const subjectOptions = ['Physics', 'Maths'];
+const [testCodes, setTestCodes] = useState([]);
 const priorityOptions = ['High', 'Medium', 'Low'];
 const [form, setForm] = useState({
 faculty_id: '',
@@ -129,6 +131,18 @@ setFacultyList(Array.isArray(data) ? data : []);
         }
 fetchAllFaculty();
     }, []);
+useEffect(() => {
+async function fetchTestCodes() {
+try {
+const data = await safeFetchJson(`${API_BASE}/tests`);
+setTestCodes(Array.isArray(data) ? data : []);
+} catch (err) {
+console.error(err);
+setTestCodes([]);
+}
+}
+fetchTestCodes();
+}, []);
 useEffect(() => {
 async function fetchMyTasks() {
 try {
@@ -283,6 +297,42 @@ await refreshAllFacultyTasks();
 alert(err.message || 'Failed to delete task');
         }
     }
+async function handleReassignTask(task) {
+const newFacultyId = prompt("Enter new Faculty ID (e.g. IG002):");
+
+if (!newFacultyId) return;
+
+const selectedFaculty = facultyList.find(
+(f) => f.faculty_id === newFacultyId
+);
+
+if (!selectedFaculty) {
+alert("Invalid Faculty ID");
+return;
+}
+
+try {
+await safeFetchJson(`${API_BASE}/faculty-tasks/${task.id}`, {
+method: 'PUT',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify({
+faculty_id: newFacultyId,
+faculty_name: selectedFaculty.name
+})
+});
+
+alert("Task reassigned successfully");
+
+await refreshMyTasks();
+await refreshAllFacultyTasks();
+
+} catch (err) {
+console.error(err);
+alert("Failed to reassign task");
+}
+}
 const myStats = useMemo(() => {
 const pending = tasks.filter((task) => !task.is_completed).length;
 const completed = tasks.filter((task) => task.is_completed).length;
@@ -321,7 +371,7 @@ return (
 <div className="min-h-[80vh] bg-gray-50 px-6 py-10">
 <div className="mx-auto w-full max-w-6xl">
 <h2 className="mb-6 text-center text-3xl font-bold text-blue-700 md:text-4xl">
-                    Faculty Profile
+                    {profileTitle}
 </h2>
 <div className="mb-8 space-y-4 rounded-2xl bg-white p-6 shadow-md md:p-8">
 <p className="text-gray-700 text-base md:text-lg"><b>Faculty ID:</b> {faculty.faculty_id}</p>
@@ -465,7 +515,7 @@ task.priority || 'Medium'
                                                     )}
 </div>
 <p><b>Class:</b> {task.class_name}</p>
-<p><b>Subject:</b> {task.subject_name}</p>
+<p><b>Test Code:</b> {task.subject_name}</p>
 <p><b>Total Test Note:</b> {task.total_test_note || '-'}</p>
 <p>
 <b>Due Date:</b>{' '}
@@ -484,13 +534,23 @@ task.priority || 'Medium'
                                                     Assigned by: {task.assigned_by}
 </p>
 </div>
+<div className="flex gap-2">
+<button
+type="button"
+onClick={() => handleReassignTask(task)}
+className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+>
+Reassign
+</button>
+
 <button
 type="button"
 onClick={() => handleDeleteTask(task.id)}
-className="rounded-lg bg-red-600 px-4 py-2 text-white transition hover:bg-red-700"
+className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700"
 >
-                                                Delete
+Delete
 </button>
+</div>
 </div>
 </div>
                                 ))}
@@ -558,7 +618,7 @@ className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus
 </div>
 <div>
 <label className="mb-2 block font-medium text-gray-700">
-                                        3. Subject
+                                        3. Test Code
 </label>
 <select
 name="subject_name"
@@ -566,10 +626,12 @@ value={form.subject_name}
 onChange={handleInputChange}
 className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
 >
-<option value="">Select Subject</option>
-{subjectOptions.map((subject) => (
-<option key={subject} value={subject}>{subject}</option>
-                                        ))}
+<option value="">Select Test Code</option>
+{testCodes.map((test) => (
+<option key={test.test_code} value={test.test_code}>
+{test.test_code}
+</option>
+))}
 </select>
 </div>
 <div>
@@ -704,7 +766,7 @@ task.priority || 'Medium'
                                                         )}
 </div>
 <p><b>Class:</b> {task.class_name}</p>
-<p><b>Subject:</b> {task.subject_name}</p>
+<p><b>Test Code:</b> {task.subject_name}</p>
 <p><b>Total Test Note:</b> {task.total_test_note || '-'}</p>
 <p>
 <b>Due Date:</b>{' '}
@@ -725,13 +787,23 @@ task.priority || 'Medium'
 </div>
 </div>
 {canAccessAllTasks && (
+<div className="flex gap-3">
+<button
+type="button"
+onClick={() => handleReassignTask(task)}
+className="text-blue-600 hover:text-blue-800"
+>
+Reassign
+</button>
+
 <button
 type="button"
 onClick={() => handleDeleteTask(task.id)}
-className="font-medium text-red-600 hover:text-red-800"
+className="text-red-600 hover:text-red-800"
 >
-                                                    Delete
+Delete
 </button>
+</div>
                                             )}
 </div>
 </div>
