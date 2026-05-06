@@ -42,6 +42,8 @@ async function generatePDF(filteredData) {
     { header: 'Area', dataKey: 'area' },
     { header: 'School', dataKey: 'school_name' },
     { header: 'Subjects Looking For', dataKey: 'subjects' },
+    { header: 'Academic From', dataKey: 'academic_year_from' },
+    { header: 'Academic To', dataKey: 'academic_year_to' },
     { header: 'Parent', dataKey: 'parent_name' },
     { header: 'Reference', dataKey: 'reference' },
     { header: 'Status', dataKey: 'status' },
@@ -59,6 +61,8 @@ async function generatePDF(filteredData) {
     area: item.area || '-',
     school_name: item.school_name || '-',
     subjects: item.subjects || '-',
+    academic_year_from: item.academic_year_from || '-',
+    academic_year_to: item.academic_year_to || '-',
     parent_name: item.parent_name || '-',
     reference: item.reference || '-',
     status: item.status || 'Pending',
@@ -73,7 +77,7 @@ async function generatePDF(filteredData) {
     body: tableRows,
     startY: 10,
     margin: { left: 5, right: 5 },
-    styles: { fontSize: 6.2, cellPadding: 2, overflow: 'linebreak' },
+    styles: { fontSize: 5.8, cellPadding: 1.8, overflow: 'linebreak' },
     headStyles: {
       fillColor: [29, 78, 216],
       textColor: [255, 255, 255],
@@ -96,6 +100,8 @@ function generateCSV(filteredData) {
     'Area',
     'School',
     'Subjects Looking For',
+    'Academic From',
+    'Academic To',
     'Parent',
     'Reference',
     'Status',
@@ -113,6 +119,8 @@ function generateCSV(filteredData) {
     item.area || '',
     item.school_name || '',
     item.subjects || '',
+    item.academic_year_from || '',
+    item.academic_year_to || '',
     item.parent_name || '',
     item.reference || '',
     item.status || 'Pending',
@@ -500,7 +508,7 @@ export default function EnquiriesPage() {
 
       <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[2250px] table-fixed border-collapse">
+          <table className="w-full min-w-[2600px] table-fixed border-collapse">
             <thead>
               <tr className="border-b border-gray-300">
                 <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
@@ -531,6 +539,12 @@ export default function EnquiriesPage() {
                   Subjects Looking For
                 </th>
                 <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Academic From
+                </th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  Academic To
+                </th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Parent
                 </th>
                 <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
@@ -554,7 +568,7 @@ export default function EnquiriesPage() {
             <tbody>
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="15" className="px-4 py-6 text-center text-gray-600">
+                  <td colSpan="17" className="px-4 py-6 text-center text-gray-600">
                     No enquiries found
                   </td>
                 </tr>
@@ -748,6 +762,14 @@ function Row({ item, onSave }) {
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
         {item.subjects || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.academic_year_from || '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.academic_year_to || '-'}
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
