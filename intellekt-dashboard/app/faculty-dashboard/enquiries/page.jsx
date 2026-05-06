@@ -32,6 +32,7 @@ async function generatePDF(filteredData) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
   const tableColumns = [
+    { header: 'EnquiryID', dataKey: 'enq_id' },
     { header: 'Student', dataKey: 'student_name' },
     { header: 'Class', dataKey: 'class_board' },
     { header: 'Mode', dataKey: 'mode_of_education' },
@@ -48,6 +49,7 @@ async function generatePDF(filteredData) {
   ];
 
   const tableRows = filteredData.map((item) => ({
+    enq_id: item.enq_id || '-',
     student_name: item.student_name || '-',
     class_board: item.class_board || '-',
     mode_of_education: item.mode_of_education || '-',
@@ -70,7 +72,7 @@ async function generatePDF(filteredData) {
     body: tableRows,
     startY: 10,
     margin: { left: 5, right: 5 },
-    styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
+    styles: { fontSize: 6.2, cellPadding: 2, overflow: 'linebreak' },
     headStyles: {
       fillColor: [29, 78, 216],
       textColor: [255, 255, 255],
@@ -84,6 +86,7 @@ async function generatePDF(filteredData) {
 
 function generateCSV(filteredData) {
   const headers = [
+    'EnquiryID',
     'Student',
     'Class',
     'Mode',
@@ -100,6 +103,7 @@ function generateCSV(filteredData) {
   ];
 
   const rows = filteredData.map((item) => [
+    item.enq_id || '',
     item.student_name || '',
     item.class_board || '',
     item.mode_of_education || '',
@@ -414,9 +418,12 @@ export default function EnquiriesPage() {
 
       <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[2100px] table-fixed border-collapse">
+          <table className="w-full min-w-[2250px] table-fixed border-collapse">
             <thead>
               <tr className="border-b border-gray-300">
+                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
+                  EnquiryID
+                </th>
                 <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
                   Student
                 </th>
@@ -465,7 +472,7 @@ export default function EnquiriesPage() {
             <tbody>
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="14" className="px-4 py-6 text-center text-gray-600">
+                  <td colSpan="15" className="px-4 py-6 text-center text-gray-600">
                     No enquiries found
                   </td>
                 </tr>
@@ -580,6 +587,10 @@ function Row({ item, onSave }) {
 
   return (
     <tr className="border-b border-gray-300">
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        {item.enq_id || '-'}
+      </td>
+
       <td className="px-4 py-3 text-left text-gray-800 align-top">
         {item.student_name || '-'}
       </td>
