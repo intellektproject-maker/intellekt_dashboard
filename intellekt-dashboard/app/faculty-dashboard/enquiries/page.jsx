@@ -8,6 +8,7 @@ const API_BASE =
 
 const FALLBACK_CLASS_OPTIONS = ['10', '11', '12'];
 const FALLBACK_BOARD_OPTIONS = ['CBSE', 'ICSE', 'ISC', 'SB', 'State Board'];
+const ITEMS_PER_PAGE = 5;
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -152,10 +153,19 @@ export default function EnquiriesPage() {
   const [classFilter, setClassFilter] = useState('');
   const [boardFilter, setBoardFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [nameFilter, setNameFilter] = useState('');
+  const [phoneFilter, setPhoneFilter] = useState('');
+  const [phoneFilterError, setPhoneFilterError] = useState('');
+
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [classFilter, boardFilter, statusFilter, nameFilter, phoneFilter]);
 
   async function loadInitialData() {
     await Promise.all([loadData(), loadDropdowns()]);
@@ -294,24 +304,67 @@ export default function EnquiriesPage() {
     }
   }
 
+  function handleNameFilterChange(e) {
+    const cleanValue = e.target.value
+      .replace(/[^A-Za-z\s]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^\s+/, '');
+
+    setNameFilter(cleanValue);
+  }
+
+  function handlePhoneFilterChange(e) {
+    const cleanValue = e.target.value.replace(/\D/g, '').slice(0, 10);
+    setPhoneFilter(cleanValue);
+
+    if (cleanValue.length > 0 && cleanValue.length !== 10) {
+      setPhoneFilterError('Phone number must contain exactly 10 digits');
+    } else {
+      setPhoneFilterError('');
+    }
+  }
+
   const filteredData = useMemo(() => {
     return data.filter((item) => {
       const itemClass = getClassValue(item.class_board);
       const itemBoard = getBoardValue(item.class_board);
       const itemStatus = (item.status || 'Pending').trim();
+      const itemName = String(item.student_name || '').toLowerCase();
+      const itemPhone = String(item.mobile_number || '');
+
+      const nameMatch =
+        !nameFilter.trim() ||
+        itemName.includes(nameFilter.trim().toLowerCase());
+
+      const phoneMatch =
+        !phoneFilter ||
+        (phoneFilter.length === 10 && itemPhone === phoneFilter);
 
       return (
+        nameMatch &&
+        phoneMatch &&
         (!classFilter || itemClass === classFilter) &&
         (!boardFilter || normalizeBoard(itemBoard) === normalizeBoard(boardFilter)) &&
         (!statusFilter || itemStatus === statusFilter)
       );
     });
-  }, [data, classFilter, boardFilter, statusFilter]);
+  }, [data, classFilter, boardFilter, statusFilter, nameFilter, phoneFilter]);
+
+  const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE) || 1;
+
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredData.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredData, currentPage]);
 
   function clearFilters() {
     setClassFilter('');
     setBoardFilter('');
     setStatusFilter('');
+    setNameFilter('');
+    setPhoneFilter('');
+    setPhoneFilterError('');
+    setCurrentPage(1);
   }
 
   async function handleGeneratePDF() {
@@ -363,7 +416,36 @@ export default function EnquiriesPage() {
       </div>
 
       <div className="mb-6 rounded-xl bg-white p-4 shadow-md border border-gray-200">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-start">
+          <div>
+            <input
+              type="text"
+              value={nameFilter}
+              onChange={handleNameFilterChange}
+              placeholder="Search by name"
+              className="w-full md:w-[190px] rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <input
+              type="tel"
+              value={phoneFilter}
+              onChange={handlePhoneFilterChange}
+              placeholder="Search by phone"
+              className={`w-full md:w-[190px] rounded-lg border px-4 py-2 text-sm outline-none focus:border-blue-700 ${
+                phoneFilterError ? 'border-red-500' : 'border-gray-300'
+              }`}
+              inputMode="numeric"
+              maxLength={10}
+              autoComplete="off"
+            />
+            {phoneFilterError && (
+              <p className="mt-1 text-xs text-red-500">{phoneFilterError}</p>
+            )}
+          </div>
+
           <select
             value={classFilter}
             onChange={(e) => setClassFilter(e.target.value)}
@@ -470,19 +552,54 @@ export default function EnquiriesPage() {
             </thead>
 
             <tbody>
-              {filteredData.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan="15" className="px-4 py-6 text-center text-gray-600">
                     No enquiries found
                   </td>
                 </tr>
               ) : (
-                filteredData.map((item) => (
+                paginatedData.map((item) => (
                   <Row key={item.id} item={item} onSave={handleUpdate} />
                 ))
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-gray-600">
+            Showing{' '}
+            {filteredData.length === 0
+              ? 0
+              : (currentPage - 1) * ITEMS_PER_PAGE + 1}{' '}
+            to {Math.min(currentPage * ITEMS_PER_PAGE, filteredData.length)} of{' '}
+            {filteredData.length} enquiries
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+
+            <span className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+              }
+              disabled={currentPage === totalPages}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
