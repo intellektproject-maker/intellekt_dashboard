@@ -21,6 +21,14 @@ const subjectMap = {
   PHYSICS: 2,
 };
 
+function splitClassBoard(value) {
+  const parts = String(value || '').split('-');
+  return {
+    board: parts[0] || '',
+    className: parts.slice(1).join('-') || '',
+  };
+}
+
 function EnterAttendancePageInner() {
   const searchParams = useSearchParams();
   const facultyId = searchParams.get('id');
@@ -56,8 +64,8 @@ function EnterAttendancePageInner() {
 
       const formatted = data
         .map((item) => {
-          const board = item.board || item.Board || '';
-          const className = item.class || item.class_name || item.className || '';
+          const board = item.board || '';
+          const className = item.class || '';
 
           if (!board || !className) return null;
           return `${board}-${className}`;
@@ -80,33 +88,33 @@ function EnterAttendancePageInner() {
       return;
     }
 
+    const { board, className } = splitClassBoard(classBoard);
+
     try {
       setLoading(true);
       setStudents([]);
       setAttendance({});
 
       const params = new URLSearchParams();
-      params.append('class', classBoard);
-      params.append('subject', subjectMap[subject]);
-      params.append('date', selectedDate);
+      params.append('class', className);
+      params.append('board', board);
 
-      const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
+      const res = await fetch(`${API_BASE}/students?${params.toString()}`, {
         cache: 'no-store',
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
+      if (!res.ok || !Array.isArray(data)) {
         alert(data.error || 'Failed to load students');
         return;
       }
 
-      const list = Array.isArray(data) ? data : [];
-      setStudents(list);
+      setStudents(data);
 
       const map = {};
-      list.forEach((student) => {
-        map[student.roll_no] = student.status || 'Present';
+      data.forEach((student) => {
+        map[student.roll_no] = 'Present';
       });
 
       setAttendance(map);
@@ -123,6 +131,14 @@ function EnterAttendancePageInner() {
       ...prev,
       [rollNo]: value,
     }));
+  }
+
+  function markAllPresent() {
+    const map = {};
+    students.forEach((student) => {
+      map[student.roll_no] = 'Present';
+    });
+    setAttendance(map);
   }
 
   function handlePreview() {
@@ -194,7 +210,7 @@ function EnterAttendancePageInner() {
         return;
       }
 
-      alert('Attendance saved successfully');
+      alert(`Attendance saved successfully by ${facultyId}`);
       resetForm();
     } catch (err) {
       console.error('Submit error:', err);
@@ -259,6 +275,15 @@ function EnterAttendancePageInner() {
 
       {!loading && students.length > 0 && (
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={markAllPresent}
+              className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800"
+            >
+              Mark All as Present
+            </button>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full border-collapse min-w-[700px]">
               <thead>
@@ -275,16 +300,36 @@ function EnterAttendancePageInner() {
                     <td className="py-3 px-2">{student.roll_no}</td>
                     <td className="py-3 px-2">{student.name}</td>
                     <td className="py-3 px-2">
-                      <select
-                        value={attendance[student.roll_no] || 'Present'}
-                        onChange={(e) =>
-                          handleAttendanceChange(student.roll_no, e.target.value)
-                        }
-                        className="border rounded-lg px-3 py-2"
-                      >
-                        <option value="Present">Present</option>
-                        <option value="Absent">Absent</option>
-                      </select>
+                      <div className="flex gap-5">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`attendance-${student.roll_no}`}
+                            value="Present"
+                            checked={
+                              (attendance[student.roll_no] || 'Present') ===
+                              'Present'
+                            }
+                            onChange={() =>
+                              handleAttendanceChange(student.roll_no, 'Present')
+                            }
+                          />
+                          Present
+                        </label>
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`attendance-${student.roll_no}`}
+                            value="Absent"
+                            checked={attendance[student.roll_no] === 'Absent'}
+                            onChange={() =>
+                              handleAttendanceChange(student.roll_no, 'Absent')
+                            }
+                          />
+                          Absent
+                        </label>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -308,9 +353,13 @@ function EnterAttendancePageInner() {
       {showPopup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
-            <h2 className="text-2xl font-bold text-blue-800 mb-4">
+            <h2 className="text-2xl font-bold text-blue-800 mb-2">
               Absentees Preview
             </h2>
+
+            <p className="text-gray-600 mb-4">
+              Attendance marked by <b>{facultyId}</b>
+            </p>
 
             {absentees.length === 0 ? (
               <p className="text-gray-600 mb-4">
