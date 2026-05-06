@@ -2327,6 +2327,8 @@ app.post('/enquiries', async (req, res) => {
 			classBoard,
 			schoolName,
 			subjects,
+			academicYearFrom,
+			academicYearTo,
 			modeOfEducation,
 			parentName,
 			mobileNumber,
@@ -2335,32 +2337,47 @@ app.post('/enquiries', async (req, res) => {
 			reference
 		} = req.body;
 
-		// ✅ CLEAN INPUT
 		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
 		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
 
-		// ✅ PRIMARY VALIDATION
+		if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year From must contain 4 digits'
+			});
+		}
+
+		if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
+			return res.status(400).json({
+				message: 'Academic Year To must contain 4 digits'
+			});
+		}
+
+		if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year To must be greater than From'
+			});
+		}
+
 		if (!/^\d{10}$/.test(cleanMobile)) {
 			return res.status(400).json({
 				message: 'Phone number must contain exactly 10 digits'
 			});
 		}
 
-		// ✅ SECONDARY REQUIRED
 		if (!cleanSecondary) {
 			return res.status(400).json({
 				message: 'Secondary contact is required'
 			});
 		}
 
-		// ✅ SECONDARY FORMAT
 		if (!/^\d{10}$/.test(cleanSecondary)) {
 			return res.status(400).json({
 				message: 'Secondary contact must contain exactly 10 digits'
 			});
 		}
 
-		// ✅ MUST NOT BE SAME
 		if (cleanMobile === cleanSecondary) {
 			return res.status(400).json({
 				message: 'Primary and Secondary contact numbers cannot be the same'
@@ -2376,13 +2393,15 @@ app.post('/enquiries', async (req, res) => {
         class_board,
         school_name,
         subjects,
+        academic_year_from,
+        academic_year_to,
         parent_name,
         secondary_contact,
         area,
         mode_of_education,
         reference
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       RETURNING *
       `,
 			[
@@ -2391,6 +2410,8 @@ app.post('/enquiries', async (req, res) => {
 				classBoard,
 				schoolName,
 				subjects,
+				cleanAcademicYearFrom,
+				cleanAcademicYearTo,
 				parentName,
 				cleanSecondary,
 				area,
@@ -2405,16 +2426,20 @@ app.post('/enquiries', async (req, res) => {
 		res.status(500).json({ message: 'Failed to submit enquiry' });
 	}
 });
+
 app.get('/enquiries', async (req, res) => {
 	try {
 		const result = await pool.query(`
       SELECT
-        id,
+        enq_id,
+  		id,
         student_name,
         mobile_number,
         class_board,
         school_name,
         subjects,
+        academic_year_from,
+        academic_year_to,
         mode_of_education,
         parent_name,
         secondary_contact,

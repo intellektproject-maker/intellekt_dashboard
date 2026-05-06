@@ -56,6 +56,8 @@ export default function Home() {
     board: "",
     schoolName: "",
     subjects: "",
+    academicYearFrom: "",
+    academicYearTo: "",
     modeOfEducation: "",
     parentName: "",
     mobileNumber: "",
@@ -140,6 +142,10 @@ export default function Home() {
       .replace(/^\s+/, "");
   };
 
+  const sanitizeYear = (value) => {
+    return value.replace(/\D/g, "").slice(0, 4);
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     let cleanedValue = value;
@@ -152,6 +158,8 @@ export default function Home() {
       cleanedValue = sanitizeArea(value);
     } else if (name === "reference") {
       cleanedValue = sanitizeReference(value);
+    } else if (name === "academicYearFrom" || name === "academicYearTo") {
+      cleanedValue = sanitizeYear(value);
     } else if (name === "mobileNumber") {
       cleanedValue = sanitizePhone(value);
 
@@ -177,6 +185,8 @@ export default function Home() {
     const area = formData.area.trim();
     const mobileNumber = formData.mobileNumber.trim();
     const secondaryContact = formData.secondaryContact.trim();
+    const academicYearFrom = formData.academicYearFrom.trim();
+    const academicYearTo = formData.academicYearTo.trim();
 
     if (!studentName || !/^[A-Za-z\s]+$/.test(studentName)) {
       alert("Student name should contain only letters and spaces.");
@@ -202,6 +212,21 @@ export default function Home() {
 
     if (!formData.subjects) {
       alert("Please select subject.");
+      return false;
+    }
+
+    if (!/^\d{4}$/.test(academicYearFrom)) {
+      alert("Academic Year From must contain 4 digits.");
+      return false;
+    }
+
+    if (!/^\d{4}$/.test(academicYearTo)) {
+      alert("Academic Year To must contain 4 digits.");
+      return false;
+    }
+
+    if (Number(academicYearTo) <= Number(academicYearFrom)) {
+      alert("Academic Year To must be greater than From.");
       return false;
     }
 
@@ -262,6 +287,8 @@ export default function Home() {
           classBoard,
           schoolName: formData.schoolName.trim(),
           subjects: formData.subjects,
+          academicYearFrom: formData.academicYearFrom.trim(),
+          academicYearTo: formData.academicYearTo.trim(),
           modeOfEducation: formData.modeOfEducation,
           parentName: formData.parentName.trim(),
           mobileNumber: formData.mobileNumber.trim(),
@@ -286,6 +313,8 @@ export default function Home() {
         board: "",
         schoolName: "",
         subjects: "",
+        academicYearFrom: "",
+        academicYearTo: "",
         modeOfEducation: "",
         parentName: "",
         mobileNumber: "",
@@ -564,6 +593,38 @@ export default function Home() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Academic Year
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    name="academicYearFrom"
+                    value={formData.academicYearFrom}
+                    onChange={handleChange}
+                    placeholder="From"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    inputMode="numeric"
+                    maxLength={4}
+                    autoComplete="off"
+                  />
+                  <input
+                    type="text"
+                    name="academicYearTo"
+                    value={formData.academicYearTo}
+                    onChange={handleChange}
+                    placeholder="To"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    inputMode="numeric"
+                    maxLength={4}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Mode of Education
                 </label>
                 <select
@@ -692,4 +753,4 @@ export default function Home() {
       )}
     </div>
   );
-}
+} 
