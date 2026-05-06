@@ -763,6 +763,7 @@ app.get('/marks', async (req, res) => {
         s.roll_no,
         s.name,
         s.class,
+        s.board,
         m.test_code,
         m.marks_obtained,
         m.comments,
@@ -781,13 +782,26 @@ app.get('/marks', async (req, res) => {
 		}
 
 		if (className) {
-			values.push(className);
-			query += ` AND s.class = $${values.length}`;
+			const lastDash = String(className).lastIndexOf('-');
+
+			if (lastDash !== -1) {
+				const board = String(className).slice(0, lastDash).trim();
+				const classOnly = String(className).slice(lastDash + 1).trim();
+
+				values.push(classOnly);
+				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+
+				values.push(board);
+				query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+			} else {
+				values.push(className);
+				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+			}
 		}
 
 		if (testCode) {
 			values.push(testCode);
-			query += ` AND m.test_code = $${values.length}`;
+			query += ` AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($${values.length}))`;
 		}
 
 		query += ` ORDER BY s.roll_no ASC`;
@@ -799,7 +813,6 @@ app.get('/marks', async (req, res) => {
 		res.status(500).json({ error: 'Failed to fetch marks' });
 	}
 });
-
 app.put('/marks/:roll_no/:test_code', async (req, res) => {
 	const { roll_no, test_code } = req.params;
 	const { marks, comments } = req.body;

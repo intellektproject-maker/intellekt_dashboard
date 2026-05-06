@@ -1,35 +1,37 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import html2pdf from 'html2pdf.js';
+import { useEffect, useRef, useState } from "react";
+import html2pdf from "html2pdf.js";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
-  'https://responsible-wonder-production.up.railway.app';
+  "https://responsible-wonder-production.up.railway.app";
 
 const FALLBACK_CLASSES = [
-  'CBSE-12',
-  'CBSE-10',
-  'ISC-12',
-  'SB-12',
-  'SB-10',
-  'ICSE-10',
+  "CBSE-12",
+  "CBSE-10",
+  "ISC-12",
+  "SB-12",
+  "SB-10",
+  "ICSE-10",
 ];
 
 export default function ManageMarks() {
-  const [name, setName] = useState('');
-  const [className, setClassName] = useState('');
-  const [testCode, setTestCode] = useState('');
+  const [name, setName] = useState("");
+  const [className, setClassName] = useState("");
+  const [testCode, setTestCode] = useState("");
 
   const [classOptions, setClassOptions] = useState(FALLBACK_CLASSES);
   const [testCodeOptions, setTestCodeOptions] = useState([]);
 
   const [marksData, setMarksData] = useState([]);
   const [editingRow, setEditingRow] = useState(null);
-  const [newMarks, setNewMarks] = useState('');
+  const [newMarks, setNewMarks] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
   const [testCodesLoading, setTestCodesLoading] = useState(false);
+  const [showExportPopup, setShowExportPopup] = useState(false);
 
   const pdfRef = useRef(null);
 
@@ -42,7 +44,7 @@ export default function ManageMarks() {
     try {
       setClassesLoading(true);
 
-      const res = await fetch(`${API_BASE}/classes`, { cache: 'no-store' });
+      const res = await fetch(`${API_BASE}/classes`, { cache: "no-store" });
       const data = await res.json();
 
       if (!res.ok || !Array.isArray(data)) {
@@ -52,8 +54,9 @@ export default function ManageMarks() {
 
       const formatted = data
         .map((item) => {
-          const board = item.board || item.Board || '';
-          const classValue = item.class || item.class_name || item.className || '';
+          const board = item.board || item.Board || "";
+          const classValue =
+            item.class || item.class_name || item.className || "";
 
           if (!board || !classValue) return null;
           return `${board}-${classValue}`;
@@ -63,7 +66,7 @@ export default function ManageMarks() {
       const unique = [...new Set(formatted)];
       setClassOptions(unique.length > 0 ? unique : FALLBACK_CLASSES);
     } catch (err) {
-      console.error('Fetch classes error:', err);
+      console.error("Fetch classes error:", err);
       setClassOptions(FALLBACK_CLASSES);
     } finally {
       setClassesLoading(false);
@@ -74,58 +77,45 @@ export default function ManageMarks() {
     try {
       setTestCodesLoading(true);
 
-      const possibleUrls = [
-        `${API_BASE}/tests`,
-        `${API_BASE}/test-schedule`,
-      ];
+      const res = await fetch(`${API_BASE}/tests`, { cache: "no-store" });
+      const data = await res.json();
 
-      let list = [];
-
-      for (const url of possibleUrls) {
-        try {
-          const res = await fetch(url, { cache: 'no-store' });
-          const data = await res.json();
-
-          if (res.ok && Array.isArray(data)) {
-            list = data;
-            break;
-          }
-        } catch {
-          // try next route
-        }
+      if (!res.ok || !Array.isArray(data)) {
+        setTestCodeOptions([]);
+        return;
       }
 
-      const codes = list
+      const codes = data
         .map((item) => item.test_code)
         .filter(Boolean);
 
       setTestCodeOptions([...new Set(codes)]);
     } catch (err) {
-      console.error('Fetch test codes error:', err);
+      console.error("Fetch test codes error:", err);
       setTestCodeOptions([]);
     } finally {
       setTestCodesLoading(false);
     }
   }
 
-  const fetchMarks = async () => {
+  async function fetchMarks() {
     try {
       setLoading(true);
 
       const params = new URLSearchParams();
 
-      if (name.trim()) params.append('name', name.trim());
-      if (className) params.append('className', className);
-      if (testCode.trim()) params.append('testCode', testCode.trim());
+      if (name.trim()) params.append("name", name.trim());
+      if (className) params.append("className", className);
+      if (testCode) params.append("testCode", testCode);
 
       const res = await fetch(`${API_BASE}/marks?${params.toString()}`, {
-        cache: 'no-store',
+        cache: "no-store",
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || 'Failed to fetch marks');
+        alert(data.error || "Failed to fetch marks");
         setMarksData([]);
         return;
       }
@@ -133,28 +123,28 @@ export default function ManageMarks() {
       setMarksData(Array.isArray(data) ? data : []);
       setEditingRow(null);
     } catch (err) {
-      console.error('Error fetching marks:', err);
-      alert('Unable to connect to server');
+      console.error("Error fetching marks:", err);
+      alert("Unable to connect to server");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const startEdit = (rowIndex, row) => {
+  function startEdit(rowIndex, row) {
     setEditingRow(rowIndex);
-    setNewMarks(String(row.marks_obtained ?? ''));
-  };
+    setNewMarks(String(row.marks_obtained ?? ""));
+  }
 
-  const updateMarks = async (row) => {
+  async function updateMarks(row) {
     const normalizedMarks = Number(newMarks);
 
-    if (newMarks === '' || Number.isNaN(normalizedMarks)) {
-      alert('Please enter valid marks');
+    if (newMarks === "" || Number.isNaN(normalizedMarks)) {
+      alert("Please enter valid marks");
       return;
     }
 
     if (normalizedMarks < 0) {
-      alert('Marks cannot be negative');
+      alert("Marks cannot be negative");
       return;
     }
 
@@ -163,59 +153,112 @@ export default function ManageMarks() {
       return;
     }
 
-    const confirmEdit = window.confirm('Confirm updating this mark?');
+    const confirmEdit = window.confirm("Confirm updating this mark?");
     if (!confirmEdit) return;
 
     try {
-      const res = await fetch(`${API_BASE}/marks/${row.roll_no}/${row.test_code}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ marks: normalizedMarks }),
-      });
+      const res = await fetch(
+        `${API_BASE}/marks/${row.roll_no}/${row.test_code}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ marks: normalizedMarks }),
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || 'Failed to update marks');
+        alert(data.error || "Failed to update marks");
         return;
       }
 
       setEditingRow(null);
-      setNewMarks('');
+      setNewMarks("");
       await fetchMarks();
     } catch (err) {
-      console.error('Update failed', err);
-      alert('Failed to update marks');
+      console.error("Update failed:", err);
+      alert("Failed to update marks");
     }
-  };
+  }
 
-  const generatePDF = () => {
+  function generatePDF() {
     if (marksData.length === 0) {
-      alert('No data to export');
+      alert("No data to export");
       return;
     }
 
-    const element = pdfRef.current;
+    setShowExportPopup(false);
 
     const opt = {
       margin: 10,
-      filename: `${className || testCode || 'marks'}-report.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
+      filename: `${className || testCode || "marks"}-report.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
-    html2pdf().set(opt).from(element).save();
-  };
+    html2pdf().set(opt).from(pdfRef.current).save();
+  }
 
-  const clearFilters = () => {
-    setName('');
-    setClassName('');
-    setTestCode('');
+  function exportExcelSheet() {
+    if (marksData.length === 0) {
+      alert("No data to export");
+      return;
+    }
+
+    setShowExportPopup(false);
+
+    const headers = [
+      "Student Name",
+      "Roll No",
+      "Class",
+      "Test Code",
+      "Marks",
+      "Total",
+    ];
+
+    const rows = marksData.map((m) => [
+      m.name ?? "",
+      m.roll_no ?? "",
+      m.class ?? "",
+      m.test_code ?? "",
+      m.marks_obtained ?? "",
+      m.total_marks ?? "",
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `${className || testCode || "marks"}-report.csv`;
+    document.body.appendChild(link);
+    link.click();
+
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function clearFilters() {
+    setName("");
+    setClassName("");
+    setTestCode("");
     setMarksData([]);
     setEditingRow(null);
-    setNewMarks('');
-  };
+    setNewMarks("");
+  }
 
   return (
     <div className="p-6 md:p-10">
@@ -238,7 +281,7 @@ export default function ManageMarks() {
             className="border rounded-lg px-4 py-3 w-full md:w-auto text-gray-700"
           >
             <option value="">
-              {classesLoading ? 'Loading Classes...' : 'All Classes'}
+              {classesLoading ? "Loading Classes..." : "All Classes"}
             </option>
 
             {classOptions.map((option) => (
@@ -248,21 +291,21 @@ export default function ManageMarks() {
             ))}
           </select>
 
-          <input
-            list="test-code-options"
-            placeholder={
-              testCodesLoading ? 'Loading Test Codes...' : 'Test Code'
-            }
+          <select
             value={testCode}
             onChange={(e) => setTestCode(e.target.value)}
             className="border rounded-lg px-4 py-3 w-full md:w-auto text-gray-700"
-          />
+          >
+            <option value="">
+              {testCodesLoading ? "Loading Test Codes..." : "All Test Codes"}
+            </option>
 
-          <datalist id="test-code-options">
             {testCodeOptions.map((code) => (
-              <option key={code} value={code} />
+              <option key={code} value={code}>
+                {code}
+              </option>
             ))}
-          </datalist>
+          </select>
 
           <div className="flex flex-col sm:flex-row gap-2">
             <button
@@ -270,7 +313,7 @@ export default function ManageMarks() {
               disabled={loading}
               className="bg-blue-700 text-white px-5 py-3 rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Searching...' : 'Search'}
+              {loading ? "Searching..." : "Search"}
             </button>
 
             <button
@@ -281,11 +324,11 @@ export default function ManageMarks() {
             </button>
 
             <button
-              onClick={generatePDF}
+              onClick={() => setShowExportPopup(true)}
               disabled={marksData.length === 0}
-              className="bg-red-600 text-white px-4 py-3 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-blue-700 text-white px-5 py-3 rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              📄 Convert to PDF
+              Export As
             </button>
           </div>
         </div>
@@ -334,7 +377,7 @@ export default function ManageMarks() {
                     )}
                   </td>
 
-                  <td className="p-3">{m.total_marks ?? '-'}</td>
+                  <td className="p-3">{m.total_marks ?? "-"}</td>
 
                   <td className="p-3">
                     {editingRow === i ? (
@@ -349,7 +392,7 @@ export default function ManageMarks() {
                         <button
                           onClick={() => {
                             setEditingRow(null);
-                            setNewMarks('');
+                            setNewMarks("");
                           }}
                           className="bg-gray-500 text-white px-3 py-1 rounded-lg hover:bg-gray-600"
                         >
@@ -372,10 +415,41 @@ export default function ManageMarks() {
         )}
       </div>
 
-      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+      {showExportPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white w-[305px] rounded-md shadow-xl px-7 py-5 text-center">
+            <h2 className="text-blue-800 font-semibold text-base mb-5">
+              Export Options
+            </h2>
+
+            <button
+              onClick={generatePDF}
+              className="w-full bg-blue-700 text-white font-semibold py-2 rounded-md mb-3 hover:bg-blue-800"
+            >
+              Export as PDF
+            </button>
+
+            <button
+              onClick={exportExcelSheet}
+              className="w-full bg-blue-700 text-white font-semibold py-2 rounded-md mb-5 hover:bg-blue-800"
+            >
+              Export as Excel Sheet
+            </button>
+
+            <button
+              onClick={() => setShowExportPopup(false)}
+              className="text-gray-600 text-sm hover:text-gray-800"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
         <div ref={pdfRef} className="p-10 bg-white text-black">
           <h2 className="text-2xl font-bold mb-6">
-            {className ? `${className} - Marks Report` : 'Marks Report'}
+            {className ? `${className} - Marks Report` : "Marks Report"}
           </h2>
 
           <table className="w-full border border-black text-center">
@@ -398,7 +472,7 @@ export default function ManageMarks() {
                   <td className="p-2 border">{m.class}</td>
                   <td className="p-2 border">{m.test_code}</td>
                   <td className="p-2 border">{m.marks_obtained}</td>
-                  <td className="p-2 border">{m.total_marks ?? '-'}</td>
+                  <td className="p-2 border">{m.total_marks ?? "-"}</td>
                 </tr>
               ))}
             </tbody>
