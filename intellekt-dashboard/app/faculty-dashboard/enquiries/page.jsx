@@ -511,57 +511,23 @@ export default function EnquiriesPage() {
           <table className="w-full min-w-[2600px] table-fixed border-collapse">
             <thead>
               <tr className="border-b border-gray-300">
-                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  EnquiryID
-                </th>
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Student
-                </th>
-                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Class
-                </th>
-                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mode
-                </th>
-                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Mobile
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Secondary Contact
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Area
-                </th>
-                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  School
-                </th>
-                <th className="w-[170px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Subjects Looking For
-                </th>
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Academic From
-                </th>
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Academic To
-                </th>
-                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Parent
-                </th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Reference
-                </th>
-                <th className="w-[120px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Date
-                </th>
-                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Status
-                </th>
-                <th className="w-[230px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Pending Reason
-                </th>
-                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">
-                  Action
-                </th>
+                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">EnquiryID</th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Student</th>
+                <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">Class</th>
+                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">Mode</th>
+                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">Mobile</th>
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">Secondary Contact</th>
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">Area</th>
+                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">School</th>
+                <th className="w-[170px] px-4 py-3 text-left text-base font-semibold text-blue-700">Subjects Looking For</th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Academic From</th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Academic To</th>
+                <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Parent</th>
+                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">Reference</th>
+                <th className="w-[120px] px-4 py-3 text-left text-base font-semibold text-blue-700">Date</th>
+                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">Status</th>
+                <th className="w-[230px] px-4 py-3 text-left text-base font-semibold text-blue-700">Pending Reason</th>
+                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">Action</th>
               </tr>
             </thead>
 
@@ -698,16 +664,32 @@ function getClassValue(classBoard) {
   return value.slice(lastDash + 1).toUpperCase();
 }
 
+function isSavedEnquiry(item) {
+  const savedStatus = item.status && item.status !== 'Pending';
+  const savedPendingReason =
+    (item.status || 'Pending') === 'Pending' &&
+    Boolean((item.comment || item.reason || '').trim());
+
+  return savedStatus || savedPendingReason;
+}
+
 function Row({ item, onSave }) {
   const [status, setStatus] = useState(item.status || 'Pending');
   const [comment, setComment] = useState(item.comment || item.reason || '');
+  const [isEditing, setIsEditing] = useState(!isSavedEnquiry(item));
 
   useEffect(() => {
     setStatus(item.status || 'Pending');
     setComment(item.comment || item.reason || '');
+    setIsEditing(!isSavedEnquiry(item));
   }, [item]);
 
-  function handleSave() {
+  function handleAction() {
+    if (!isEditing) {
+      setIsEditing(true);
+      return;
+    }
+
     if (status === 'Pending' && !comment.trim()) {
       alert('Please enter the reason for pending');
       return;
@@ -787,6 +769,7 @@ function Row({ item, onSave }) {
       <td className="px-4 py-3 text-left align-top">
         <select
           value={status}
+          disabled={!isEditing}
           onChange={(e) => {
             const value = e.target.value;
             setStatus(value);
@@ -795,7 +778,9 @@ function Row({ item, onSave }) {
               setComment('');
             }
           }}
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
+          className={`w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700 ${
+            !isEditing ? 'cursor-not-allowed opacity-70' : ''
+          }`}
         >
           <option value="Pending">Pending</option>
           <option value="Admitted">Admitted</option>
@@ -808,9 +793,12 @@ function Row({ item, onSave }) {
           <input
             type="text"
             value={comment}
+            disabled={!isEditing}
             onChange={(e) => setComment(e.target.value)}
             placeholder="Enter reason for pending"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700"
+            className={`w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 outline-none focus:border-blue-700 ${
+              !isEditing ? 'cursor-not-allowed opacity-70' : ''
+            }`}
           />
         ) : (
           <span className="text-gray-400">—</span>
@@ -819,10 +807,10 @@ function Row({ item, onSave }) {
 
       <td className="px-4 py-3 text-left align-top">
         <button
-          onClick={handleSave}
+          onClick={handleAction}
           className="rounded-md px-3 py-2 text-gray-900 hover:bg-gray-100"
         >
-          Save
+          {isEditing ? 'Save' : 'Edit'}
         </button>
       </td>
     </tr>
