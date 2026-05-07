@@ -331,22 +331,21 @@ export default function EnquiriesPage() {
       setPhoneFilterError('');
     }
   }
-
-  const filteredData = useMemo(() => {
-    return data.filter((item) => {
+const filteredData = useMemo(() => {
+  return data
+    .filter((item) => {
       const itemClass = getClassValue(item.class_board);
       const itemBoard = getBoardValue(item.class_board);
       const itemStatus = (item.status || 'Pending').trim();
       const itemName = String(item.student_name || '').toLowerCase();
-      const itemPhone = String(item.mobile_number || '');
+      const itemPhone = String(item.mobile_number || '').replace(/\D/g, '');
 
       const nameMatch =
         !nameFilter.trim() ||
         itemName.includes(nameFilter.trim().toLowerCase());
 
       const phoneMatch =
-        !phoneFilter ||
-        (phoneFilter.length === 10 && itemPhone === phoneFilter);
+        !phoneFilter || itemPhone.includes(phoneFilter);
 
       return (
         nameMatch &&
@@ -355,8 +354,13 @@ export default function EnquiriesPage() {
         (!boardFilter || normalizeBoard(itemBoard) === normalizeBoard(boardFilter)) &&
         (!statusFilter || itemStatus === statusFilter)
       );
+    })
+    .sort((a, b) => {
+      const aNum = Number(String(a.enq_id || '').replace(/\D/g, '')) || a.id || 0;
+      const bNum = Number(String(b.enq_id || '').replace(/\D/g, '')) || b.id || 0;
+      return aNum - bNum;
     });
-  }, [data, classFilter, boardFilter, statusFilter, nameFilter, phoneFilter]);
+}, [data, classFilter, boardFilter, statusFilter, nameFilter, phoneFilter]);
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE) || 1;
 
