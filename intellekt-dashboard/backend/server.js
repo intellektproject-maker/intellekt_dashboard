@@ -1537,6 +1537,7 @@ app.get('/students', async (req, res) => {
         s.phone,
         s.email,
         s.school_name,
+        s.password,
         COALESCE(f.total_fee, 0) AS total_fee
       FROM students s
       LEFT JOIN fees f ON s.roll_no = f.roll_no
@@ -1554,6 +1555,7 @@ app.get('/students', async (req, res) => {
           OR s.phone ILIKE $${index}
           OR s.email ILIKE $${index}
           OR s.school_name ILIKE $${index}
+          OR s.password ILIKE $${index}
         )
       `;
 			values.push(`%${search.trim()}%`);
@@ -1596,7 +1598,7 @@ app.get('/students-by-class/:class', async (req, res) => {
       WHERE class = $1
       ORDER BY roll_no ASC
       `,
-			[ studentClass ]
+			[studentClass]
 		);
 
 		res.json(result.rows);
@@ -1616,7 +1618,7 @@ app.get('/students/:value', async (req, res) => {
 	const upperValue = String(value).toUpperCase();
 
 	try {
-		if (upperValue.startsWith('IA')) {
+		if (upperValue.startsWith('IA') || upperValue.startsWith('IG')) {
 			const studentResult = await pool.query(
 				`
         SELECT 
@@ -1628,14 +1630,15 @@ app.get('/students/:value', async (req, res) => {
           s.phone,
           s.email,
           s.school_name,
+          s.password,
           COALESCE(f.total_fee, 0) AS total_fee,
           COALESCE(f.fee_paid, 0) AS fee_paid,
           f.next_due
         FROM students s
         LEFT JOIN fees f ON s.roll_no = f.roll_no
-        WHERE s.roll_no = $1
+        WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
         `,
-				[ upperValue ]
+				[upperValue]
 			);
 
 			if (studentResult.rows.length === 0) {
@@ -1649,10 +1652,10 @@ app.get('/students/:value', async (req, res) => {
           sub.subject_name
         FROM student_subjects ss
         JOIN subjects sub ON ss.subject_id = sub.subject_id
-        WHERE ss.roll_no = $1
+        WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM($1))
         ORDER BY ss.subject_id ASC
         `,
-				[ upperValue ]
+				[upperValue]
 			);
 
 			return res.json({
@@ -1668,7 +1671,7 @@ app.get('/students/:value', async (req, res) => {
       WHERE class = $1
       ORDER BY roll_no ASC
       `,
-			[ value ]
+			[value]
 		);
 
 		return res.json(classResult.rows);
@@ -1694,13 +1697,14 @@ app.post('/students', async (req, res) => {
 			phone,
 			email,
 			school_name,
+			password,
 			subject_ids,
 			total_fee,
 			fee_paid,
 			next_due
 		} = req.body;
 
-		if (!roll_no || !name || !className || !board || !phone || !email || !school_name) {
+		if (!roll_no || !name || !className || !board || !mode_of_education || !phone || !email || !school_name || !password) {
 			return res.status(400).json({
 				error: 'All basic student fields are required'
 			});
@@ -1716,7 +1720,10 @@ app.post('/students', async (req, res) => {
 
 		const newRoll = String(roll_no).trim().toUpperCase();
 
-		const existingStudent = await client.query(`SELECT roll_no FROM students WHERE roll_no = $1`, [ newRoll ]);
+		const existingStudent = await client.query(
+			`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[newRoll]
+		);
 
 		if (existingStudent.rows.length > 0) {
 			await client.query('ROLLBACK');
@@ -1733,26 +1740,29 @@ app.post('/students', async (req, res) => {
         mode_of_education,
         phone,
         email,
-        school_name
+        school_name,
+        password
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       `,
 			[
 				newRoll,
 				String(name).trim(),
 				String(className).trim(),
 				String(board).trim(),
-				mode_of_education ? String(mode_of_education).trim() : null,
+				String(mode_of_education).trim(),
 				String(phone).trim(),
 				String(email).trim(),
-				String(school_name).trim()
+				String(school_name).trim(),
+				String(password).trim()
 			]
 		);
 
 		for (const subjectId of subject_ids) {
-			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
-				subjectId
-			]);
+			const subjectCheck = await client.query(
+				`SELECT subject_id FROM subjects WHERE subject_id = $1`,
+				[subjectId]
+			);
 
 			if (subjectCheck.rows.length === 0) {
 				await client.query('ROLLBACK');
@@ -1766,7 +1776,7 @@ app.post('/students', async (req, res) => {
         INSERT INTO student_subjects (roll_no, subject_id)
         VALUES ($1,$2)
         `,
-				[ newRoll, Number(subjectId) ]
+				[newRoll, Number(subjectId)]
 			);
 		}
 
@@ -1814,7 +1824,7 @@ app.put('/students/:roll_no', async (req, res) => {
 	const client = await pool.connect();
 
 	try {
-		const oldRollNo = req.params.roll_no;
+		const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
 
 		const {
 			roll_no,
@@ -1825,13 +1835,14 @@ app.put('/students/:roll_no', async (req, res) => {
 			phone,
 			email,
 			school_name,
+			password,
 			subject_ids,
 			total_fee,
 			fee_paid,
 			next_due
 		} = req.body;
 
-		if (!roll_no || !name || !className || !board || !phone || !email || !school_name) {
+		if (!roll_no || !name || !className || !board || !mode_of_education || !phone || !email || !school_name || !password) {
 			return res.status(400).json({
 				error: 'All basic student fields are required'
 			});
@@ -1845,7 +1856,10 @@ app.put('/students/:roll_no', async (req, res) => {
 
 		await client.query('BEGIN');
 
-		const existingStudent = await client.query(`SELECT * FROM students WHERE roll_no = $1`, [ oldRollNo ]);
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[oldRollNo]
+		);
 
 		if (existingStudent.rows.length === 0) {
 			await client.query('ROLLBACK');
@@ -1855,20 +1869,20 @@ app.put('/students/:roll_no', async (req, res) => {
 		const newRollNo = String(roll_no).trim().toUpperCase();
 
 		if (oldRollNo !== newRollNo) {
-			const duplicateCheck = await client.query(`SELECT roll_no FROM students WHERE roll_no = $1`, [ newRollNo ]);
+			const duplicateCheck = await client.query(
+				`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[newRollNo]
+			);
 
 			if (duplicateCheck.rows.length > 0) {
 				await client.query('ROLLBACK');
 				return res.status(400).json({ error: 'New roll number already exists' });
 			}
 
-			await client.query(`UPDATE student_subjects SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
-
-			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
-
-			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
-
-			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE student_subjects SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
+			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
+			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
+			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
 		}
 
 		await client.query(
@@ -1882,28 +1896,31 @@ app.put('/students/:roll_no', async (req, res) => {
         mode_of_education = $5,
         phone = $6,
         email = $7,
-        school_name = $8
-      WHERE roll_no = $9
+        school_name = $8,
+        password = $9
+      WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($10))
       `,
 			[
 				newRollNo,
 				String(name).trim(),
 				String(className).trim(),
 				String(board).trim(),
-				mode_of_education ? String(mode_of_education).trim() : null,
+				String(mode_of_education).trim(),
 				String(phone).trim(),
 				String(email).trim(),
 				String(school_name).trim(),
+				String(password).trim(),
 				oldRollNo
 			]
 		);
 
-		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ newRollNo ]);
+		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [newRollNo]);
 
 		for (const subjectId of subject_ids) {
-			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
-				subjectId
-			]);
+			const subjectCheck = await client.query(
+				`SELECT subject_id FROM subjects WHERE subject_id = $1`,
+				[subjectId]
+			);
 
 			if (subjectCheck.rows.length === 0) {
 				await client.query('ROLLBACK');
@@ -1917,11 +1934,11 @@ app.put('/students/:roll_no', async (req, res) => {
         INSERT INTO student_subjects (roll_no, subject_id)
         VALUES ($1,$2)
         `,
-				[ newRollNo, Number(subjectId) ]
+				[newRollNo, Number(subjectId)]
 			);
 		}
 
-		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [ newRollNo ]);
+		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [newRollNo]);
 
 		if (feeCheck.rows.length > 0) {
 			await client.query(
@@ -1981,18 +1998,21 @@ app.delete('/students/:roll_no', async (req, res) => {
 	try {
 		await client.query('BEGIN');
 
-		const existingStudent = await client.query(`SELECT * FROM students WHERE roll_no = $1`, [ roll_no ]);
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[roll_no]
+		);
 
 		if (existingStudent.rows.length === 0) {
 			await client.query('ROLLBACK');
 			return res.status(404).json({ error: 'Student not found' });
 		}
 
-		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ roll_no ]);
-		await client.query(`DELETE FROM fees WHERE roll_no = $1`, [ roll_no ]);
-		await client.query(`DELETE FROM attendance WHERE roll_no = $1`, [ roll_no ]);
-		await client.query(`DELETE FROM marks WHERE roll_no = $1`, [ roll_no ]);
-		await client.query(`DELETE FROM students WHERE roll_no = $1`, [ roll_no ]);
+		await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
+		await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
+		await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
+		await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
+		await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
 
 		await client.query('COMMIT');
 
@@ -2023,7 +2043,6 @@ app.get('/student-class-board-options', async (req, res) => {
 		res.status(500).json({ error: 'Failed to fetch class/board options' });
 	}
 });
-
 /* =========================================================
    FACULTY TASKS
 ========================================================= */

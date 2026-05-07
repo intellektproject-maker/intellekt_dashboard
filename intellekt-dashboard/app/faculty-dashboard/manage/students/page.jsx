@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
+const STUDENTS_PER_PAGE = 10;
 
 function ManageStudentsPageInner() {
   const searchParams = useSearchParams();
@@ -20,6 +21,8 @@ function ManageStudentsPageInner() {
 
   const [editingRollNo, setEditingRollNo] = useState(null);
   const [phoneError, setPhoneError] = useState("");
+  const [showStudentPopup, setShowStudentPopup] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [form, setForm] = useState({
     roll_no: "",
@@ -30,6 +33,7 @@ function ManageStudentsPageInner() {
     phone: "",
     email: "",
     school_name: "",
+    password: "",
     subject_ids: [],
     total_fee: "",
     fee_paid: "",
@@ -39,6 +43,10 @@ function ManageStudentsPageInner() {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, classFilter]);
 
   async function loadInitialData() {
     try {
@@ -72,6 +80,7 @@ function ManageStudentsPageInner() {
       phone: "",
       email: "",
       school_name: "",
+      password: "",
       subject_ids: [],
       total_fee: "",
       fee_paid: "",
@@ -79,6 +88,16 @@ function ManageStudentsPageInner() {
     });
     setEditingRollNo(null);
     setPhoneError("");
+  }
+
+  function openAddStudentPopup() {
+    resetForm();
+    setShowStudentPopup(true);
+  }
+
+  function closeStudentPopup() {
+    resetForm();
+    setShowStudentPopup(false);
   }
 
   function validatePhone(phoneValue) {
@@ -209,13 +228,27 @@ function ManageStudentsPageInner() {
         student.name?.toLowerCase().includes(q) ||
         student.phone?.toLowerCase().includes(q) ||
         student.email?.toLowerCase().includes(q) ||
-        student.school_name?.toLowerCase().includes(q);
+        student.school_name?.toLowerCase().includes(q) ||
+        student.password?.toLowerCase().includes(q);
 
       const classMatch = !classFilter || student.class === classFilter;
 
       return searchMatch && classMatch;
     });
   }, [students, search, classFilter]);
+
+  const totalPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
+
+  const paginatedStudents = useMemo(() => {
+    const startIndex = (currentPage - 1) * STUDENTS_PER_PAGE;
+    const endIndex = startIndex + STUDENTS_PER_PAGE;
+    return filteredStudents.slice(startIndex, endIndex);
+  }, [filteredStudents, currentPage]);
+
+  function goToPage(pageNumber) {
+    if (pageNumber < 1 || pageNumber > totalPages) return;
+    setCurrentPage(pageNumber);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -228,7 +261,8 @@ function ManageStudentsPageInner() {
       !form.mode_of_education.trim() ||
       !form.phone.trim() ||
       !form.email.trim() ||
-      !form.school_name.trim()
+      !form.school_name.trim() ||
+      !form.password.trim()
     ) {
       alert("Please fill all student details");
       return;
@@ -258,6 +292,7 @@ function ManageStudentsPageInner() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         school_name: form.school_name.trim(),
+        password: form.password.trim(),
         subject_ids: form.subject_ids,
         total_fee: form.total_fee === "" ? 0 : Number(form.total_fee),
         fee_paid: form.fee_paid === "" ? 0 : Number(form.fee_paid),
@@ -293,7 +328,7 @@ function ManageStudentsPageInner() {
           : "Student added successfully"
       );
 
-      resetForm();
+      closeStudentPopup();
       await loadInitialData();
     } catch (err) {
       console.error("Save error:", err);
@@ -329,6 +364,7 @@ function ManageStudentsPageInner() {
         phone: editPhone,
         email: data.email || "",
         school_name: data.school_name || "",
+        password: data.password || "",
         subject_ids: Array.isArray(data.subjects)
           ? data.subjects.map((sub) => Number(sub.subject_id))
           : [],
@@ -343,10 +379,7 @@ function ManageStudentsPageInner() {
           : ""
       );
 
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
+      setShowStudentPopup(true);
     } catch (err) {
       console.error("Edit load error:", err);
       alert("Failed to load student for editing");
@@ -415,262 +448,6 @@ function ManageStudentsPageInner() {
         )}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-md p-5 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
-          <h2 className="text-xl font-semibold text-gray-800">
-            {editingRollNo ? "Edit Student" : "Add Student"}
-          </h2>
-
-          {editingRollNo && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="grid grid-cols-1 md:grid-cols-2 gap-5"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Roll Number
-            </label>
-            <input
-              type="text"
-              name="roll_no"
-              value={form.roll_no}
-              onChange={handleInputChange}
-              placeholder="IA001"
-              disabled={!!editingRollNo}
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Student Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleInputChange}
-              placeholder="Enter student name"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Class
-            </label>
-            <input
-              type="text"
-              name="class"
-              value={form.class}
-              onChange={handleInputChange}
-              placeholder="11 or 12"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Board
-            </label>
-            <input
-              type="text"
-              name="board"
-              value={form.board}
-              onChange={handleInputChange}
-              placeholder="CBSE / State Board"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Mode of Education
-            </label>
-            <select
-              name="mode_of_education"
-              value={form.mode_of_education}
-              onChange={handleInputChange}
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-            >
-              <option value="">Select mode</option>
-              <option value="Online">Online</option>
-              <option value="Offline">Offline</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Phone
-            </label>
-            <input
-              type="text"
-              name="phone"
-              value={form.phone}
-              onChange={handleInputChange}
-              onPaste={(e) => {
-                const pasted = e.clipboardData.getData("text");
-                if (!/^\d+$/.test(pasted)) {
-                  e.preventDefault();
-                }
-              }}
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="Enter 10 digit phone number"
-              className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 ${
-                phoneError
-                  ? "border-red-500 focus:ring-red-300"
-                  : "focus:ring-blue-400"
-              }`}
-            />
-            {phoneError && (
-              <p className="text-red-500 text-sm mt-1">{phoneError}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={handleInputChange}
-              placeholder="Enter email"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              School Name
-            </label>
-            <input
-              type="text"
-              name="school_name"
-              value={form.school_name}
-              onChange={handleInputChange}
-              placeholder="Enter school name"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Enrolled Subjects
-            </label>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="enrolled_subject"
-                  checked={selectedSubjectOption === "MATHEMATICS"}
-                  onChange={() => handleSubjectRadioChange("MATHEMATICS")}
-                />
-                <span className="text-gray-700">Mathematics</span>
-              </label>
-
-              <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="enrolled_subject"
-                  checked={selectedSubjectOption === "PHYSICS"}
-                  onChange={() => handleSubjectRadioChange("PHYSICS")}
-                />
-                <span className="text-gray-700">Physics</span>
-              </label>
-
-              <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="enrolled_subject"
-                  checked={selectedSubjectOption === "BOTH"}
-                  onChange={() => handleSubjectRadioChange("BOTH")}
-                />
-                <span className="text-gray-700">Both</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Total Fee
-            </label>
-            <input
-              type="number"
-              name="total_fee"
-              value={form.total_fee}
-              onChange={handleInputChange}
-              placeholder="Enter total fee"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Fee Paid
-            </label>
-            <input
-              type="number"
-              name="fee_paid"
-              value={form.fee_paid}
-              onChange={handleInputChange}
-              placeholder="Enter paid fee"
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Next Due Date
-            </label>
-            <input
-              type="date"
-              name="next_due"
-              value={form.next_due}
-              onChange={handleInputChange}
-              className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-
-          <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-60"
-            >
-              {saving
-                ? editingRollNo
-                  ? "Updating..."
-                  : "Saving..."
-                : editingRollNo
-                ? "Update Student"
-                : "Add Student"}
-            </button>
-
-            <button
-              type="button"
-              onClick={resetForm}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-lg font-semibold"
-            >
-              Reset
-            </button>
-          </div>
-        </form>
-      </div>
-
       <div className="bg-white rounded-2xl shadow-md p-5 md:p-6">
         <div className="flex flex-col gap-4">
           <h2 className="text-xl font-semibold text-gray-800">Student List</h2>
@@ -721,9 +498,10 @@ function ManageStudentsPageInner() {
         </div>
 
         <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[1400px] border-collapse">
+          <table className="w-full min-w-[1600px] border-collapse">
             <thead>
               <tr className="bg-blue-700 text-white">
+                <th className="text-left px-4 py-3">Roll No</th>
                 <th className="text-left px-4 py-3">Name</th>
                 <th className="text-left px-4 py-3">Class</th>
                 <th className="text-left px-4 py-3">Board</th>
@@ -731,18 +509,20 @@ function ManageStudentsPageInner() {
                 <th className="text-left px-4 py-3">Phone</th>
                 <th className="text-left px-4 py-3">Email</th>
                 <th className="text-left px-4 py-3">School</th>
+                <th className="text-left px-4 py-3">Password</th>
                 <th className="text-left px-4 py-3">Total Fee</th>
                 <th className="text-center px-4 py-3">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredStudents.length > 0 ? (
-                filteredStudents.map((student, index) => (
+              {paginatedStudents.length > 0 ? (
+                paginatedStudents.map((student, index) => (
                   <tr
                     key={student.roll_no}
                     className={index % 2 === 0 ? "bg-gray-50" : "bg-white"}
                   >
+                    <td className="px-4 py-3 border-b">{student.roll_no}</td>
                     <td className="px-4 py-3 border-b">{student.name}</td>
                     <td className="px-4 py-3 border-b">{student.class}</td>
                     <td className="px-4 py-3 border-b">{student.board}</td>
@@ -752,6 +532,7 @@ function ManageStudentsPageInner() {
                     <td className="px-4 py-3 border-b">{student.phone}</td>
                     <td className="px-4 py-3 border-b">{student.email}</td>
                     <td className="px-4 py-3 border-b">{student.school_name}</td>
+                    <td className="px-4 py-3 border-b">{student.password || "-"}</td>
                     <td className="px-4 py-3 border-b">{student.total_fee}</td>
                     <td className="px-4 py-3 border-b">
                       <div className="flex items-center justify-center gap-2">
@@ -777,7 +558,7 @@ function ManageStudentsPageInner() {
               ) : (
                 <tr>
                   <td
-                    colSpan="9"
+                    colSpan="11"
                     className="text-center px-4 py-8 text-gray-500"
                   >
                     No students found
@@ -787,7 +568,336 @@ function ManageStudentsPageInner() {
             </tbody>
           </table>
         </div>
+
+        <div className="mt-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="text-sm text-gray-600">
+            Showing{" "}
+            {filteredStudents.length === 0
+              ? 0
+              : (currentPage - 1) * STUDENTS_PER_PAGE + 1}{" "}
+            to{" "}
+            {Math.min(currentPage * STUDENTS_PER_PAGE, filteredStudents.length)}{" "}
+            of {filteredStudents.length} students
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+            >
+              Prev
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-4 py-2 rounded-lg font-medium ${
+                  currentPage === page
+                    ? "bg-blue-700 text-white"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-800"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <button
+            type="button"
+            onClick={openAddStudentPopup}
+            className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
+          >
+            Add Student
+          </button>
+        </div>
       </div>
+
+      {showStudentPopup && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl p-5 md:p-8 w-full max-w-6xl my-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+              <h2 className="text-xl font-semibold text-gray-800">
+                {editingRollNo ? "Edit Student" : "Add Student"}
+              </h2>
+
+              <button
+                type="button"
+                onClick={closeStudentPopup}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
+              >
+                Close
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleSubmit}
+              className="grid grid-cols-1 md:grid-cols-2 gap-5"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Roll Number
+                </label>
+                <input
+                  type="text"
+                  name="roll_no"
+                  value={form.roll_no}
+                  onChange={handleInputChange}
+                  placeholder="IA001"
+                  disabled={!!editingRollNo}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Student Name
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={form.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter student name"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Class
+                </label>
+                <input
+                  type="text"
+                  name="class"
+                  value={form.class}
+                  onChange={handleInputChange}
+                  placeholder="11 or 12"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Board
+                </label>
+                <input
+                  type="text"
+                  name="board"
+                  value={form.board}
+                  onChange={handleInputChange}
+                  placeholder="CBSE / State Board"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mode of Education
+                </label>
+                <select
+                  name="mode_of_education"
+                  value={form.mode_of_education}
+                  onChange={handleInputChange}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select mode</option>
+                  <option value="Online">Online</option>
+                  <option value="Offline">Offline</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleInputChange}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData("text");
+                    if (!/^\d+$/.test(pasted)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="Enter 10 digit phone number"
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 ${
+                    phoneError
+                      ? "border-red-500 focus:ring-red-300"
+                      : "focus:ring-blue-400"
+                  }`}
+                />
+                {phoneError && (
+                  <p className="text-red-500 text-sm mt-1">{phoneError}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleInputChange}
+                  placeholder="Enter email"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <input
+                  type="text"
+                  name="password"
+                  value={form.password}
+                  onChange={handleInputChange}
+                  placeholder="Enter password"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  School Name
+                </label>
+                <input
+                  type="text"
+                  name="school_name"
+                  value={form.school_name}
+                  onChange={handleInputChange}
+                  placeholder="Enter school name"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Enrolled Subjects
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      name="enrolled_subject"
+                      checked={selectedSubjectOption === "MATHEMATICS"}
+                      onChange={() => handleSubjectRadioChange("MATHEMATICS")}
+                    />
+                    <span className="text-gray-700">Mathematics</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      name="enrolled_subject"
+                      checked={selectedSubjectOption === "PHYSICS"}
+                      onChange={() => handleSubjectRadioChange("PHYSICS")}
+                    />
+                    <span className="text-gray-700">Physics</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="radio"
+                      name="enrolled_subject"
+                      checked={selectedSubjectOption === "BOTH"}
+                      onChange={() => handleSubjectRadioChange("BOTH")}
+                    />
+                    <span className="text-gray-700">Both</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Total Fee
+                </label>
+                <input
+                  type="number"
+                  name="total_fee"
+                  value={form.total_fee}
+                  onChange={handleInputChange}
+                  placeholder="Enter total fee"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fee Paid
+                </label>
+                <input
+                  type="number"
+                  name="fee_paid"
+                  value={form.fee_paid}
+                  onChange={handleInputChange}
+                  placeholder="Enter paid fee"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Next Due Date
+                </label>
+                <input
+                  type="date"
+                  name="next_due"
+                  value={form.next_due}
+                  onChange={handleInputChange}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-60"
+                >
+                  {saving
+                    ? editingRollNo
+                      ? "Updating..."
+                      : "Saving..."
+                    : editingRollNo
+                    ? "Update Student"
+                    : "Add Student"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-lg font-semibold"
+                >
+                  Reset
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
