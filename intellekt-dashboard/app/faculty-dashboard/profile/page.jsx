@@ -13,11 +13,14 @@ function FacultyProfileInner() {
   const [facultyList, setFacultyList] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
+  const [dailyTasks, setDailyTasks] = useState([]);
   const [error, setError] = useState('');
   const [taskLoading, setTaskLoading] = useState(false);
   const [allTaskLoading, setAllTaskLoading] = useState(false);
+  const [dailyTaskLoading, setDailyTaskLoading] = useState(false);
   const [myTaskFilter, setMyTaskFilter] = useState('All');
   const [allTaskFilter, setAllTaskFilter] = useState('All');
+  const [dailyTaskFilter, setDailyTaskFilter] = useState('All');
   const [classOptions, setClassOptions] = useState([]);
   const [testCodes, setTestCodes] = useState([]);
 
@@ -37,7 +40,8 @@ function FacultyProfileInner() {
     total_test_note: '',
     other_tasks: '',
     due_date: '',
-    priority: 'Medium'
+    priority: 'Medium',
+    task_type: 'Weekly'
   });
 
   async function safeFetchJson(url, options = {}) {
@@ -236,6 +240,27 @@ function FacultyProfileInner() {
     fetchAllFacultyTasks();
   }, [loginFacultyId, canAccessAllTasks]);
 
+  useEffect(() => {
+    async function fetchDailyTasks() {
+      if (!canAccessAllTasks) return;
+
+      try {
+        setDailyTaskLoading(true);
+        const data = await safeFetchJson(
+          `${API_BASE}/faculty-daily-tasks-all?loginFacultyId=${loginFacultyId}`
+        );
+        setDailyTasks(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error(err);
+        setDailyTasks([]);
+      } finally {
+        setDailyTaskLoading(false);
+      }
+    }
+
+    fetchDailyTasks();
+  }, [loginFacultyId, canAccessAllTasks]);
+
   async function refreshMyTasks() {
     try {
       const data = await safeFetchJson(`${API_BASE}/faculty-tasks/${facultyId}`);
@@ -260,6 +285,20 @@ function FacultyProfileInner() {
     }
   }
 
+  async function refreshDailyTasks() {
+    if (!canAccessAllTasks) return;
+
+    try {
+      const data = await safeFetchJson(
+        `${API_BASE}/faculty-daily-tasks-all?loginFacultyId=${loginFacultyId}`
+      );
+      setDailyTasks(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setDailyTasks([]);
+    }
+  }
+
   function handleFacultyChange(e) {
     const selectedId = e.target.value;
     const selectedFaculty = facultyList.find(
@@ -278,7 +317,8 @@ function FacultyProfileInner() {
 
     setForm((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
+      due_date: name === 'task_type' && value === 'Daily' ? '' : prev.due_date
     }));
   }
 
@@ -292,6 +332,11 @@ function FacultyProfileInner() {
 
     if (!form.subject_name && !form.other_tasks.trim()) {
       alert('Please select Test Code or enter Other Tasks');
+      return;
+    }
+
+    if (form.task_type === 'Weekly' && !form.due_date) {
+      alert('Please select Due Date for Weekly Task');
       return;
     }
 
@@ -309,8 +354,9 @@ function FacultyProfileInner() {
           subject_name: form.subject_name,
           total_test_note: form.total_test_note,
           other_tasks: form.other_tasks,
-          due_date: form.due_date,
-          priority: form.priority
+          due_date: form.task_type === 'Daily' ? '' : form.due_date,
+          priority: form.priority,
+          task_type: form.task_type
         })
       });
 
@@ -323,11 +369,13 @@ function FacultyProfileInner() {
         total_test_note: '',
         other_tasks: '',
         due_date: '',
-        priority: 'Medium'
+        priority: 'Medium',
+        task_type: 'Weekly'
       }));
 
       await refreshMyTasks();
       await refreshAllFacultyTasks();
+      await refreshDailyTasks();
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to assign task');
@@ -348,6 +396,7 @@ function FacultyProfileInner() {
 
       await refreshMyTasks();
       await refreshAllFacultyTasks();
+      await refreshDailyTasks();
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to update task');
@@ -370,6 +419,7 @@ function FacultyProfileInner() {
 
       await refreshMyTasks();
       await refreshAllFacultyTasks();
+      await refreshDailyTasks();
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to delete task');
@@ -406,6 +456,7 @@ function FacultyProfileInner() {
 
       await refreshMyTasks();
       await refreshAllFacultyTasks();
+      await refreshDailyTasks();
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to reassign task');
@@ -430,6 +481,15 @@ function FacultyProfileInner() {
     return { pending, completed, overdue, dueToday };
   }, [allTasks]);
 
+  const dailyStats = useMemo(() => {
+    const pending = dailyTasks.filter((task) => !task.is_completed).length;
+    const completed = dailyTasks.filter((task) => task.is_completed).length;
+    const overdue = dailyTasks.filter((task) => isOverdue(task)).length;
+    const dueToday = dailyTasks.filter((task) => isDueToday(task)).length;
+
+    return { pending, completed, overdue, dueToday };
+  }, [dailyTasks]);
+
   const filteredMyTasks = useMemo(() => {
     return applyTaskFilter(tasks, myTaskFilter);
   }, [tasks, myTaskFilter]);
@@ -437,6 +497,80 @@ function FacultyProfileInner() {
   const filteredAllTasks = useMemo(() => {
     return applyTaskFilter(allTasks, allTaskFilter);
   }, [allTasks, allTaskFilter]);
+
+  const filteredDailyTasks = useMemo(() => {
+    return applyTaskFilter(dailyTasks, dailyTaskFilter);
+  }, [dailyTasks, dailyTaskFilter]);
+
+  function renderTaskCard(task, showFacultyName = true) {
+    return (
+      <div key={task.id} className="rounded-xl border p-4 shadow-sm bg-gray-50">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-1 items-start gap-3">
+            <input
+              type="checkbox"
+              checked={task.is_completed}
+              onChange={() => handleToggleTask(task.id, task.is_completed)}
+              className="mt-1 h-4 w-4"
+            />
+
+            <div className="space-y-1 text-gray-700">
+              {showFacultyName && (
+                <p className="font-medium text-gray-800">
+                  {task.faculty_name} ({task.faculty_id})
+                </p>
+              )}
+
+              <p>
+                <b>Class:</b> {task.class_name}
+              </p>
+              <p>
+                <b>Task Type:</b> {task.task_type || 'Weekly'}
+              </p>
+              <p>
+                <b>Test Code:</b> {task.subject_name || '-'}
+              </p>
+              <p>
+                <b>Total Test Note:</b> {task.total_test_note || '-'}
+              </p>
+              <p>
+                <b>Due Date:</b>{' '}
+                {task.due_date
+                  ? new Date(task.due_date).toLocaleDateString()
+                  : '-'}
+              </p>
+              <p>
+                <b>Other Tasks:</b> {task.other_tasks || '-'}
+              </p>
+              <p className="text-sm text-gray-500">
+                Assigned by: {task.assigned_by}
+              </p>
+            </div>
+          </div>
+
+          {canAccessAllTasks && (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleReassignTask(task)}
+                className="text-blue-600 hover:text-blue-800"
+              >
+                Reassign
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteTask(task.id)}
+                className="text-red-600 hover:text-red-800"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -481,7 +615,7 @@ function FacultyProfileInner() {
             Task Management
           </h3>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
             {canAccessAllTasks && (
               <button
                 type="button"
@@ -510,6 +644,29 @@ function FacultyProfileInner() {
                 type="button"
                 onClick={() =>
                   setActiveSection(
+                    activeSection === 'dailyTasks' ? '' : 'dailyTasks'
+                  )
+                }
+                className={`rounded-2xl border p-7 text-left shadow-md transition ${
+                  activeSection === 'dailyTasks'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                }`}
+              >
+                <h4 className="mb-3 text-xl font-bold text-blue-700">
+                  All Faculty Daily Task
+                </h4>
+                <p className="text-gray-600 text-base">
+                  View today’s repeated daily tasks.
+                </p>
+              </button>
+            )}
+
+            {canAccessAllTasks && (
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveSection(
                     activeSection === 'myTasks' ? '' : 'myTasks'
                   )
                 }
@@ -523,7 +680,7 @@ function FacultyProfileInner() {
                   Task Assignment
                 </h4>
                 <p className="text-gray-600 text-base">
-                  Assign tasks to faculty members.
+                  Assign weekly or daily tasks.
                 </p>
               </button>
             )}
@@ -558,6 +715,21 @@ function FacultyProfileInner() {
             </h3>
 
             <form onSubmit={handleAssignTask} className="space-y-4">
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  Task Type
+                </label>
+                <select
+                  name="task_type"
+                  value={form.task_type}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                >
+                  <option value="Weekly">Weekly Task</option>
+                  <option value="Daily">Daily Task</option>
+                </select>
+              </div>
+
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
                   1. Faculty Name
@@ -628,18 +800,20 @@ function FacultyProfileInner() {
                 />
               </div>
 
-              <div>
-                <label className="mb-2 block font-medium text-gray-700">
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  name="due_date"
-                  value={form.due_date}
-                  onChange={handleInputChange}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                />
-              </div>
+              {form.task_type === 'Weekly' && (
+                <div>
+                  <label className="mb-2 block font-medium text-gray-700">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    name="due_date"
+                    value={form.due_date}
+                    onChange={handleInputChange}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
@@ -683,6 +857,146 @@ function FacultyProfileInner() {
           </div>
         )}
 
+        {canAccessAllTasks && activeSection === 'allTasks' && (
+          <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
+            <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
+              All Faculty Assigned Tasks
+            </h3>
+
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-blue-200 bg-blue-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-blue-700">All Pending</p>
+                <p className="mt-2 text-3xl font-bold text-blue-900">
+                  {allStats.pending}
+                </p>
+              </div>
+              <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-green-700">
+                  All Completed
+                </p>
+                <p className="mt-2 text-3xl font-bold text-green-900">
+                  {allStats.completed}
+                </p>
+              </div>
+              <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-red-700">All Overdue</p>
+                <p className="mt-2 text-3xl font-bold text-red-900">
+                  {allStats.overdue}
+                </p>
+              </div>
+              <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-yellow-700">
+                  All Due Today
+                </p>
+                <p className="mt-2 text-3xl font-bold text-yellow-900">
+                  {allStats.dueToday}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="mb-2 block font-medium text-gray-700">
+                Filter All Faculty Tasks
+              </label>
+              <select
+                value={allTaskFilter}
+                onChange={(e) => setAllTaskFilter(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 md:w-72 text-gray-700"
+              >
+                <option value="All">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+                <option value="Overdue">Overdue</option>
+                <option value="Due Today">Due Today</option>
+              </select>
+            </div>
+
+            {allTaskLoading ? (
+              <p className="text-gray-600">Loading all assigned tasks...</p>
+            ) : filteredAllTasks.length === 0 ? (
+              <p className="text-gray-600">
+                No assigned tasks found for this filter.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {filteredAllTasks.map((task) => renderTaskCard(task))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {canAccessAllTasks && activeSection === 'dailyTasks' && (
+          <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
+            <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
+              All Faculty Daily Task
+            </h3>
+
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-blue-200 bg-blue-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-blue-700">
+                  Daily Pending
+                </p>
+                <p className="mt-2 text-3xl font-bold text-blue-900">
+                  {dailyStats.pending}
+                </p>
+              </div>
+              <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-green-700">
+                  Daily Completed
+                </p>
+                <p className="mt-2 text-3xl font-bold text-green-900">
+                  {dailyStats.completed}
+                </p>
+              </div>
+              <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-red-700">
+                  Daily Overdue
+                </p>
+                <p className="mt-2 text-3xl font-bold text-red-900">
+                  {dailyStats.overdue}
+                </p>
+              </div>
+              <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
+                <p className="text-sm font-medium text-yellow-700">
+                  Daily Due Today
+                </p>
+                <p className="mt-2 text-3xl font-bold text-yellow-900">
+                  {dailyStats.dueToday}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="mb-2 block font-medium text-gray-700">
+                Filter Daily Tasks
+              </label>
+              <select
+                value={dailyTaskFilter}
+                onChange={(e) => setDailyTaskFilter(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 md:w-72 text-gray-700"
+              >
+                <option value="All">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+                <option value="Overdue">Overdue</option>
+                <option value="Due Today">Due Today</option>
+              </select>
+            </div>
+
+            {dailyTaskLoading ? (
+              <p className="text-gray-600">Loading daily tasks...</p>
+            ) : filteredDailyTasks.length === 0 ? (
+              <p className="text-gray-600">
+                No daily tasks found for this filter.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {filteredDailyTasks.map((task) => renderTaskCard(task))}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeSection === 'myChecklist' && (
           <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
             <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
@@ -698,7 +1012,6 @@ function FacultyProfileInner() {
                   {myStats.pending}
                 </p>
               </div>
-
               <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-green-700">
                   My Completed Tasks
@@ -707,7 +1020,6 @@ function FacultyProfileInner() {
                   {myStats.completed}
                 </p>
               </div>
-
               <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-red-700">
                   My Overdue Tasks
@@ -716,7 +1028,6 @@ function FacultyProfileInner() {
                   {myStats.overdue}
                 </p>
               </div>
-
               <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-yellow-700">
                   My Due Today
@@ -750,71 +1061,7 @@ function FacultyProfileInner() {
               <p className="text-gray-600">No tasks assigned for this filter.</p>
             ) : (
               <div className="space-y-4">
-                {filteredMyTasks.map((task) => (
-                  <div key={task.id} className="rounded-xl border p-4 shadow-sm bg-gray-50">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex flex-1 items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={task.is_completed}
-                          onChange={() =>
-                            handleToggleTask(task.id, task.is_completed)
-                          }
-                          className="mt-1 h-4 w-4"
-                        />
-
-                        <div className="space-y-1 text-gray-700">
-                          <p className="font-medium text-gray-800">
-                            {task.faculty_name} ({task.faculty_id})
-                          </p>
-
-                          <p>
-                            <b>Class:</b> {task.class_name}
-                          </p>
-                          <p>
-                            <b>Test Code:</b> {task.subject_name || '-'}
-                          </p>
-                          <p>
-                            <b>Total Test Note:</b>{' '}
-                            {task.total_test_note || '-'}
-                          </p>
-                          <p>
-                            <b>Due Date:</b>{' '}
-                            {task.due_date
-                              ? new Date(task.due_date).toLocaleDateString()
-                              : '-'}
-                          </p>
-                          <p>
-                            <b>Other Tasks:</b> {task.other_tasks || '-'}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Assigned by: {task.assigned_by}
-                          </p>
-                        </div>
-                      </div>
-
-                      {canAccessAllTasks && (
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => handleReassignTask(task)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            Reassign
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTask(task.id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                {filteredMyTasks.map((task) => renderTaskCard(task))}
               </div>
             )}
           </div>

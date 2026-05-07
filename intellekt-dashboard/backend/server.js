@@ -2137,33 +2137,104 @@ app.get('/student-class-board-options', async (req, res) => {
 /* =========================================================
    FACULTY TASKS
 ========================================================= */
+
+async function ensureDailyTasksForToday() {
+	const today = new Date().toISOString().slice(0, 10);
+
+	const templates = await pool.query(`
+		SELECT *
+		FROM faculty_tasks
+		WHERE task_type = 'Daily'
+		  AND parent_daily_task_id IS NULL
+	`);
+
+	for (const template of templates.rows) {
+		const existing = await pool.query(
+			`
+			SELECT id
+			FROM faculty_tasks
+			WHERE parent_daily_task_id = $1
+			  AND task_date = $2
+			LIMIT 1
+			`,
+			[template.id, today]
+		);
+
+		if (existing.rows.length === 0) {
+			await pool.query(
+				`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date,
+					is_completed,
+					completed_at
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+				`,
+				[
+					template.faculty_id,
+					template.faculty_name,
+					template.class_name,
+					template.subject_name || '',
+					template.total_test_note || '',
+					template.other_tasks || '',
+					today,
+					template.priority || 'Medium',
+					template.assigned_by,
+					template.id,
+					today
+				]
+			);
+		}
+	}
+}
+
 app.get('/faculty-tasks/:facultyId', async (req, res) => {
 	const { facultyId } = req.params;
 
 	try {
 		await cleanupCompletedTasks();
+		await ensureDailyTasksForToday();
 
 		const result = await pool.query(
 			`
-      SELECT
-        id,
-        faculty_id,
-        faculty_name,
-        class_name,
-        subject_name,
-        total_test_note,
-        other_tasks,
-        due_date,
-        priority,
-        is_completed,
-        completed_at,
-        assigned_by,
-        created_at
-      FROM faculty_tasks
-      WHERE faculty_id = $1
-      ORDER BY created_at DESC
-      `,
-			[ facultyId ]
+			SELECT
+				id,
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name,
+				total_test_note,
+				other_tasks,
+				due_date,
+				priority,
+				is_completed,
+				completed_at,
+				assigned_by,
+				created_at,
+				task_type,
+				parent_daily_task_id,
+				task_date
+			FROM faculty_tasks
+			WHERE faculty_id = $1
+			  AND (
+					task_type = 'Weekly'
+					OR task_type IS NULL
+					OR parent_daily_task_id IS NOT NULL
+			  )
+			ORDER BY created_at DESC
+			`,
+			[facultyId]
 		);
 
 		res.json(result.rows);
@@ -2180,7 +2251,7 @@ app.get('/faculty-tasks-all', async (req, res) => {
 	const loginFacultyId = req.query.loginFacultyId;
 
 	try {
-		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
 			return res.status(403).json({
 				error: 'Only IG001 and IG002 can view all faculty tasks'
 			});
@@ -2189,29 +2260,86 @@ app.get('/faculty-tasks-all', async (req, res) => {
 		await cleanupCompletedTasks();
 
 		const result = await pool.query(`
-      SELECT
-        id,
-        faculty_id,
-        faculty_name,
-        class_name,
-        subject_name,
-        total_test_note,
-        other_tasks,
-        due_date,
-        priority,
-        is_completed,
-        completed_at,
-        assigned_by,
-        created_at
-      FROM faculty_tasks
-      ORDER BY created_at DESC
-    `);
+			SELECT
+				id,
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name,
+				total_test_note,
+				other_tasks,
+				due_date,
+				priority,
+				is_completed,
+				completed_at,
+				assigned_by,
+				created_at,
+				task_type,
+				parent_daily_task_id,
+				task_date
+			FROM faculty_tasks
+			WHERE task_type = 'Weekly'
+			   OR task_type IS NULL
+			ORDER BY created_at DESC
+		`);
 
 		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /faculty-tasks-all error:', err);
 		res.status(500).json({
 			error: 'Failed to fetch all faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-daily-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty daily tasks'
+			});
+		}
+
+		await ensureDailyTasksForToday();
+
+		const today = new Date().toISOString().slice(0, 10);
+
+		const result = await pool.query(
+			`
+			SELECT
+				id,
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name,
+				total_test_note,
+				other_tasks,
+				due_date,
+				priority,
+				is_completed,
+				completed_at,
+				assigned_by,
+				created_at,
+				task_type,
+				parent_daily_task_id,
+				task_date
+			FROM faculty_tasks
+			WHERE task_type = 'Daily'
+			  AND parent_daily_task_id IS NOT NULL
+			  AND task_date = $1
+			ORDER BY faculty_id ASC, created_at DESC
+			`,
+			[today]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-daily-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch daily tasks',
 			details: err.message
 		});
 	}
@@ -2227,45 +2355,132 @@ app.post('/faculty-tasks', async (req, res) => {
 		total_test_note,
 		other_tasks,
 		due_date,
-		priority
+		priority,
+		task_type
 	} = req.body;
 
 	try {
 		if (!faculty_id || !faculty_name || !class_name) {
-  return res.status(400).json({ error: 'Faculty Name and Class are required' });
-}
+			return res.status(400).json({
+				error: 'Faculty Name and Class are required'
+			});
+		}
 
-if (!subject_name && !other_tasks) {
-  return res.status(400).json({ error: 'Please select Test Code or enter Other Tasks' });
-}
+		if (!subject_name && !other_tasks) {
+			return res.status(400).json({
+				error: 'Please select Test Code or enter Other Tasks'
+			});
+		}
 
-		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
 			return res.status(403).json({
 				error: 'Only IG001 and IG002 can assign tasks'
 			});
 		}
 
+		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
+		const today = new Date().toISOString().slice(0, 10);
+
+		if (finalTaskType === 'Daily') {
+			const templateResult = await pool.query(
+				`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
+				RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					priority || 'Medium',
+					loginFacultyId
+				]
+			);
+
+			const template = templateResult.rows[0];
+
+			const todayTaskResult = await pool.query(
+				`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date,
+					is_completed,
+					completed_at
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+				RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					today,
+					priority || 'Medium',
+					loginFacultyId,
+					template.id,
+					today
+				]
+			);
+
+			return res.json({
+				message: 'Daily task assigned successfully',
+				task: todayTaskResult.rows[0]
+			});
+		}
+
 		const result = await pool.query(
 			`
-      INSERT INTO faculty_tasks (
-        faculty_id,
-        faculty_name,
-        class_name,
-        subject_name,
-        total_test_note,
-        other_tasks,
-        due_date,
-        priority,
-        assigned_by
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      RETURNING *
-      `,
-			[
+			INSERT INTO faculty_tasks (
 				faculty_id,
 				faculty_name,
 				class_name,
 				subject_name,
+				total_test_note,
+				other_tasks,
+				due_date,
+				priority,
+				assigned_by,
+				task_type,
+				parent_daily_task_id,
+				task_date
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
+			RETURNING *
+			`,
+			[
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name || '',
 				total_test_note || '',
 				other_tasks || '',
 				due_date || null,
@@ -2288,61 +2503,95 @@ if (!subject_name && !other_tasks) {
 });
 
 app.put('/faculty-tasks/:id', async (req, res) => {
-  const { id } = req.params;
-  const { is_completed, faculty_id, faculty_name } = req.body;
+	const { id } = req.params;
+	const { is_completed, faculty_id, faculty_name } = req.body;
 
-  try {
-    let result;
+	try {
+		let result;
 
-    // ✅ Reassign task to another faculty
-    if (faculty_id && faculty_name) {
-      result = await pool.query(
-        `
-        UPDATE faculty_tasks
-        SET faculty_id = $1,
-            faculty_name = $2,
-            is_completed = FALSE,
-            completed_at = NULL
-        WHERE id = $3
-        RETURNING *
-        `,
-        [faculty_id, faculty_name, id]
-      );
-    }
+		if (faculty_id && faculty_name) {
+			result = await pool.query(
+				`
+				UPDATE faculty_tasks
+				SET faculty_id = $1,
+				    faculty_name = $2,
+				    is_completed = FALSE,
+				    completed_at = NULL
+				WHERE id = $3
+				RETURNING *
+				`,
+				[faculty_id, faculty_name, id]
+			);
+		} else if (typeof is_completed === 'boolean') {
+			result = await pool.query(
+				`
+				UPDATE faculty_tasks
+				SET is_completed = $1,
+				    completed_at = CASE
+				      WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+				      ELSE NULL
+				    END
+				WHERE id = $2
+				RETURNING *
+				`,
+				[is_completed, id]
+			);
+		} else {
+			return res.status(400).json({
+				error: 'No valid update data provided'
+			});
+		}
 
-    // ✅ Mark task completed / pending
-    else if (typeof is_completed === 'boolean') {
-      result = await pool.query(
-        `
-        UPDATE faculty_tasks
-        SET is_completed = $1,
-            completed_at = CASE
-              WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
-              ELSE NULL
-            END
-        WHERE id = $2
-        RETURNING *
-        `,
-        [is_completed, id]
-      );
-    }
+		if (result.rowCount === 0) {
+			return res.status(404).json({ error: 'Task not found' });
+		}
 
-    else {
-      return res.status(400).json({ error: 'No valid update data provided' });
-    }
+		res.json(result.rows[0]);
+	} catch (err) {
+		console.error('PUT /faculty-tasks/:id error:', err);
+		res.status(500).json({
+			error: 'Failed to update task',
+			details: err.message
+		});
+	}
+});
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
+app.delete('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const loginFacultyId = req.query.loginFacultyId;
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('PUT /faculty-tasks/:id error:', err);
-    res.status(500).json({
-      error: 'Failed to update task',
-      details: err.message
-    });
-  }
+	try {
+		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can delete faculty tasks'
+			});
+		}
+
+		const result = await pool.query(
+			`
+			DELETE FROM faculty_tasks
+			WHERE id = $1
+			   OR parent_daily_task_id = $1
+			RETURNING *
+			`,
+			[id]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({ error: 'Task not found' });
+		}
+
+		res.json({
+			message: 'Task deleted successfully',
+			deletedTask: result.rows[0]
+		});
+	} catch (err) {
+		console.error('DELETE /faculty-tasks/:id error:', err);
+		res.status(500).json({
+			error: 'Failed to delete task',
+			details: err.message
+		});
+	}
 });
 
 app.delete('/faculty-tasks/:id', async (req, res) => {
