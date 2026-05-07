@@ -2176,48 +2176,61 @@ app.post('/faculty-tasks', async (req, res) => {
 });
 
 app.put('/faculty-tasks/:id', async (req, res) => {
-	const { id } = req.params;
-	const { is_completed } = req.body;
+  const { id } = req.params;
+  const { is_completed, faculty_id, faculty_name } = req.body;
 
-	try {
-		let result;
+  try {
+    let result;
 
-		if (is_completed) {
-			result = await pool.query(
-				`
+    // ✅ Reassign task to another faculty
+    if (faculty_id && faculty_name) {
+      result = await pool.query(
+        `
         UPDATE faculty_tasks
-        SET is_completed = TRUE,
-            completed_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-        RETURNING *
-        `,
-				[ id ]
-			);
-		} else {
-			result = await pool.query(
-				`
-        UPDATE faculty_tasks
-        SET is_completed = FALSE,
+        SET faculty_id = $1,
+            faculty_name = $2,
+            is_completed = FALSE,
             completed_at = NULL
-        WHERE id = $1
+        WHERE id = $3
         RETURNING *
         `,
-				[ id ]
-			);
-		}
+        [faculty_id, faculty_name, id]
+      );
+    }
 
-		if (result.rowCount === 0) {
-			return res.status(404).json({ error: 'Task not found' });
-		}
+    // ✅ Mark task completed / pending
+    else if (typeof is_completed === 'boolean') {
+      result = await pool.query(
+        `
+        UPDATE faculty_tasks
+        SET is_completed = $1,
+            completed_at = CASE
+              WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+              ELSE NULL
+            END
+        WHERE id = $2
+        RETURNING *
+        `,
+        [is_completed, id]
+      );
+    }
 
-		res.json(result.rows[0]);
-	} catch (err) {
-		console.error('PUT /faculty-tasks/:id error:', err);
-		res.status(500).json({
-			error: 'Failed to update task',
-			details: err.message
-		});
-	}
+    else {
+      return res.status(400).json({ error: 'No valid update data provided' });
+    }
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PUT /faculty-tasks/:id error:', err);
+    res.status(500).json({
+      error: 'Failed to update task',
+      details: err.message
+    });
+  }
 });
 
 app.delete('/faculty-tasks/:id', async (req, res) => {
