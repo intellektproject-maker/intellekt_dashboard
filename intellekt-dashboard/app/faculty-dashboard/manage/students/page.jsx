@@ -89,12 +89,40 @@ function ManageStudentsPageInner() {
     setEditingRollNo(null);
     setPhoneError("");
   }
+function generateNextRollNo() {
+  const iaNumbers = students
+    .map((student) => String(student.roll_no || "").trim().toUpperCase())
+    .filter((roll) => /^IA\d+$/.test(roll))
+    .map((roll) => Number(roll.replace("IA", "")))
+    .filter((num) => !Number.isNaN(num));
 
-  function openAddStudentPopup() {
-    resetForm();
-    setShowStudentPopup(true);
-  }
+  const nextNumber = iaNumbers.length > 0 ? Math.max(...iaNumbers) + 1 : 1;
 
+  return `IA${String(nextNumber).padStart(3, "0")}`;
+}
+ function openAddStudentPopup() {
+  const nextRollNo = generateNextRollNo();
+
+  setForm({
+    roll_no: nextRollNo,
+    name: "",
+    class: "",
+    board: "",
+    mode_of_education: "",
+    phone: "",
+    email: "",
+    school_name: "",
+    password: nextRollNo,
+    subject_ids: [],
+    total_fee: "",
+    fee_paid: "",
+    next_due: "",
+  });
+
+  setEditingRollNo(null);
+  setPhoneError("");
+  setShowStudentPopup(true);
+}
   function closeStudentPopup() {
     resetForm();
     setShowStudentPopup(false);
@@ -658,7 +686,7 @@ function ManageStudentsPageInner() {
                   value={form.roll_no}
                   onChange={handleInputChange}
                   placeholder="IA001"
-                  disabled={!!editingRollNo}
+                  disabled={true}
                   className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
                 />
               </div>

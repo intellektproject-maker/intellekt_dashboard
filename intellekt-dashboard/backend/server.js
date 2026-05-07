@@ -1523,6 +1523,26 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 /* =========================================================
    STUDENT MANAGEMENT
 ========================================================= */
+async function generateNextStudentRollNo(client) {
+	const result = await client.query(`
+		SELECT roll_no
+		FROM students
+		WHERE UPPER(TRIM(roll_no)) LIKE 'IA%'
+		ORDER BY CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER) DESC
+		LIMIT 1
+	`);
+
+	if (result.rows.length === 0) {
+		return 'IA001';
+	}
+
+	const lastRollNo = String(result.rows[0].roll_no || '').toUpperCase().trim();
+	const lastNumber = Number(lastRollNo.replace('IA', ''));
+
+	const nextNumber = Number.isNaN(lastNumber) ? 1 : lastNumber + 1;
+
+	return `IA${String(nextNumber).padStart(3, '0')}`;
+}
 app.get('/students', async (req, res) => {
 	const { search = '', class: className = '', board = '' } = req.query;
 
@@ -1689,7 +1709,6 @@ app.post('/students', async (req, res) => {
 
 	try {
 		const {
-			roll_no,
 			name,
 			class: className,
 			board,
@@ -1704,7 +1723,7 @@ app.post('/students', async (req, res) => {
 			next_due
 		} = req.body;
 
-		if (!roll_no || !name || !className || !board || !mode_of_education || !phone || !email || !school_name || !password) {
+		if (!name || !className || !board || !mode_of_education || !phone || !email || !school_name) {
 			return res.status(400).json({
 				error: 'All basic student fields are required'
 			});
@@ -1718,17 +1737,10 @@ app.post('/students', async (req, res) => {
 
 		await client.query('BEGIN');
 
-		const newRoll = String(roll_no).trim().toUpperCase();
-
-		const existingStudent = await client.query(
-			`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
-			[newRoll]
-		);
-
-		if (existingStudent.rows.length > 0) {
-			await client.query('ROLLBACK');
-			return res.status(400).json({ error: 'Roll number already exists' });
-		}
+		const newRoll = await generateNextStudentRollNo(client);
+		const finalPassword = password && String(password).trim() !== ''
+			? String(password).trim()
+			: newRoll;
 
 		await client.query(
 			`
@@ -1754,7 +1766,7 @@ app.post('/students', async (req, res) => {
 				String(phone).trim(),
 				String(email).trim(),
 				String(school_name).trim(),
-				String(password).trim()
+				finalPassword
 			]
 		);
 
@@ -1801,7 +1813,8 @@ app.post('/students', async (req, res) => {
 		await client.query('COMMIT');
 
 		res.status(201).json({
-			message: 'Student added successfully'
+			message: 'Student added successfully',
+			roll_no: newRoll
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
@@ -1819,7 +1832,6 @@ app.post('/students', async (req, res) => {
 		client.release();
 	}
 });
-
 app.put('/students/:roll_no', async (req, res) => {
 	const client = await pool.connect();
 
