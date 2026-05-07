@@ -491,24 +491,28 @@ function FacultyProfileInner() {
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() =>
-                setActiveSection(activeSection === 'myTasks' ? '' : 'myTasks')
-              }
-              className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                activeSection === 'myTasks'
-                  ? 'border-blue-600 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:bg-gray-50'
-              }`}
-            >
-              <h4 className="mb-3 text-xl font-bold text-blue-700">
-                My Task Checklist & Task Assignment
-              </h4>
-              <p className="text-gray-600 text-base">
-                View, filter and update the tasks assigned to this faculty.
-              </p>
-            </button>
+            {canAccessAllTasks && (
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveSection(
+                    activeSection === 'myTasks' ? '' : 'myTasks'
+                  )
+                }
+                className={`rounded-2xl border p-7 text-left shadow-md transition ${
+                  activeSection === 'myTasks'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                }`}
+              >
+                <h4 className="mb-3 text-xl font-bold text-blue-700">
+                  Task Assignment
+                </h4>
+                <p className="text-gray-600 text-base">
+                  Assign tasks to faculty members.
+                </p>
+              </button>
+            )}
           </div>
         </div>
 
@@ -553,12 +557,6 @@ function FacultyProfileInner() {
                 </p>
               </div>
             </div>
-
-            {allStats.overdue > 0 && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-medium text-red-700">
-                ⚠ Overdue tasks are pending for some faculty members.
-              </div>
-            )}
 
             <div className="mb-4">
               <label className="mb-2 block font-medium text-gray-700">
@@ -610,24 +608,6 @@ function FacultyProfileInner() {
                           >
                             {task.priority || 'Medium'}
                           </span>
-
-                          {isOverdue(task) && (
-                            <span className="rounded-full bg-red-600 px-2 py-1 text-xs font-medium text-white">
-                              Overdue
-                            </span>
-                          )}
-
-                          {isDueToday(task) && (
-                            <span className="rounded-full bg-yellow-500 px-2 py-1 text-xs font-medium text-white">
-                              Due Today
-                            </span>
-                          )}
-
-                          {task.is_completed && (
-                            <span className="rounded-full bg-green-600 px-2 py-1 text-xs font-medium text-white">
-                              Completed
-                            </span>
-                          )}
                         </div>
 
                         <p>
@@ -645,14 +625,6 @@ function FacultyProfileInner() {
                             ? new Date(task.due_date).toLocaleDateString()
                             : '-'}
                         </p>
-
-                        {task.completed_at && (
-                          <p>
-                            <b>Completed On:</b>{' '}
-                            {new Date(task.completed_at).toLocaleDateString()}
-                          </p>
-                        )}
-
                         <p>
                           <b>Other Tasks:</b> {task.other_tasks || '-'}
                         </p>
@@ -686,327 +658,280 @@ function FacultyProfileInner() {
           </div>
         )}
 
-        {activeSection === 'myTasks' && (
-          <>
-            {canAccessAllTasks && (
-              <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
-                <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
-                  Task Assignment
-                </h3>
+        {canAccessAllTasks && activeSection === 'myTasks' && (
+          <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
+            <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
+              Task Assignment
+            </h3>
 
-                <form onSubmit={handleAssignTask} className="space-y-4">
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      1. Faculty Name
-                    </label>
-                    <select
-                      value={form.faculty_id}
-                      onChange={handleFacultyChange}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    >
-                      <option value="">Select Faculty</option>
-                      {facultyList.map((f) => (
-                        <option key={f.faculty_id} value={f.faculty_id}>
-                          {f.name} ({f.faculty_id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      2. Class
-                    </label>
-                    <select
-                      name="class_name"
-                      value={form.class_name}
-                      onChange={handleInputChange}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    >
-                      <option value="">Select Class</option>
-                      {classOptions.map((cls) => (
-                        <option key={cls} value={cls}>
-                          {cls}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      3. Test Code
-                    </label>
-                    <select
-                      name="subject_name"
-                      value={form.subject_name}
-                      onChange={handleInputChange}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    >
-                      <option value="">Select Test Code</option>
-                      {testCodes.map((test) => (
-                        <option key={test.test_code} value={test.test_code}>
-                          {test.test_code}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      4. Total Test Note
-                    </label>
-                    <input
-                      type="text"
-                      name="total_test_note"
-                      value={form.total_test_note}
-                      onChange={handleInputChange}
-                      placeholder="Enter total test note"
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      Due Date
-                    </label>
-                    <input
-                      type="date"
-                      name="due_date"
-                      value={form.due_date}
-                      onChange={handleInputChange}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      Priority
-                    </label>
-                    <select
-                      name="priority"
-                      value={form.priority}
-                      onChange={handleInputChange}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    >
-                      {priorityOptions.map((priority) => (
-                        <option key={priority} value={priority}>
-                          {priority}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block font-medium text-gray-700">
-                      5. Other Tasks
-                    </label>
-                    <textarea
-                      name="other_tasks"
-                      value={form.other_tasks}
-                      onChange={handleInputChange}
-                      placeholder="Enter other tasks"
-                      rows={4}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-blue-700 px-6 py-3 text-white transition hover:bg-blue-800"
-                  >
-                    Assign Task
-                  </button>
-                </form>
-              </div>
-            )}
-
-            <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
-              <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
-                My Task Checklist
-              </h3>
-
-              <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-blue-200 bg-blue-100 p-4 shadow-sm">
-                  <p className="text-sm font-medium text-blue-700">
-                    My Pending Tasks
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-blue-900">
-                    {myStats.pending}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
-                  <p className="text-sm font-medium text-green-700">
-                    My Completed Tasks
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-green-900">
-                    {myStats.completed}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
-                  <p className="text-sm font-medium text-red-700">
-                    My Overdue Tasks
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-red-900">
-                    {myStats.overdue}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
-                  <p className="text-sm font-medium text-yellow-700">
-                    My Due Today
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-yellow-900">
-                    {myStats.dueToday}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-4">
+            <form onSubmit={handleAssignTask} className="space-y-4">
+              <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  Filter My Tasks
+                  1. Faculty Name
                 </label>
                 <select
-                  value={myTaskFilter}
-                  onChange={(e) => setMyTaskFilter(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 md:w-72 text-gray-700"
+                  value={form.faculty_id}
+                  onChange={handleFacultyChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                 >
-                  <option value="All">All</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Overdue">Overdue</option>
-                  <option value="Due Today">Due Today</option>
+                  <option value="">Select Faculty</option>
+                  {facultyList.map((f) => (
+                    <option key={f.faculty_id} value={f.faculty_id}>
+                      {f.name} ({f.faculty_id})
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              {taskLoading ? (
-                <p className="text-gray-600">Loading tasks...</p>
-              ) : filteredMyTasks.length === 0 ? (
-                <p className="text-gray-600">
-                  No tasks assigned for this filter.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {filteredMyTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className={`rounded-xl border p-4 shadow-sm ${
-                        isOverdue(task)
-                          ? 'border-red-200 bg-red-50'
-                          : isDueToday(task)
-                          ? 'border-yellow-200 bg-yellow-50'
-                          : 'bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex flex-1 items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={task.is_completed}
-                            onChange={() =>
-                              handleToggleTask(task.id, task.is_completed)
-                            }
-                            className="mt-1 h-4 w-4"
-                          />
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  2. Class
+                </label>
+                <select
+                  name="class_name"
+                  value={form.class_name}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                >
+                  <option value="">Select Class</option>
+                  {classOptions.map((cls) => (
+                    <option key={cls} value={cls}>
+                      {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                          <div className="space-y-1 text-gray-700">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p
-                                className={`font-medium ${
-                                  task.is_completed
-                                    ? 'text-gray-500 line-through'
-                                    : 'text-gray-800'
-                                }`}
-                              >
-                                {task.faculty_name} ({task.faculty_id})
-                              </p>
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  3. Test Code
+                </label>
+                <select
+                  name="subject_name"
+                  value={form.subject_name}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                >
+                  <option value="">Select Test Code</option>
+                  {testCodes.map((test) => (
+                    <option key={test.test_code} value={test.test_code}>
+                      {test.test_code}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                              <span
-                                className={`rounded-full px-2 py-1 text-xs font-medium ${getPriorityBadge(
-                                  task.priority || 'Medium'
-                                )}`}
-                              >
-                                {task.priority || 'Medium'}
-                              </span>
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  4. Total Test Note
+                </label>
+                <input
+                  type="text"
+                  name="total_test_note"
+                  value={form.total_test_note}
+                  onChange={handleInputChange}
+                  placeholder="Enter total test note"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                />
+              </div>
 
-                              {isOverdue(task) && (
-                                <span className="rounded-full bg-red-600 px-2 py-1 text-xs font-medium text-white">
-                                  Overdue
-                                </span>
-                              )}
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  name="due_date"
+                  value={form.due_date}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                />
+              </div>
 
-                              {isDueToday(task) && (
-                                <span className="rounded-full bg-yellow-500 px-2 py-1 text-xs font-medium text-white">
-                                  Due Today
-                                </span>
-                              )}
-                            </div>
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  Priority
+                </label>
+                <select
+                  name="priority"
+                  value={form.priority}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                >
+                  {priorityOptions.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priority}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                            <p>
-                              <b>Class:</b> {task.class_name}
-                            </p>
-                            <p>
-                              <b>Test Code:</b> {task.subject_name}
-                            </p>
-                            <p>
-                              <b>Total Test Note:</b>{' '}
-                              {task.total_test_note || '-'}
-                            </p>
-                            <p>
-                              <b>Due Date:</b>{' '}
-                              {task.due_date
-                                ? new Date(
-                                    task.due_date
-                                  ).toLocaleDateString()
-                                : '-'}
-                            </p>
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  5. Other Tasks
+                </label>
+                <textarea
+                  name="other_tasks"
+                  value={form.other_tasks}
+                  onChange={handleInputChange}
+                  placeholder="Enter other tasks"
+                  rows={4}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                />
+              </div>
 
-                            {task.completed_at && (
-                              <p>
-                                <b>Completed On:</b>{' '}
-                                {new Date(
-                                  task.completed_at
-                                ).toLocaleDateString()}
-                              </p>
-                            )}
+              <button
+                type="submit"
+                className="rounded-lg bg-blue-700 px-6 py-3 text-white transition hover:bg-blue-800"
+              >
+                Assign Task
+              </button>
+            </form>
+          </div>
+        )}
 
-                            <p>
-                              <b>Other Tasks:</b> {task.other_tasks || '-'}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              Assigned by: {task.assigned_by}
-                            </p>
-                          </div>
-                        </div>
+        <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
+          <h3 className="mb-4 text-xl md:text-2xl font-bold text-blue-700">
+            My Task Checklist
+          </h3>
 
-                        {canAccessAllTasks && (
-                          <div className="flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => handleReassignTask(task)}
-                              className="text-blue-600 hover:text-blue-800"
-                            >
-                              Reassign
-                            </button>
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-blue-200 bg-blue-100 p-4 shadow-sm">
+              <p className="text-sm font-medium text-blue-700">
+                My Pending Tasks
+              </p>
+              <p className="mt-2 text-3xl font-bold text-blue-900">
+                {myStats.pending}
+              </p>
+            </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTask(task.id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
+            <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
+              <p className="text-sm font-medium text-green-700">
+                My Completed Tasks
+              </p>
+              <p className="mt-2 text-3xl font-bold text-green-900">
+                {myStats.completed}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
+              <p className="text-sm font-medium text-red-700">
+                My Overdue Tasks
+              </p>
+              <p className="mt-2 text-3xl font-bold text-red-900">
+                {myStats.overdue}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
+              <p className="text-sm font-medium text-yellow-700">
+                My Due Today
+              </p>
+              <p className="mt-2 text-3xl font-bold text-yellow-900">
+                {myStats.dueToday}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="mb-2 block font-medium text-gray-700">
+              Filter My Tasks
+            </label>
+            <select
+              value={myTaskFilter}
+              onChange={(e) => setMyTaskFilter(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 md:w-72 text-gray-700"
+            >
+              <option value="All">All</option>
+              <option value="Pending">Pending</option>
+              <option value="Completed">Completed</option>
+              <option value="Overdue">Overdue</option>
+              <option value="Due Today">Due Today</option>
+            </select>
+          </div>
+
+          {taskLoading ? (
+            <p className="text-gray-600">Loading tasks...</p>
+          ) : filteredMyTasks.length === 0 ? (
+            <p className="text-gray-600">No tasks assigned for this filter.</p>
+          ) : (
+            <div className="space-y-4">
+              {filteredMyTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={`rounded-xl border p-4 shadow-sm ${
+                    isOverdue(task)
+                      ? 'border-red-200 bg-red-50'
+                      : isDueToday(task)
+                      ? 'border-yellow-200 bg-yellow-50'
+                      : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-1 items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={task.is_completed}
+                        onChange={() =>
+                          handleToggleTask(task.id, task.is_completed)
+                        }
+                        className="mt-1 h-4 w-4"
+                      />
+
+                      <div className="space-y-1 text-gray-700">
+                        <p className="font-medium text-gray-800">
+                          {task.faculty_name} ({task.faculty_id})
+                        </p>
+
+                        <p>
+                          <b>Class:</b> {task.class_name}
+                        </p>
+                        <p>
+                          <b>Test Code:</b> {task.subject_name}
+                        </p>
+                        <p>
+                          <b>Total Test Note:</b> {task.total_test_note || '-'}
+                        </p>
+                        <p>
+                          <b>Due Date:</b>{' '}
+                          {task.due_date
+                            ? new Date(task.due_date).toLocaleDateString()
+                            : '-'}
+                        </p>
+                        <p>
+                          <b>Other Tasks:</b> {task.other_tasks || '-'}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Assigned by: {task.assigned_by}
+                        </p>
                       </div>
                     </div>
-                  ))}
+
+                    {canAccessAllTasks && (
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleReassignTask(task)}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Reassign
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
