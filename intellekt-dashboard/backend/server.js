@@ -2152,11 +2152,13 @@ app.post('/faculty-tasks', async (req, res) => {
 	} = req.body;
 
 	try {
-		if (!loginFacultyId || !faculty_id || !faculty_name || !class_name || !subject_name) {
-			return res.status(400).json({
-				error: 'Required fields are missing'
-			});
-		}
+		if (!faculty_id || !faculty_name || !class_name) {
+  return res.status(400).json({ error: 'Faculty Name and Class are required' });
+}
+
+if (!subject_name && !other_tasks) {
+  return res.status(400).json({ error: 'Please select Test Code or enter Other Tasks' });
+}
 
 		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
 			return res.status(403).json({
