@@ -695,7 +695,8 @@ className="rounded-lg bg-blue-700 px-6 py-3 text-white transition hover:bg-blue-
 </button>
 </form>
                         )}
-<div className="mb-4">
+{activeSection === 'myTasks' && (
+<div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
 <label className="mb-2 block font-medium text-gray-700">
                                 Filter My Tasks
 </label>
