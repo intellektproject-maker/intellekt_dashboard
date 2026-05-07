@@ -1,20 +1,12 @@
-'use client';
+"use client";
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  'https://responsible-wonder-production.up.railway.app';
-
-const FALLBACK_CLASSES = [
-  'CBSE-12',
-  'CBSE-10',
-  'ISC-12',
-  'SB-12',
-  'SB-10',
-  'ICSE-10',
-];
+  "https://responsible-wonder-production.up.railway.app";
 
 const subjectMap = {
   MATHS: 1,
@@ -22,28 +14,29 @@ const subjectMap = {
 };
 
 const subjectNameMap = {
-  1: 'MATHS',
-  2: 'PHYSICS',
+  1: "MATHS",
+  2: "PHYSICS",
 };
 
 function ManageAttendancePageInner() {
   const searchParams = useSearchParams();
-  const facultyId = searchParams.get('id');
+  const facultyId = searchParams.get("id");
 
-  const [classOptions, setClassOptions] = useState(FALLBACK_CLASSES);
-  const [classBoard, setClassBoard] = useState('');
-  const [subject, setSubject] = useState('');
-  const [filterText, setFilterText] = useState('');
+  const [classOptions, setClassOptions] = useState([]);
+  const [classBoard, setClassBoard] = useState("");
+  const [subject, setSubject] = useState("");
+  const [filterText, setFilterText] = useState("");
 
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
 
-  const [statusFilter, setStatusFilter] = useState('');
-  const [subjectFilter, setSubjectFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [showExportPopup, setShowExportPopup] = useState(false);
 
   useEffect(() => {
     fetchClasses();
@@ -54,20 +47,20 @@ function ManageAttendancePageInner() {
       setClassesLoading(true);
 
       const res = await fetch(`${API_BASE}/classes`, {
-        cache: 'no-store',
+        cache: "no-store",
       });
 
       const data = await res.json();
 
       if (!res.ok || !Array.isArray(data)) {
-        setClassOptions(FALLBACK_CLASSES);
+        setClassOptions([]);
         return;
       }
 
       const formattedClasses = data
         .map((item) => {
-          const board = item.board || item.Board || '';
-          const className = item.class || item.class_name || item.className || '';
+          const board = item.board || "";
+          const className = item.class || item.class_name || item.className || "";
 
           if (!board || !className) return null;
 
@@ -75,12 +68,10 @@ function ManageAttendancePageInner() {
         })
         .filter(Boolean);
 
-      const uniqueClasses = [...new Set(formattedClasses)];
-
-      setClassOptions(uniqueClasses.length > 0 ? uniqueClasses : FALLBACK_CLASSES);
+      setClassOptions([...new Set(formattedClasses)]);
     } catch (err) {
-      console.error('Fetch classes error:', err);
-      setClassOptions(FALLBACK_CLASSES);
+      console.error("Fetch classes error:", err);
+      setClassOptions([]);
     } finally {
       setClassesLoading(false);
     }
@@ -88,17 +79,17 @@ function ManageAttendancePageInner() {
 
   async function fetchReport() {
     if (!classBoard) {
-      alert('Please select class');
+      alert("Please select class");
       return;
     }
 
     if (!fromDate || !toDate) {
-      alert('Please select from date and to date');
+      alert("Please select from date and to date");
       return;
     }
 
     if (new Date(fromDate) > new Date(toDate)) {
-      alert('From date cannot be greater than To date');
+      alert("From date cannot be greater than To date");
       return;
     }
 
@@ -107,23 +98,23 @@ function ManageAttendancePageInner() {
       setRows([]);
 
       const params = new URLSearchParams();
-      params.append('mode', 'report');
-      params.append('class', classBoard);
-      params.append('from', fromDate);
-      params.append('to', toDate);
+      params.append("mode", "report");
+      params.append("class", classBoard);
+      params.append("from", fromDate);
+      params.append("to", toDate);
 
       if (subject) {
-        params.append('subject', subjectMap[subject]);
+        params.append("subject", subjectMap[subject]);
       }
 
       const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
-        cache: 'no-store',
+        cache: "no-store",
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || 'Failed to fetch attendance report');
+        alert(data.error || "Failed to fetch attendance report");
         return;
       }
 
@@ -137,22 +128,22 @@ function ManageAttendancePageInner() {
 
       setRows(prepared);
     } catch (err) {
-      console.error('Fetch report error:', err);
-      alert('Failed to fetch attendance report');
+      console.error("Fetch report error:", err);
+      alert("Failed to fetch attendance report");
     } finally {
       setLoading(false);
     }
+  }
+
+  function getRowKey(row) {
+    return `${row.roll_no}-${row.subject_id}-${toInputDate(row.attendance_date)}`;
   }
 
   function startEdit(rowKey) {
     setRows((prev) =>
       prev.map((row) =>
         getRowKey(row) === rowKey
-          ? {
-              ...row,
-              isEditing: true,
-              editedStatus: row.status,
-            }
+          ? { ...row, isEditing: true, editedStatus: row.status }
           : row
       )
     );
@@ -162,11 +153,7 @@ function ManageAttendancePageInner() {
     setRows((prev) =>
       prev.map((row) =>
         getRowKey(row) === rowKey
-          ? {
-              ...row,
-              isEditing: false,
-              editedStatus: row.status,
-            }
+          ? { ...row, isEditing: false, editedStatus: row.status }
           : row
       )
     );
@@ -175,12 +162,7 @@ function ManageAttendancePageInner() {
   function handleEditedStatusChange(rowKey, value) {
     setRows((prev) =>
       prev.map((row) =>
-        getRowKey(row) === rowKey
-          ? {
-              ...row,
-              editedStatus: value,
-            }
-          : row
+        getRowKey(row) === rowKey ? { ...row, editedStatus: value } : row
       )
     );
   }
@@ -196,7 +178,7 @@ function ManageAttendancePageInner() {
     }
 
     const ok = window.confirm(
-      `Are you sure you want to change attendance for ${row.roll_no} on ${formatDate(
+      `Change attendance for ${row.roll_no} on ${formatDate(
         row.attendance_date
       )} from ${row.status} to ${row.editedStatus}?`
     );
@@ -205,9 +187,9 @@ function ManageAttendancePageInner() {
 
     try {
       const res = await fetch(`${API_BASE}/attendance`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           records: [
@@ -225,7 +207,7 @@ function ManageAttendancePageInner() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || 'Failed to update attendance');
+        alert(data.error || "Failed to update attendance");
         return;
       }
 
@@ -243,10 +225,10 @@ function ManageAttendancePageInner() {
         )
       );
 
-      alert('Attendance updated successfully');
+      alert("Attendance updated successfully");
     } catch (err) {
-      console.error('Save row error:', err);
-      alert('Failed to update attendance');
+      console.error("Save row error:", err);
+      alert("Failed to update attendance");
     }
   }
 
@@ -270,53 +252,148 @@ function ManageAttendancePageInner() {
     });
   }, [rows, filterText, statusFilter, subjectFilter]);
 
-  function downloadReport() {
+  function exportExcel() {
     if (filteredRows.length === 0) {
-      alert('No data to download');
+      alert("No data to export");
       return;
     }
 
-    const header = [
-      'Roll No',
-      'Name',
-      'Class',
-      'Board',
-      'Subject',
-      'Attendance Date',
-      'Status',
-      'Updated By',
-    ];
+    const html = `
+      <table border="1">
+        <tr>
+          <th>Roll No</th>
+          <th>Name</th>
+          <th>Class</th>
+          <th>Board</th>
+          <th>Subject</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Status</th>
+          <th>Updated By</th>
+        </tr>
+        ${filteredRows
+          .map(
+            (row) => `
+          <tr>
+            <td>${row.roll_no || ""}</td>
+            <td>${row.name || ""}</td>
+            <td>${row.class || ""}</td>
+            <td>${row.board || ""}</td>
+            <td>${subjectNameMap[row.subject_id] || row.subject_id || ""}</td>
+            <td>${formatDate(row.attendance_date)}</td>
+            <td>${formatTime(row.attendance_time)}</td>
+            <td>${row.status || ""}</td>
+            <td>${row.updated_by || ""}</td>
+          </tr>
+        `
+          )
+          .join("")}
+      </table>
+    `;
 
-    const csvRows = filteredRows.map((row) => [
-      row.roll_no,
-      row.name,
-      row.class,
-      row.board,
-      subjectNameMap[row.subject_id] || row.subject_id,
-      formatDate(row.attendance_date),
-      row.status,
-      row.updated_by,
-    ]);
-
-    const csvContent = [header, ...csvRows]
-      .map((row) => row.map((cell) => `"${cell ?? ''}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csvContent], {
-      type: 'text/csv;charset=utf-8;',
+    const blob = new Blob([html], {
+      type: "application/vnd.ms-excel",
     });
 
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
 
     link.href = url;
-    link.setAttribute('download', 'attendance_report.csv');
-
+    link.download = "attendance_report.xls";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     window.URL.revokeObjectURL(url);
+    setShowExportPopup(false);
+  }
+
+  function exportPDF() {
+    if (filteredRows.length === 0) {
+      alert("No data to export");
+      return;
+    }
+
+    const tableRows = filteredRows
+      .map(
+        (row) => `
+        <tr>
+          <td>${row.roll_no || ""}</td>
+          <td>${row.name || ""}</td>
+          <td>${row.class || ""}</td>
+          <td>${row.board || ""}</td>
+          <td>${subjectNameMap[row.subject_id] || row.subject_id || ""}</td>
+          <td>${formatDate(row.attendance_date)}</td>
+          <td>${formatTime(row.attendance_time)}</td>
+          <td>${row.status || ""}</td>
+          <td>${row.updated_by || ""}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    const printWindow = window.open("", "_blank");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Attendance Report</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 24px;
+            }
+            h2 {
+              color: #0b3d91;
+              margin-bottom: 16px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+            }
+            th {
+              background: #0b3d91;
+              color: white;
+              padding: 8px;
+              border: 1px solid #ccc;
+              text-align: left;
+            }
+            td {
+              padding: 8px;
+              border: 1px solid #ccc;
+            }
+          </style>
+        </head>
+        <body>
+          <h2>Attendance Report</h2>
+          <p><strong>Class:</strong> ${classBoard}</p>
+          <p><strong>From:</strong> ${formatDate(fromDate)} <strong>To:</strong> ${formatDate(toDate)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Roll No</th>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Board</th>
+                <th>Subject</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Updated By</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+
+    setShowExportPopup(false);
   }
 
   return (
@@ -333,7 +410,7 @@ function ManageAttendancePageInner() {
             className="border rounded-lg px-4 py-3"
           >
             <option value="">
-              {classesLoading ? 'Loading Classes...' : 'Select Class'}
+              {classesLoading ? "Loading Classes..." : "Select Class"}
             </option>
 
             {classOptions.map((option) => (
@@ -367,7 +444,7 @@ function ManageAttendancePageInner() {
               disabled={loading}
               className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Loading...' : 'View Report'}
+              {loading ? "Loading..." : "View Report"}
             </button>
           </div>
         </div>
@@ -431,17 +508,17 @@ function ManageAttendancePageInner() {
             </select>
 
             <button
-              onClick={downloadReport}
+              onClick={() => setShowExportPopup(true)}
               className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800"
             >
-              Download Report
+              Export
             </button>
           </div>
 
           {filteredRows.length === 0 ? (
             <p className="text-gray-500">No records match the selected filters.</p>
           ) : (
-            <table className="w-full border-collapse min-w-[1100px]">
+            <table className="w-full border-collapse min-w-[1200px]">
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-3 px-2 text-blue-700">Roll No</th>
@@ -450,6 +527,7 @@ function ManageAttendancePageInner() {
                   <th className="text-left py-3 px-2 text-blue-700">Board</th>
                   <th className="text-left py-3 px-2 text-blue-700">Subject</th>
                   <th className="text-left py-3 px-2 text-blue-700">Date</th>
+                  <th className="text-left py-3 px-2 text-blue-700">Time</th>
                   <th className="text-left py-3 px-2 text-blue-700">
                     Current Status
                   </th>
@@ -473,7 +551,12 @@ function ManageAttendancePageInner() {
                       <td className="py-3 px-2">
                         {subjectNameMap[row.subject_id] || row.subject_id}
                       </td>
-                      <td className="py-3 px-2">{formatDate(row.attendance_date)}</td>
+                      <td className="py-3 px-2">
+                        {formatDate(row.attendance_date)}
+                      </td>
+                      <td className="py-3 px-2">
+                        {formatTime(row.attendance_time)}
+                      </td>
 
                       <td className="py-3 px-2">
                         {row.isEditing ? (
@@ -519,7 +602,7 @@ function ManageAttendancePageInner() {
                         )}
                       </td>
 
-                      <td className="py-3 px-2">{row.updated_by || '-'}</td>
+                      <td className="py-3 px-2">{row.updated_by || "-"}</td>
                     </tr>
                   );
                 })}
@@ -532,16 +615,47 @@ function ManageAttendancePageInner() {
       {!loading && rows.length === 0 && (
         <p className="text-gray-500">No attendance records found.</p>
       )}
+
+      {showExportPopup && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 w-[90%] max-w-sm">
+            <h2 className="text-xl font-bold text-blue-800 mb-4">
+              Export Attendance
+            </h2>
+
+            <p className="text-gray-600 mb-5">Choose export format</p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={exportPDF}
+                className="bg-blue-700 text-white px-5 py-3 rounded-lg hover:bg-blue-800"
+              >
+                Export as PDF
+              </button>
+
+              <button
+                onClick={exportExcel}
+                className="bg-green-600 text-white px-5 py-3 rounded-lg hover:bg-green-700"
+              >
+                Export as Excel
+              </button>
+
+              <button
+                onClick={() => setShowExportPopup(false)}
+                className="bg-gray-500 text-white px-5 py-3 rounded-lg hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function getRowKey(row) {
-  return `${row.roll_no}-${row.subject_id}-${toInputDate(row.attendance_date)}`;
-}
-
 function toInputDate(value) {
-  if (!value) return '';
+  if (!value) return "";
 
   const date = new Date(value);
 
@@ -553,7 +667,7 @@ function toInputDate(value) {
 }
 
 function formatDate(value) {
-  if (!value) return '-';
+  if (!value) return "-";
 
   const date = new Date(value);
 
@@ -561,7 +675,14 @@ function formatDate(value) {
     return String(value).slice(0, 10);
   }
 
-  return date.toLocaleDateString('en-IN');
+  return date.toLocaleDateString("en-IN");
+}
+
+function formatTime(value) {
+  if (!value) return "-";
+
+  const time = String(value).slice(0, 5);
+  return time || "-";
 }
 
 export default function ManageAttendancePageWrapper() {

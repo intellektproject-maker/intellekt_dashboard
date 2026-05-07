@@ -891,6 +891,7 @@ app.put('/update-marks', async (req, res) => {
 /* =========================================================
    ATTENDANCE FETCH / SAVE / UPDATE
 ========================================================= */
+
 function splitClassBoard(classBoard) {
 	if (!classBoard) return { board: null, classOnly: null };
 
@@ -910,11 +911,15 @@ function splitClassBoard(classBoard) {
 app.get('/classes', async (req, res) => {
 	try {
 		const result = await pool.query(`
-			SELECT DISTINCT class, board
+			SELECT DISTINCT 
+				TRIM(class) AS class,
+				TRIM(board) AS board
 			FROM students
 			WHERE class IS NOT NULL
 			  AND board IS NOT NULL
-			ORDER BY board ASC, class ASC
+			  AND TRIM(class) <> ''
+			  AND TRIM(board) <> ''
+			ORDER BY TRIM(board) ASC, TRIM(class) ASC
 		`);
 
 		res.json(result.rows);
@@ -924,16 +929,87 @@ app.get('/classes', async (req, res) => {
 	}
 });
 
+app.get('/attendance', async (req, res) => {
+	const { mode, class: classBoard, from, to, subject } = req.query;
+
+	if (mode !== 'report') {
+		return res.status(400).json({ error: 'Invalid attendance request' });
+	}
+
+	if (!classBoard || !from || !to) {
+		return res.status(400).json({
+			error: 'class, from and to are required'
+		});
+	}
+
+	const { board, classOnly } = splitClassBoard(classBoard);
+
+	if (!classOnly) {
+		return res.status(400).json({ error: 'Invalid class selected' });
+	}
+
+	try {
+		let query = `
+			SELECT
+				a.roll_no,
+				s.name,
+				TRIM(s.class) AS class,
+				TRIM(s.board) AS board,
+				a.subject_id,
+				a.attendance_date,
+				a.attendance_time,
+				a.status,
+				a.updated_by
+			FROM attendance a
+			JOIN students s
+			  ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+			WHERE TRIM(s.class) = TRIM($1)
+			  AND a.attendance_date BETWEEN $2 AND $3
+		`;
+
+		const values = [classOnly, from, to];
+
+		if (board) {
+			values.push(board);
+			query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+		}
+
+		if (subject) {
+			values.push(subject);
+			query += ` AND a.subject_id = $${values.length}`;
+		}
+
+		query += `
+			ORDER BY a.attendance_date DESC, a.attendance_time DESC, a.roll_no ASC
+		`;
+
+		const result = await pool.query(query, values);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /attendance report error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch attendance report',
+			details: err.message
+		});
+	}
+});
+
 app.get('/attendance/:rollNo', async (req, res) => {
 	const { rollNo } = req.params;
 
 	try {
 		const result = await pool.query(
 			`
-			SELECT roll_no, subject_id, attendance_date, status, updated_by
+			SELECT 
+				roll_no,
+				subject_id,
+				attendance_date,
+				attendance_time,
+				status,
+				updated_by
 			FROM attendance
 			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-			ORDER BY attendance_date DESC
+			ORDER BY attendance_date DESC, attendance_time DESC
 			`,
 			[rollNo]
 		);
@@ -944,6 +1020,7 @@ app.get('/attendance/:rollNo', async (req, res) => {
 		res.status(500).json({ error: 'Server error' });
 	}
 });
+
 app.post('/attendance', async (req, res) => {
 	const { records, subject, facultyId, overwrite = false } = req.body;
 	const selectedDate = req.body.date || req.body.attendanceDate;
@@ -977,7 +1054,7 @@ app.post('/attendance', async (req, res) => {
 				`
 				SELECT 1
 				FROM attendance
-				WHERE roll_no = $1
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				  AND subject_id = $2
 				  AND attendance_date = $3
 				`,
@@ -993,8 +1070,9 @@ app.post('/attendance', async (req, res) => {
 						`
 						UPDATE attendance
 						SET status = $1,
-						    updated_by = $2
-						WHERE roll_no = $3
+						    updated_by = $2,
+						    attendance_time = CURRENT_TIME
+						WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 						  AND subject_id = $4
 						  AND attendance_date = $5
 						`,
@@ -1005,8 +1083,8 @@ app.post('/attendance', async (req, res) => {
 				await client.query(
 					`
 					INSERT INTO attendance
-						(roll_no, subject_id, attendance_date, status, updated_by)
-					VALUES ($1, $2, $3, $4, $5)
+						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by)
+					VALUES ($1, $2, $3, CURRENT_TIME, $4, $5)
 					`,
 					[record.roll_no, subject, selectedDate, record.status, facultyId]
 				);
@@ -1063,8 +1141,9 @@ app.put('/attendance', async (req, res) => {
 				`
 				UPDATE attendance
 				SET status = $1,
-				    updated_by = $2
-				WHERE roll_no = $3
+				    updated_by = $2,
+				    attendance_time = CURRENT_TIME
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 				  AND subject_id = $4
 				  AND attendance_date = $5
 				`,
