@@ -218,20 +218,26 @@ app.get('/marks/:roll', async (req, res) => {
 	const { roll } = req.params;
 
 	try {
-		const result = await pool.query(
-			`
-      SELECT 
-        m.test_code,
-        m.marks_obtained,
-        m.comments,
-        t.total_marks
-      FROM marks m
-      JOIN tests t ON m.test_code = t.test_code
-      WHERE m.roll_no = $1
-      ORDER BY m.test_code
-      `,
-			[ roll ]
-		);
+const result = await pool.query(
+	`
+	SELECT 
+		m.test_code,
+		m.marks_obtained,
+		m.comments,
+		t.total_marks,
+		t.subject_id,
+		CASE
+			WHEN t.subject_id = 1 THEN 'Maths'
+			WHEN t.subject_id = 2 THEN 'Physics'
+			ELSE 'Unknown'
+		END AS subject_name
+	FROM marks m
+	JOIN tests t ON m.test_code = t.test_code
+	WHERE m.roll_no = $1
+	ORDER BY m.test_code
+	`,
+	[ roll ]
+);
 
 		res.json(result.rows);
 	} catch (err) {

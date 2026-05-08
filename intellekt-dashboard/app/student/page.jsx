@@ -98,16 +98,51 @@ function StudentPageContent() {
     return `${Math.round((presentCount / totalCount) * 100)}%`;
   }, [attendance]);
 
-  const averageMarks = useMemo(() => {
-    if (!marks.length) return "0";
+const subjectWiseAverage = useMemo(() => {
+  if (!marks.length) {
+    return {
+      maths: "0",
+      physics: "0",
+    };
+  }
 
-    const total = marks.reduce(
-      (sum, item) => sum + Number(item.marks_obtained || 0),
-      0
-    );
+  const mathsMarks = marks.filter(
+    (item) =>
+      item.subject_name?.toLowerCase() === "maths" ||
+      item.test_code?.toUpperCase().includes("M")
+  );
 
-    return (total / marks.length).toFixed(1);
-  }, [marks]);
+  const physicsMarks = marks.filter(
+    (item) =>
+      item.subject_name?.toLowerCase() === "physics" ||
+      item.test_code?.toUpperCase().includes("P")
+  );
+
+  const mathsAverage =
+    mathsMarks.length > 0
+      ? (
+          mathsMarks.reduce(
+            (sum, item) => sum + Number(item.marks_obtained || 0),
+            0
+          ) / mathsMarks.length
+        ).toFixed(1)
+      : "0";
+
+  const physicsAverage =
+    physicsMarks.length > 0
+      ? (
+          physicsMarks.reduce(
+            (sum, item) => sum + Number(item.marks_obtained || 0),
+            0
+          ) / physicsMarks.length
+        ).toFixed(1)
+      : "0";
+
+  return {
+    maths: mathsAverage,
+    physics: physicsAverage,
+  };
+}, [marks]);
 
   const upcomingTestsCount = useMemo(() => {
     if (!tests.length) return 0;
@@ -139,8 +174,8 @@ function StudentPageContent() {
     },
     {
       title: "Marks",
-      value: averageMarks,
-      subtitle: "Average Marks",
+      value: `M: ${subjectWiseAverage.maths} | P: ${subjectWiseAverage.physics}`,
+      subtitle: "Maths & Physics Avg",
       href: `/student/marks?roll=${roll}`,
       icon: <BookOpen size={24} />,
     },
