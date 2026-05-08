@@ -1,8 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   ClipboardCheck,
   BookOpen,
@@ -16,12 +15,14 @@ const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
 function StudentPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const roll = searchParams.get("roll");
 
   const [student, setStudent] = useState(null);
   const [attendance, setAttendance] = useState([]);
   const [marks, setMarks] = useState([]);
   const [tests, setTests] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,12 +32,13 @@ function StudentPageContent() {
       try {
         setLoading(true);
 
-        const [studentRes, attendanceRes, marksRes, testsRes] =
+        const [studentRes, attendanceRes, marksRes, testsRes, notifyRes] =
           await Promise.allSettled([
             fetch(`${API_BASE}/student/${roll}`),
             fetch(`${API_BASE}/attendance/${roll}`),
             fetch(`${API_BASE}/marks/${roll}`),
             fetch(`${API_BASE}/test-schedule/${roll}`),
+            fetch(`${API_BASE}/student-notifications/${roll}`),
           ]);
 
         if (studentRes.status === "fulfilled" && studentRes.value.ok) {
@@ -66,12 +68,20 @@ function StudentPageContent() {
         } else {
           setTests([]);
         }
+
+        if (notifyRes.status === "fulfilled" && notifyRes.value.ok) {
+          const notifyData = await notifyRes.value.json();
+          setNotifications(Array.isArray(notifyData) ? notifyData : []);
+        } else {
+          setNotifications([]);
+        }
       } catch (error) {
         console.error("Error loading student dashboard:", error);
         setStudent(null);
         setAttendance([]);
         setMarks([]);
         setTests([]);
+        setNotifications([]);
       } finally {
         setLoading(false);
       }
@@ -79,6 +89,33 @@ function StudentPageContent() {
 
     loadDashboardData();
   }, [roll]);
+
+  function hasNotification(moduleName) {
+    return notifications.some((item) => item.module_name === moduleName);
+  }
+
+  async function openCard(card) {
+    try {
+      await fetch(`${API_BASE}/student-notifications/read`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roll_no: roll,
+          module_name: card.moduleName,
+        }),
+      });
+
+      setNotifications((prev) =>
+        prev.filter((item) => item.module_name !== card.moduleName)
+      );
+    } catch (err) {
+      console.error("Notification read update failed:", err);
+    } finally {
+      router.push(card.href);
+    }
+  }
 
   const attendancePercentage = useMemo(() => {
     if (!attendance.length) return "0%";
@@ -98,51 +135,51 @@ function StudentPageContent() {
     return `${Math.round((presentCount / totalCount) * 100)}%`;
   }, [attendance]);
 
-const subjectWiseAverage = useMemo(() => {
-  if (!marks.length) {
+  const subjectWiseAverage = useMemo(() => {
+    if (!marks.length) {
+      return {
+        maths: "0",
+        physics: "0",
+      };
+    }
+
+    const mathsMarks = marks.filter(
+      (item) =>
+        item.subject_name?.toLowerCase() === "maths" ||
+        item.test_code?.toUpperCase().includes("M")
+    );
+
+    const physicsMarks = marks.filter(
+      (item) =>
+        item.subject_name?.toLowerCase() === "physics" ||
+        item.test_code?.toUpperCase().includes("P")
+    );
+
+    const mathsAverage =
+      mathsMarks.length > 0
+        ? (
+            mathsMarks.reduce(
+              (sum, item) => sum + Number(item.marks_obtained || 0),
+              0
+            ) / mathsMarks.length
+          ).toFixed(1)
+        : "0";
+
+    const physicsAverage =
+      physicsMarks.length > 0
+        ? (
+            physicsMarks.reduce(
+              (sum, item) => sum + Number(item.marks_obtained || 0),
+              0
+            ) / physicsMarks.length
+          ).toFixed(1)
+        : "0";
+
     return {
-      maths: "0",
-      physics: "0",
+      maths: mathsAverage,
+      physics: physicsAverage,
     };
-  }
-
-  const mathsMarks = marks.filter(
-    (item) =>
-      item.subject_name?.toLowerCase() === "maths" ||
-      item.test_code?.toUpperCase().includes("M")
-  );
-
-  const physicsMarks = marks.filter(
-    (item) =>
-      item.subject_name?.toLowerCase() === "physics" ||
-      item.test_code?.toUpperCase().includes("P")
-  );
-
-  const mathsAverage =
-    mathsMarks.length > 0
-      ? (
-          mathsMarks.reduce(
-            (sum, item) => sum + Number(item.marks_obtained || 0),
-            0
-          ) / mathsMarks.length
-        ).toFixed(1)
-      : "0";
-
-  const physicsAverage =
-    physicsMarks.length > 0
-      ? (
-          physicsMarks.reduce(
-            (sum, item) => sum + Number(item.marks_obtained || 0),
-            0
-          ) / physicsMarks.length
-        ).toFixed(1)
-      : "0";
-
-  return {
-    maths: mathsAverage,
-    physics: physicsAverage,
-  };
-}, [marks]);
+  }, [marks]);
 
   const upcomingTestsCount = useMemo(() => {
     if (!tests.length) return 0;
@@ -170,6 +207,7 @@ const subjectWiseAverage = useMemo(() => {
       value: attendancePercentage,
       subtitle: "Total Attendance",
       href: `/student/attendance?roll=${roll}`,
+      moduleName: "attendance",
       icon: <ClipboardCheck size={24} />,
     },
     {
@@ -177,6 +215,7 @@ const subjectWiseAverage = useMemo(() => {
       value: `M: ${subjectWiseAverage.maths} | P: ${subjectWiseAverage.physics}`,
       subtitle: "Maths & Physics Avg",
       href: `/student/marks?roll=${roll}`,
+      moduleName: "marks",
       icon: <BookOpen size={24} />,
     },
     {
@@ -184,6 +223,7 @@ const subjectWiseAverage = useMemo(() => {
       value: upcomingTestsCount,
       subtitle: "Upcoming Tests",
       href: `/student/test-schedule?roll=${roll}`,
+      moduleName: "test-schedule",
       icon: <CalendarDays size={24} />,
     },
     {
@@ -191,6 +231,7 @@ const subjectWiseAverage = useMemo(() => {
       value: "View",
       subtitle: "Fee Details",
       href: `/student/fee?roll=${roll}`,
+      moduleName: "fee",
       icon: <Wallet size={24} />,
     },
     {
@@ -198,6 +239,7 @@ const subjectWiseAverage = useMemo(() => {
       value: "Open",
       subtitle: "Quick Access",
       href: `/student/useful-links?roll=${roll}`,
+      moduleName: "useful-links",
       icon: <LinkIcon size={24} />,
     },
     {
@@ -205,6 +247,7 @@ const subjectWiseAverage = useMemo(() => {
       value: "Open",
       subtitle: "Request answer sheet",
       href: `/student/request-pdf?roll=${roll}`,
+      moduleName: "request-pdf",
       icon: <FileText size={24} />,
     },
   ];
@@ -234,29 +277,61 @@ const subjectWiseAverage = useMemo(() => {
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-10 text-lg text-gray-700">
-                <p>Roll No: <span className="font-semibold">{student?.roll_no || roll}</span></p>
-                <p>Name: <span className="font-semibold">{studentName}</span></p>
-                <p>Class: <span className="font-semibold">{className}</span></p>
-                <p>Board: <span className="font-semibold">{board}</span></p>
-                <p>Phone: <span className="font-semibold">{phone}</span></p>
-                <p className="break-all">Email: <span className="font-semibold">{email}</span></p>
-                <p className="md:col-span-2 break-words">School Name: <span className="font-semibold">{schoolName}</span></p>
+                <p>
+                  Roll No:{" "}
+                  <span className="font-semibold">
+                    {student?.roll_no || roll}
+                  </span>
+                </p>
+                <p>
+                  Name: <span className="font-semibold">{studentName}</span>
+                </p>
+                <p>
+                  Class: <span className="font-semibold">{className}</span>
+                </p>
+                <p>
+                  Board: <span className="font-semibold">{board}</span>
+                </p>
+                <p>
+                  Phone: <span className="font-semibold">{phone}</span>
+                </p>
+                <p className="break-all">
+                  Email: <span className="font-semibold">{email}</span>
+                </p>
+                <p className="md:col-span-2 break-words">
+                  School Name:{" "}
+                  <span className="font-semibold">{schoolName}</span>
+                </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {cards.map((card) => (
-                <Link key={card.title} href={card.href}
-                  className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 block">
+                <button
+                  key={card.title}
+                  type="button"
+                  onClick={() => openCard(card)}
+                  className="relative text-left bg-white rounded-2xl shadow-md p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 block"
+                >
+                  {hasNotification(card.moduleName) && (
+                    <span className="absolute top-4 right-4 h-3 w-3 rounded-full bg-red-600"></span>
+                  )}
+
                   <div className="flex items-start justify-between mb-4">
                     <div className="text-blue-700">{card.icon}</div>
-                    <span className="text-sm font-semibold text-gray-500">Open</span>
+                    <span className="text-sm font-semibold text-gray-500">
+                      Open
+                    </span>
                   </div>
 
-                  <h3 className="text-2xl font-bold text-gray-800 mb-2">{card.title}</h3>
-                  <p className="text-3xl font-extrabold text-blue-700 mb-2 break-words">{card.value}</p>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                    {card.title}
+                  </h3>
+                  <p className="text-3xl font-extrabold text-blue-700 mb-2 break-words">
+                    {card.value}
+                  </p>
                   <p className="text-gray-600 text-base">{card.subtitle}</p>
-                </Link>
+                </button>
               ))}
             </div>
           </>

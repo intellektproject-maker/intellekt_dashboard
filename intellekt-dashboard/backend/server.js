@@ -645,6 +645,50 @@ app.post('/register-test-slot', async (req, res) => {
 	}
 });
 
+app.get('/student-notifications/:roll', async (req, res) => {
+	const { roll } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+      SELECT *
+      FROM student_notifications
+      WHERE roll_no = $1
+      AND is_read = FALSE
+      ORDER BY created_at DESC
+      `,
+			[ roll ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET notifications error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch notifications'
+		});
+	}
+});
+
+app.put('/student-notifications/read', async (req, res) => {
+	const { roll_no, module_name } = req.body;
+
+	try {
+		await pool.query(
+			`
+			UPDATE student_notifications
+			SET is_read = TRUE
+			WHERE roll_no = $1
+			  AND module_name = $2
+			`,
+			[roll_no, module_name]
+		);
+
+		res.json({ message: 'Notifications marked as read' });
+	} catch (err) {
+		console.error('PUT /student-notifications/read error:', err);
+		res.status(500).json({ error: 'Failed to update notifications' });
+	}
+});
 /* =========================================================
    FEES
 ========================================================= */
@@ -795,6 +839,19 @@ app.post('/marks', async (req, res) => {
 		});
 	}
 });
+await pool.query(
+	`
+	INSERT INTO student_notifications
+	(roll_no, module_name, message)
+	VALUES ($1, $2, $3)
+	`,
+	[
+		studentResult.rows[0].roll_no,
+		'marks',
+		'New marks have been uploaded'
+	]
+);
+
 app.get('/marks', async (req, res) => {
 	const { name, className, testCode } = req.query;
 
@@ -1386,6 +1443,20 @@ app.put('/attendance', async (req, res) => {
 				});
 			}
 		}
+		for (const record of records) {
+			await client.query(
+		`
+		INSERT INTO student_notifications
+		(roll_no, module_name, message)
+		VALUES ($1, $2, $3)
+		`,
+		[
+			record.roll_no,
+			'attendance',
+			'Attendance updated'
+		]
+	);
+}
 
 		await client.query('COMMIT');
 		res.json({ message: 'Attendance updated successfully' });
@@ -1615,7 +1686,30 @@ app.post('/post-test', async (req, res) => {
 				writing_allowed_till || null
 			]
 		);
+const studentsForNotification = await client.query(
+	`
+	SELECT roll_no
+	FROM students
+	WHERE TRIM(class) = TRIM($1)
+	  AND TRIM(board) = TRIM($2)
+	`,
+	[cleanClassName, cleanBoard]
+);
 
+for (const student of studentsForNotification.rows) {
+	await client.query(
+		`
+		INSERT INTO student_notifications
+		(roll_no, module_name, message)
+		VALUES ($1, $2, $3)
+		`,
+		[
+			student.roll_no,
+			'test-schedule',
+			'New test has been scheduled'
+		]
+	);
+}
 		await client.query('COMMIT');
 
 		res.json({
@@ -2868,43 +2962,6 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 			RETURNING *
 			`,
 			[id]
-		);
-
-		if (result.rowCount === 0) {
-			return res.status(404).json({ error: 'Task not found' });
-		}
-
-		res.json({
-			message: 'Task deleted successfully',
-			deletedTask: result.rows[0]
-		});
-	} catch (err) {
-		console.error('DELETE /faculty-tasks/:id error:', err);
-		res.status(500).json({
-			error: 'Failed to delete task',
-			details: err.message
-		});
-	}
-});
-
-app.delete('/faculty-tasks/:id', async (req, res) => {
-	const { id } = req.params;
-	const loginFacultyId = req.query.loginFacultyId;
-
-	try {
-		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
-			return res.status(403).json({
-				error: 'Only IG001 and IG002 can delete faculty tasks'
-			});
-		}
-
-		const result = await pool.query(
-			`
-      DELETE FROM faculty_tasks
-      WHERE id = $1
-      RETURNING *
-      `,
-			[ id ]
 		);
 
 		if (result.rowCount === 0) {
