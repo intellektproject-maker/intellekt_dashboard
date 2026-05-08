@@ -718,13 +718,33 @@ app.post('/marks', async (req, res) => {
 				continue;
 			}
 
-			const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [
-				record.test_code
-			]);
+			const testResult = await pool.query(
+				`
+				SELECT test_code, total_marks
+				FROM tests
+				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+				`,
+				[record.test_code]
+			);
 
 			if (testResult.rows.length === 0) {
 				return res.status(400).json({
 					error: `Invalid test code: ${record.test_code}`
+				});
+			}
+
+			const studentResult = await pool.query(
+				`
+				SELECT roll_no, name
+				FROM students
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+				`,
+				[record.roll_no]
+			);
+
+			if (studentResult.rows.length === 0) {
+				return res.status(400).json({
+					error: `Invalid student: ${record.roll_no}`
 				});
 			}
 
@@ -733,33 +753,48 @@ app.post('/marks', async (req, res) => {
 
 			if (obtainedMarks > totalMarks) {
 				return res.status(400).json({
-					error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks}) for test ${record.test_code}`
+					error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
 				});
 			}
 
 			await pool.query(
 				`
-        INSERT INTO marks (roll_no, test_code, marks_obtained, comments)
-        VALUES ($1, $2, $3, $4)
-        `,
-				[ record.roll_no, record.test_code, obtainedMarks, record.comments || null ]
+				INSERT INTO marks (
+					roll_no,
+					student_name,
+					test_code,
+					marks_obtained,
+					comments,
+					total_marks
+				)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (roll_no, test_code)
+				DO UPDATE SET
+					student_name = EXCLUDED.student_name,
+					marks_obtained = EXCLUDED.marks_obtained,
+					comments = EXCLUDED.comments,
+					total_marks = EXCLUDED.total_marks
+				`,
+				[
+					studentResult.rows[0].roll_no,
+					studentResult.rows[0].name,
+					String(record.test_code).toUpperCase().trim(),
+					obtainedMarks,
+					record.comments || null,
+					totalMarks
+				]
 			);
 		}
 
 		res.json({ message: 'Marks saved successfully' });
 	} catch (err) {
 		console.error('POST /marks error:', err);
-
-		if (err.code === '23505') {
-			return res.status(400).json({
-				error: 'Marks already exist for one or more students in this test'
-			});
-		}
-
-		res.status(500).json({ error: 'Marks save failed' });
+		res.status(500).json({
+			error: 'Marks save failed',
+			details: err.message
+		});
 	}
 });
-
 app.get('/marks', async (req, res) => {
 	const { name, className, testCode } = req.query;
 
@@ -1908,6 +1943,56 @@ app.get('/students-by-class/:class', async (req, res) => {
 	} catch (err) {
 		console.error('GET /students-by-class/:class error:', err);
 		res.status(500).json({ error: 'Database error' });
+	}
+});
+app.get('/enter-marks-students', async (req, res) => {
+	const { className, board, testCode } = req.query;
+
+	if (!className || !board || !testCode) {
+		return res.status(400).json({
+			error: 'className, board and testCode are required'
+		});
+	}
+
+	try {
+		const testResult = await pool.query(
+			`
+			SELECT subject_id
+			FROM tests
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+			`,
+			[testCode]
+		);
+
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		const subjectId = testResult.rows[0].subject_id;
+
+		const result = await pool.query(
+			`
+			SELECT DISTINCT
+				s.roll_no,
+				s.name
+			FROM students s
+			JOIN student_subjects ss
+			  ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
+			WHERE TRIM(s.class) = TRIM($1)
+			  AND TRIM(s.board) = TRIM($2)
+			  AND ss.subject_id = $3
+			ORDER BY s.roll_no ASC
+			`,
+			[className, board, subjectId]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enter-marks-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch students',
+			details: err.message
+		});
 	}
 });
 
