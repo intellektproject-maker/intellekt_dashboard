@@ -932,63 +932,120 @@ app.get('/classes', async (req, res) => {
 app.get('/attendance', async (req, res) => {
 	const { mode, class: classBoard, from, to, subject } = req.query;
 
-	if (mode !== 'report') {
-		return res.status(400).json({ error: 'Invalid attendance request' });
-	}
-
-	if (!classBoard || !from || !to) {
-		return res.status(400).json({
-			error: 'class, from and to are required'
-		});
-	}
-
-	const { board, classOnly } = splitClassBoard(classBoard);
-
-	if (!classOnly) {
-		return res.status(400).json({ error: 'Invalid class selected' });
+	if (!mode) {
+		return res.status(400).json({ error: 'mode is required' });
 	}
 
 	try {
-		let query = `
-			SELECT
-				a.roll_no,
-				s.name,
-				TRIM(s.class) AS class,
-				TRIM(s.board) AS board,
-				a.subject_id,
-				a.attendance_date,
-				a.attendance_time,
-				a.status,
-				a.updated_by
-			FROM attendance a
-			JOIN students s
-			  ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
-			WHERE TRIM(s.class) = TRIM($1)
-			  AND a.attendance_date BETWEEN $2 AND $3
-		`;
+		if (mode === 'report') {
+			if (!classBoard || !from || !to) {
+				return res.status(400).json({
+					error: 'class, from and to are required'
+				});
+			}
 
-		const values = [classOnly, from, to];
+			const { board, classOnly } = splitClassBoard(classBoard);
 
-		if (board) {
-			values.push(board);
-			query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+			if (!classOnly) {
+				return res.status(400).json({ error: 'Invalid class selected' });
+			}
+
+			let query = `
+				SELECT
+					a.roll_no,
+					s.name,
+					TRIM(s.class) AS class,
+					TRIM(s.board) AS board,
+					a.subject_id,
+					a.attendance_date,
+					a.attendance_time,
+					a.status,
+					a.updated_by,
+					a.marked_at,
+					a.edited_by,
+					a.edited_at
+				FROM attendance a
+				JOIN students s
+				  ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+				WHERE TRIM(s.class) = TRIM($1)
+				  AND a.attendance_date BETWEEN $2 AND $3
+			`;
+
+			const values = [classOnly, from, to];
+
+			if (board) {
+				values.push(board);
+				query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+			}
+
+			if (subject) {
+				values.push(subject);
+				query += ` AND a.subject_id = $${values.length}`;
+			}
+
+			query += `
+				ORDER BY a.attendance_date DESC, a.attendance_time DESC, a.roll_no ASC
+			`;
+
+			const result = await pool.query(query, values);
+			return res.json(result.rows);
 		}
 
-		if (subject) {
-			values.push(subject);
-			query += ` AND a.subject_id = $${values.length}`;
+		if (mode === 'markedToday') {
+			let query = `
+				SELECT
+					a.roll_no,
+					s.name,
+					TRIM(s.class) AS class,
+					TRIM(s.board) AS board,
+					a.subject_id,
+					a.attendance_date,
+					a.attendance_time,
+					a.status,
+					a.updated_by,
+					a.marked_at,
+					a.edited_by,
+					a.edited_at
+				FROM attendance a
+				JOIN students s
+				  ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+				WHERE a.attendance_date = CURRENT_DATE
+			`;
+
+			const values = [];
+
+			if (classBoard) {
+				const { board, classOnly } = splitClassBoard(classBoard);
+
+				if (classOnly) {
+					values.push(classOnly);
+					query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+				}
+
+				if (board) {
+					values.push(board);
+					query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+				}
+			}
+
+			if (subject) {
+				values.push(subject);
+				query += ` AND a.subject_id = $${values.length}`;
+			}
+
+			query += `
+				ORDER BY a.marked_at DESC, a.attendance_time DESC, a.roll_no ASC
+			`;
+
+			const result = await pool.query(query, values);
+			return res.json(result.rows);
 		}
 
-		query += `
-			ORDER BY a.attendance_date DESC, a.attendance_time DESC, a.roll_no ASC
-		`;
-
-		const result = await pool.query(query, values);
-		res.json(result.rows);
+		return res.status(400).json({ error: 'Invalid attendance mode' });
 	} catch (err) {
-		console.error('GET /attendance report error:', err);
+		console.error('GET /attendance error:', err);
 		res.status(500).json({
-			error: 'Failed to fetch attendance report',
+			error: 'Failed to fetch attendance',
 			details: err.message
 		});
 	}
@@ -1006,7 +1063,10 @@ app.get('/attendance/:rollNo', async (req, res) => {
 				attendance_date,
 				attendance_time,
 				status,
-				updated_by
+				updated_by,
+				marked_at,
+				edited_by,
+				edited_at
 			FROM attendance
 			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 			ORDER BY attendance_date DESC, attendance_time DESC
@@ -1071,7 +1131,10 @@ app.post('/attendance', async (req, res) => {
 						UPDATE attendance
 						SET status = $1,
 						    updated_by = $2,
-						    attendance_time = CURRENT_TIME
+						    attendance_time = CURRENT_TIME,
+						    marked_at = COALESCE(marked_at, CURRENT_TIMESTAMP),
+						    edited_by = $2,
+						    edited_at = CURRENT_TIMESTAMP
 						WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 						  AND subject_id = $4
 						  AND attendance_date = $5
@@ -1083,8 +1146,8 @@ app.post('/attendance', async (req, res) => {
 				await client.query(
 					`
 					INSERT INTO attendance
-						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by)
-					VALUES ($1, $2, $3, CURRENT_TIME, $4, $5)
+						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, marked_at)
+					VALUES ($1, $2, $3, CURRENT_TIME, $4, $5, CURRENT_TIMESTAMP)
 					`,
 					[record.roll_no, subject, selectedDate, record.status, facultyId]
 				);
@@ -1111,7 +1174,10 @@ app.post('/attendance', async (req, res) => {
 	} catch (err) {
 		await client.query('ROLLBACK');
 		console.error('POST /attendance error:', err);
-		res.status(500).json({ error: 'Failed to save attendance' });
+		res.status(500).json({
+			error: 'Failed to save attendance',
+			details: err.message
+		});
 	} finally {
 		client.release();
 	}
@@ -1137,18 +1203,27 @@ app.put('/attendance', async (req, res) => {
 		await client.query('BEGIN');
 
 		for (const record of records) {
-			await client.query(
+			const result = await client.query(
 				`
 				UPDATE attendance
 				SET status = $1,
-				    updated_by = $2,
-				    attendance_time = CURRENT_TIME
+				    edited_by = $2,
+				    edited_at = CURRENT_TIMESTAMP
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 				  AND subject_id = $4
 				  AND attendance_date = $5
+				RETURNING *
 				`,
 				[record.status, facultyId, record.roll_no, subject, selectedDate]
 			);
+
+			if (result.rows.length === 0) {
+				await client.query('ROLLBACK');
+
+				return res.status(404).json({
+					error: `Attendance record not found for ${record.roll_no}`
+				});
+			}
 		}
 
 		await client.query('COMMIT');
@@ -1156,7 +1231,10 @@ app.put('/attendance', async (req, res) => {
 	} catch (err) {
 		await client.query('ROLLBACK');
 		console.error('PUT /attendance error:', err);
-		res.status(500).json({ error: 'Failed to update attendance' });
+		res.status(500).json({
+			error: 'Failed to update attendance',
+			details: err.message
+		});
 	} finally {
 		client.release();
 	}
