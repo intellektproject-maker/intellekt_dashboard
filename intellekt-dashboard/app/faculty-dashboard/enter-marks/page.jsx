@@ -72,17 +72,19 @@ function MarksPageContent() {
     setTotalError("");
   }
 
-  function generateComment(mark) {
-    if (!totalMarks) return "";
+function generateComment(mark) {
+  if (String(mark).toUpperCase() === "A") return "Absent";
 
-    const percentage = (Number(mark) / Number(totalMarks)) * 100;
+  if (!totalMarks) return "";
 
-    if (percentage >= 90) return "Excellent";
-    if (percentage >= 75) return "Very Good";
-    if (percentage >= 60) return "Good";
-    if (percentage >= 40) return "Average";
-    return "Needs Improvement";
-  }
+  const percentage = (Number(mark) / Number(totalMarks)) * 100;
+
+  if (percentage >= 90) return "Excellent";
+  if (percentage >= 75) return "Very Good";
+  if (percentage >= 60) return "Good";
+  if (percentage >= 40) return "Average";
+  return "Needs Improvement";
+}
 
   async function loadStudents() {
     let hasError = false;
@@ -141,28 +143,38 @@ function MarksPageContent() {
   }
 
   function handleMarks(roll, value) {
-    if (value === "") {
-      setMarks((p) => ({ ...p, [roll]: "" }));
-      setComments((p) => ({ ...p, [roll]: "" }));
-      setErrors((p) => ({ ...p, [roll]: "Required" }));
-      return;
-    }
+  const raw = value.trim();
 
-    let clean = value.replace(/\D/g, "").replace(/^0+/, "");
-    if (clean === "") clean = "0";
-
-    const num = Number(clean);
-
-    if (num > totalMarks) {
-      setErrors((p) => ({ ...p, [roll]: `Max ${totalMarks}` }));
-      return;
-    }
-
-    setMarks((p) => ({ ...p, [roll]: num }));
-    setErrors((p) => ({ ...p, [roll]: "" }));
-    setComments((p) => ({ ...p, [roll]: generateComment(num) }));
+  if (raw === "") {
+    setMarks((p) => ({ ...p, [roll]: "" }));
+    setComments((p) => ({ ...p, [roll]: "" }));
+    setErrors((p) => ({ ...p, [roll]: "Required" }));
+    return;
   }
 
+  if (raw.toUpperCase() === "A") {
+    setMarks((p) => ({ ...p, [roll]: "A" }));
+    setErrors((p) => ({ ...p, [roll]: "" }));
+    setComments((p) => ({ ...p, [roll]: "Absent" }));
+    return;
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    setErrors((p) => ({ ...p, [roll]: "Only numbers or A" }));
+    return;
+  }
+
+  const num = Number(raw);
+
+  if (num > totalMarks) {
+    setErrors((p) => ({ ...p, [roll]: `Max ${totalMarks}` }));
+    return;
+  }
+
+  setMarks((p) => ({ ...p, [roll]: num }));
+  setErrors((p) => ({ ...p, [roll]: "" }));
+  setComments((p) => ({ ...p, [roll]: generateComment(num) }));
+}
   async function submitMarks() {
     if (students.length === 0) {
       alert("Load students first");
