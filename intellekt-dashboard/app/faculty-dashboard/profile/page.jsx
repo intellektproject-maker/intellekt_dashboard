@@ -31,6 +31,7 @@ function FacultyProfileInner() {
   const [activeSection, setActiveSection] = useState('');
 
   const priorityOptions = ['High', 'Medium', 'Low'];
+  const taskTypeOptions = ['Weekly', 'Daily'];
 
   const [form, setForm] = useState({
     faculty_id: '',
@@ -101,6 +102,22 @@ function FacultyProfileInner() {
     }
 
     return 'bg-green-100 text-green-700 border border-green-200';
+  }
+
+  function getTaskCardClass(task) {
+    if (task.task_type === 'Daily') {
+      return 'rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm';
+    }
+
+    if (isOverdue(task)) {
+      return 'rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm';
+    }
+
+    if (isDueToday(task)) {
+      return 'rounded-xl border border-yellow-200 bg-yellow-50 p-4 shadow-sm';
+    }
+
+    return 'rounded-xl border p-4 shadow-sm bg-gray-50';
   }
 
   function applyTaskFilter(taskList, filterValue) {
@@ -318,7 +335,12 @@ function FacultyProfileInner() {
     setForm((prev) => ({
       ...prev,
       [name]: value,
-      due_date: name === 'task_type' && value === 'Daily' ? '' : prev.due_date
+      ...(name === 'task_type' && value === 'Daily'
+        ? { due_date: '', priority: 'High' }
+        : {}),
+      ...(name === 'task_type' && value === 'Weekly'
+        ? { priority: 'Medium' }
+        : {})
     }));
   }
 
@@ -354,8 +376,8 @@ function FacultyProfileInner() {
           subject_name: form.subject_name,
           total_test_note: form.total_test_note,
           other_tasks: form.other_tasks,
-          due_date: form.task_type === 'Daily' ? '' : form.due_date,
-          priority: form.priority,
+          due_date: form.task_type === 'Daily' ? null : form.due_date,
+          priority: form.task_type === 'Daily' ? 'High' : form.priority,
           task_type: form.task_type
         })
       });
@@ -464,30 +486,30 @@ function FacultyProfileInner() {
   }
 
   const myStats = useMemo(() => {
-    const pending = tasks.filter((task) => !task.is_completed).length;
-    const completed = tasks.filter((task) => task.is_completed).length;
-    const overdue = tasks.filter((task) => isOverdue(task)).length;
-    const dueToday = tasks.filter((task) => isDueToday(task)).length;
-
-    return { pending, completed, overdue, dueToday };
+    return {
+      pending: tasks.filter((task) => !task.is_completed).length,
+      completed: tasks.filter((task) => task.is_completed).length,
+      overdue: tasks.filter((task) => isOverdue(task)).length,
+      dueToday: tasks.filter((task) => isDueToday(task)).length
+    };
   }, [tasks]);
 
   const allStats = useMemo(() => {
-    const pending = allTasks.filter((task) => !task.is_completed).length;
-    const completed = allTasks.filter((task) => task.is_completed).length;
-    const overdue = allTasks.filter((task) => isOverdue(task)).length;
-    const dueToday = allTasks.filter((task) => isDueToday(task)).length;
-
-    return { pending, completed, overdue, dueToday };
+    return {
+      pending: allTasks.filter((task) => !task.is_completed).length,
+      completed: allTasks.filter((task) => task.is_completed).length,
+      overdue: allTasks.filter((task) => isOverdue(task)).length,
+      dueToday: allTasks.filter((task) => isDueToday(task)).length
+    };
   }, [allTasks]);
 
   const dailyStats = useMemo(() => {
-    const pending = dailyTasks.filter((task) => !task.is_completed).length;
-    const completed = dailyTasks.filter((task) => task.is_completed).length;
-    const overdue = dailyTasks.filter((task) => isOverdue(task)).length;
-    const dueToday = dailyTasks.filter((task) => isDueToday(task)).length;
-
-    return { pending, completed, overdue, dueToday };
+    return {
+      pending: dailyTasks.filter((task) => !task.is_completed).length,
+      completed: dailyTasks.filter((task) => task.is_completed).length,
+      overdue: dailyTasks.filter((task) => isOverdue(task)).length,
+      dueToday: dailyTasks.filter((task) => isDueToday(task)).length
+    };
   }, [dailyTasks]);
 
   const filteredMyTasks = useMemo(() => {
@@ -502,72 +524,56 @@ function FacultyProfileInner() {
     return applyTaskFilter(dailyTasks, dailyTaskFilter);
   }, [dailyTasks, dailyTaskFilter]);
 
-  function renderTaskCard(task, showFacultyName = true) {
+  function renderTaskDetails(task, showType = false) {
     return (
-      <div key={task.id} className="rounded-xl border p-4 shadow-sm bg-gray-50">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-1 items-start gap-3">
-            <input
-              type="checkbox"
-              checked={task.is_completed}
-              onChange={() => handleToggleTask(task.id, task.is_completed)}
-              className="mt-1 h-4 w-4"
-            />
+      <div className="space-y-1 text-gray-700">
+        <p className="font-medium text-gray-800">
+          {task.faculty_name} ({task.faculty_id})
+        </p>
 
-            <div className="space-y-1 text-gray-700">
-              {showFacultyName && (
-                <p className="font-medium text-gray-800">
-                  {task.faculty_name} ({task.faculty_id})
-                </p>
-              )}
+        <p>
+          <b>Class:</b> {task.class_name}
+        </p>
 
-              <p>
-                <b>Class:</b> {task.class_name}
-              </p>
-              <p>
-                <b>Task Type:</b> {task.task_type || 'Weekly'}
-              </p>
-              <p>
-                <b>Test Code:</b> {task.subject_name || '-'}
-              </p>
-              <p>
-                <b>Total Test Note:</b> {task.total_test_note || '-'}
-              </p>
-              <p>
-                <b>Due Date:</b>{' '}
-                {task.due_date
-                  ? new Date(task.due_date).toLocaleDateString()
-                  : '-'}
-              </p>
-              <p>
-                <b>Other Tasks:</b> {task.other_tasks || '-'}
-              </p>
-              <p className="text-sm text-gray-500">
-                Assigned by: {task.assigned_by}
-              </p>
-            </div>
-          </div>
+        {showType && (
+          <p>
+            <b>Task Type:</b> {task.task_type || 'Weekly'}
+          </p>
+        )}
 
-          {canAccessAllTasks && (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => handleReassignTask(task)}
-                className="text-blue-600 hover:text-blue-800"
-              >
-                Reassign
-              </button>
+        <p>
+          <b>Priority:</b> {task.priority || 'Medium'}
+        </p>
 
-              <button
-                type="button"
-                onClick={() => handleDeleteTask(task.id)}
-                className="text-red-600 hover:text-red-800"
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
+        <p>
+          <b>Test Code:</b> {task.subject_name || '-'}
+        </p>
+
+        <p>
+          <b>Total Test Note:</b> {task.total_test_note || '-'}
+        </p>
+
+        <p>
+          <b>Due Date:</b>{' '}
+          {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}
+        </p>
+
+        <p>
+          <b>Other Tasks:</b> {task.other_tasks || '-'}
+        </p>
+
+        {task.is_completed && (
+          <p className="font-semibold text-green-700">
+            Completed
+            {task.completed_at
+              ? ` on ${new Date(task.completed_at).toLocaleDateString()}`
+              : ''}
+          </p>
+        )}
+
+        <p className="text-sm text-gray-500">
+          Assigned by: {task.assigned_by}
+        </p>
       </div>
     );
   }
@@ -657,7 +663,7 @@ function FacultyProfileInner() {
                   All Faculty Daily Task
                 </h4>
                 <p className="text-gray-600 text-base">
-                  View today’s repeated daily tasks.
+                  View daily repeated tasks for all faculty.
                 </p>
               </button>
             )}
@@ -717,21 +723,6 @@ function FacultyProfileInner() {
             <form onSubmit={handleAssignTask} className="space-y-4">
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  Task Type
-                </label>
-                <select
-                  name="task_type"
-                  value={form.task_type}
-                  onChange={handleInputChange}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
-                >
-                  <option value="Weekly">Weekly Task</option>
-                  <option value="Daily">Daily Task</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-gray-700">
                   1. Faculty Name
                 </label>
                 <select
@@ -769,7 +760,25 @@ function FacultyProfileInner() {
 
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  3. Test Code
+                  3. Task Type
+                </label>
+                <select
+                  name="task_type"
+                  value={form.task_type}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                >
+                  {taskTypeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {type} Task
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  4. Test Code
                 </label>
                 <select
                   name="subject_name"
@@ -788,7 +797,7 @@ function FacultyProfileInner() {
 
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  4. Total Test Note
+                  5. Total Test Note
                 </label>
                 <input
                   type="text"
@@ -823,7 +832,8 @@ function FacultyProfileInner() {
                   name="priority"
                   value={form.priority}
                   onChange={handleInputChange}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                  disabled={form.task_type === 'Daily'}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700 disabled:bg-gray-100"
                 >
                   {priorityOptions.map((priority) => (
                     <option key={priority} value={priority}>
@@ -835,7 +845,7 @@ function FacultyProfileInner() {
 
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  5. Other Tasks
+                  Other Tasks
                 </label>
                 <textarea
                   name="other_tasks"
@@ -870,6 +880,7 @@ function FacultyProfileInner() {
                   {allStats.pending}
                 </p>
               </div>
+
               <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-green-700">
                   All Completed
@@ -878,12 +889,14 @@ function FacultyProfileInner() {
                   {allStats.completed}
                 </p>
               </div>
+
               <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-red-700">All Overdue</p>
                 <p className="mt-2 text-3xl font-bold text-red-900">
                   {allStats.overdue}
                 </p>
               </div>
+
               <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-yellow-700">
                   All Due Today
@@ -919,7 +932,33 @@ function FacultyProfileInner() {
               </p>
             ) : (
               <div className="space-y-4">
-                {filteredAllTasks.map((task) => renderTaskCard(task))}
+                {filteredAllTasks.map((task) => (
+                  <div key={task.id} className={getTaskCardClass(task)}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        {renderTaskDetails(task, true)}
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleReassignTask(task)}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Reassign
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -940,6 +979,7 @@ function FacultyProfileInner() {
                   {dailyStats.pending}
                 </p>
               </div>
+
               <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-green-700">
                   Daily Completed
@@ -948,6 +988,7 @@ function FacultyProfileInner() {
                   {dailyStats.completed}
                 </p>
               </div>
+
               <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-red-700">
                   Daily Overdue
@@ -956,6 +997,7 @@ function FacultyProfileInner() {
                   {dailyStats.overdue}
                 </p>
               </div>
+
               <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-yellow-700">
                   Daily Due Today
@@ -991,7 +1033,36 @@ function FacultyProfileInner() {
               </p>
             ) : (
               <div className="space-y-4">
-                {filteredDailyTasks.map((task) => renderTaskCard(task))}
+                {filteredDailyTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        {renderTaskDetails(task, true)}
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleReassignTask(task)}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Reassign
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1012,6 +1083,7 @@ function FacultyProfileInner() {
                   {myStats.pending}
                 </p>
               </div>
+
               <div className="rounded-xl border border-green-200 bg-green-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-green-700">
                   My Completed Tasks
@@ -1020,6 +1092,7 @@ function FacultyProfileInner() {
                   {myStats.completed}
                 </p>
               </div>
+
               <div className="rounded-xl border border-red-200 bg-red-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-red-700">
                   My Overdue Tasks
@@ -1028,6 +1101,7 @@ function FacultyProfileInner() {
                   {myStats.overdue}
                 </p>
               </div>
+
               <div className="rounded-xl border border-yellow-200 bg-yellow-100 p-4 shadow-sm">
                 <p className="text-sm font-medium text-yellow-700">
                   My Due Today
@@ -1058,10 +1132,49 @@ function FacultyProfileInner() {
             {taskLoading ? (
               <p className="text-gray-600">Loading tasks...</p>
             ) : filteredMyTasks.length === 0 ? (
-              <p className="text-gray-600">No tasks assigned for this filter.</p>
+              <p className="text-gray-600">
+                No tasks assigned for this filter.
+              </p>
             ) : (
               <div className="space-y-4">
-                {filteredMyTasks.map((task) => renderTaskCard(task))}
+                {filteredMyTasks.map((task) => (
+                  <div key={task.id} className={getTaskCardClass(task)}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex flex-1 items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={task.is_completed}
+                          onChange={() =>
+                            handleToggleTask(task.id, task.is_completed)
+                          }
+                          className="mt-1 h-4 w-4"
+                        />
+
+                        {renderTaskDetails(task, true)}
+                      </div>
+
+                      {canAccessAllTasks && (
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleReassignTask(task)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            Reassign
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

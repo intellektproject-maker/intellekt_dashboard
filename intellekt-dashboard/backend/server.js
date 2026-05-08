@@ -2305,11 +2305,15 @@ app.get('/faculty-tasks/:facultyId', async (req, res) => {
 				task_date
 			FROM faculty_tasks
 			WHERE faculty_id = $1
-			  AND (
-					task_type = 'Weekly'
-					OR task_type IS NULL
-					OR parent_daily_task_id IS NOT NULL
-			  )
+  AND (
+    task_type = 'Weekly'
+    OR task_type IS NULL
+    OR (
+      task_type = 'Daily'
+      AND parent_daily_task_id IS NOT NULL
+      AND is_completed = FALSE
+    )
+  )
 			ORDER BY created_at DESC
 			`,
 			[facultyId]
