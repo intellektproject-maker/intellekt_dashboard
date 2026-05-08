@@ -928,6 +928,126 @@ app.get('/classes', async (req, res) => {
 		res.status(500).json({ error: 'Failed to fetch classes' });
 	}
 });
+/* =========================================================
+   STUDENT RECORD REPORT - IG001 / IG002
+========================================================= */
+
+app.get('/student-records', async (req, res) => {
+	const { className, board } = req.query;
+
+	if (!className || !board) {
+		return res.status(400).json({
+			error: 'className and board are required'
+		});
+	}
+
+	try {
+		const result = await pool.query(
+			`
+			SELECT
+				roll_no,
+				name,
+				TRIM(class) AS class,
+				TRIM(board) AS board,
+				phone,
+				email,
+				school_name
+			FROM students
+			WHERE TRIM(class) = TRIM($1)
+			  AND TRIM(board) = TRIM($2)
+			ORDER BY roll_no ASC
+			`,
+			[className, board]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-records error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student records',
+			details: err.message
+		});
+	}
+});
+
+app.get('/student-record-report/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	try {
+		const studentResult = await pool.query(
+			`
+			SELECT
+				roll_no,
+				name,
+				TRIM(class) AS class,
+				TRIM(board) AS board,
+				mode_of_education,
+				phone,
+				email,
+				school_name
+			FROM students
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[rollNo]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const marksResult = await pool.query(
+			`
+			SELECT
+				m.test_code,
+				m.marks_obtained,
+				t.total_marks,
+				t.test_date,
+				COALESCE(sub.subject_name, 
+					CASE 
+						WHEN t.subject_id = 1 THEN 'Maths'
+						WHEN t.subject_id = 2 THEN 'Physics'
+						ELSE 'Unknown'
+					END
+				) AS subject_name
+			FROM marks m
+			JOIN tests t
+			  ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			LEFT JOIN subjects sub
+			  ON t.subject_id = sub.subject_id
+			WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
+			ORDER BY t.test_date DESC, m.test_code DESC
+			LIMIT 5
+			`,
+			[rollNo]
+		);
+
+		const attendanceResult = await pool.query(
+			`
+			SELECT
+				COUNT(*) FILTER (WHERE LOWER(TRIM(status)) = 'present') AS present_days,
+				COUNT(*) FILTER (WHERE LOWER(TRIM(status)) = 'absent') AS absent_days
+			FROM attendance
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[rollNo]
+		);
+
+		res.json({
+			student: studentResult.rows[0],
+			marks: marksResult.rows,
+			attendance: {
+				present_days: Number(attendanceResult.rows[0].present_days || 0),
+				absent_days: Number(attendanceResult.rows[0].absent_days || 0)
+			}
+		});
+	} catch (err) {
+		console.error('GET /student-record-report/:rollNo error:', err);
+		res.status(500).json({
+			error: 'Failed to generate student report',
+			details: err.message
+		});
+	}
+});
 
 app.get('/attendance', async (req, res) => {
 	const { mode, class: classBoard, from, to, subject } = req.query;
