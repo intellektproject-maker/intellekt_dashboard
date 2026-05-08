@@ -839,19 +839,6 @@ app.post('/marks', async (req, res) => {
 		});
 	}
 });
-await pool.query(
-	`
-	INSERT INTO student_notifications
-	(roll_no, module_name, message)
-	VALUES ($1, $2, $3)
-	`,
-	[
-		studentResult.rows[0].roll_no,
-		'marks',
-		'New marks have been uploaded'
-	]
-);
-
 app.get('/marks', async (req, res) => {
 	const { name, className, testCode } = req.query;
 
