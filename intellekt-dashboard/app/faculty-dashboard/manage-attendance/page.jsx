@@ -99,7 +99,8 @@ function ManageAttendancePageInner() {
 
   const [loading, setLoading] = useState(false);
   const [markedLoading, setMarkedLoading] = useState(false);
-  const [classesLoading, setClassesLoading] = useState(false);
+const [markedSearched, setMarkedSearched] = useState(false);
+const [classesLoading, setClassesLoading] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("");
@@ -109,11 +110,7 @@ function ManageAttendancePageInner() {
     fetchClasses();
   }, []);
 
-  useEffect(() => {
-    if (activeTab === "marked") {
-      fetchMarkedAttendance();
-    }
-  }, [activeTab]);
+  // Removed auto fetch for marked attendance
 
   async function fetchClasses() {
     try {
@@ -210,43 +207,53 @@ function ManageAttendancePageInner() {
   }
 
   async function fetchMarkedAttendance() {
-    try {
-      setMarkedLoading(true);
-      setMarkedRows([]);
-
-      const params = new URLSearchParams();
-      params.append("mode", "markedToday");
-
-      if (classBoard) params.append("class", classBoard);
-      if (subject) params.append("subject", subjectMap[subject]);
-
-      const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
-        cache: "no-store",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert(data.error || "Failed to fetch marked attendance");
-        return;
-      }
-
-      const prepared = Array.isArray(data)
-        ? data.map((row) => ({
-            ...row,
-            isEditing: false,
-            editedStatus: row.status,
-          }))
-        : [];
-
-      setMarkedRows(prepared);
-    } catch (err) {
-      console.error("Fetch marked attendance error:", err);
-      alert("Failed to fetch marked attendance");
-    } finally {
-      setMarkedLoading(false);
-    }
+  if (!classBoard) {
+    alert("Please select class");
+    return;
   }
+
+  if (!subject) {
+    alert("Please select subject");
+    return;
+  }
+
+  try {
+    setMarkedLoading(true);
+    setMarkedRows([]);
+    setMarkedSearched(true);
+
+    const params = new URLSearchParams();
+    params.append("mode", "markedToday");
+    params.append("class", classBoard);
+    params.append("subject", subjectMap[subject]);
+
+    const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
+      cache: "no-store",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || "Failed to fetch marked attendance");
+      return;
+    }
+
+    const prepared = Array.isArray(data)
+      ? data.map((row) => ({
+          ...row,
+          isEditing: false,
+          editedStatus: row.status,
+        }))
+      : [];
+
+    setMarkedRows(prepared);
+  } catch (err) {
+    console.error("Fetch marked attendance error:", err);
+    alert("Failed to fetch marked attendance");
+  } finally {
+    setMarkedLoading(false);
+  }
+}
 
   function getRowKey(row) {
     return `${row.roll_no}-${row.subject_id}-${toInputDate(
@@ -750,7 +757,7 @@ function ManageAttendancePageInner() {
             </div>
           )}
 
-          {!markedLoading && markedRows.length === 0 && (
+          {!markedLoading && markedSearched && markedRows.length === 0 && (
             <p className="text-gray-500">
               No attendance marked today yet.
             </p>
