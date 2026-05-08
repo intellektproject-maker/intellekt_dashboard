@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
@@ -9,41 +9,29 @@ function MarksPageContent() {
   const searchParams = useSearchParams();
   const facultyId = searchParams.get("id");
 
-  const [classBoard, setClassBoard] = useState("");
+  const [tests, setTests] = useState([]);
+  const [testCode, setTestCode] = useState("");
+  const [selectedTest, setSelectedTest] = useState(null);
+
   const [students, setStudents] = useState([]);
   const [marks, setMarks] = useState({});
   const [comments, setComments] = useState({});
-  const [testCode, setTestCode] = useState("");
-
-  const [autoTotal, setAutoTotal] = useState(null);
-  const [manualTotal, setManualTotal] = useState("");
-
   const [errors, setErrors] = useState({});
+
+  const [manualTotal, setManualTotal] = useState("");
+  const [loadingTests, setLoadingTests] = useState(true);
+
   const [testCodeError, setTestCodeError] = useState("");
   const [classError, setClassError] = useState("");
   const [totalError, setTotalError] = useState("");
 
-  const [classes, setClasses] = useState([]);
-  const [tests, setTests] = useState([]);
-  const [loadingClasses, setLoadingClasses] = useState(true);
-  const [loadingTests, setLoadingTests] = useState(true);
-
-  const totalMarks = manualTotal ? Number(manualTotal) : autoTotal;
+  const totalMarks = manualTotal
+    ? Number(manualTotal)
+    : selectedTest
+    ? Number(selectedTest.total_marks)
+    : "";
 
   useEffect(() => {
-    async function loadClasses() {
-      try {
-        const res = await fetch(`${API_BASE}/classes`);
-        const data = await res.json();
-        setClasses(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error("Error loading classes:", err);
-        setClasses([]);
-      } finally {
-        setLoadingClasses(false);
-      }
-    }
-
     async function loadTests() {
       try {
         const res = await fetch(`${API_BASE}/tests`);
@@ -57,32 +45,35 @@ function MarksPageContent() {
       }
     }
 
-    loadClasses();
     loadTests();
   }, []);
 
   function handleTestCode(value) {
     setTestCode(value);
+    setStudents([]);
+    setMarks({});
+    setComments({});
+    setErrors({});
+    setManualTotal("");
 
-    const selected = tests.find((t) => t.test_code === value);
+    const foundTest = tests.find(
+      (t) => String(t.test_code).trim() === String(value).trim()
+    );
 
-    if (selected) {
-      setAutoTotal(Number(selected.total_marks));
-      setManualTotal("");
-      setClassBoard(selected.class || "");
-      setTestCodeError("");
-      setClassError("");
-      setTotalError("");
-    } else {
-      setAutoTotal(null);
-      setClassBoard("");
-      if (value) setTestCodeError("Invalid test selected");
-      else setTestCodeError("");
+    if (!foundTest) {
+      setSelectedTest(null);
+      setTestCodeError(value ? "Invalid test selected" : "");
+      return;
     }
+
+    setSelectedTest(foundTest);
+    setTestCodeError("");
+    setClassError("");
+    setTotalError("");
   }
 
   function generateComment(mark) {
-    if (!totalMarks && totalMarks !== 0) return "";
+    if (!totalMarks) return "";
 
     const percentage = (Number(mark) / Number(totalMarks)) * 100;
 
@@ -96,31 +87,53 @@ function MarksPageContent() {
   async function loadStudents() {
     let hasError = false;
 
-    if (!classBoard) {
-      setClassError("Select class");
+    if (!testCode || !selectedTest) {
+      setTestCodeError("Select test code");
       hasError = true;
-    } else setClassError("");
+    } else {
+      setTestCodeError("");
+    }
+
+    if (!selectedTest?.class || !selectedTest?.board) {
+      setClassError("Class/board missing for selected test");
+      hasError = true;
+    } else {
+      setClassError("");
+    }
 
     if (!totalMarks) {
       setTotalError("Enter total marks");
       hasError = true;
-    } else setTotalError("");
-
-    if (!testCode.trim()) {
-      setTestCodeError("Select test code");
-      hasError = true;
-    } else setTestCodeError("");
+    } else {
+      setTotalError("");
+    }
 
     if (hasError) return;
 
     try {
-      const res = await fetch(`${API_BASE}/students/${classBoard}`);
+      const res = await fetch(
+        `${API_BASE}/enter-marks-students?className=${encodeURIComponent(
+          selectedTest.class
+        )}&board=${encodeURIComponent(
+          selectedTest.board
+        )}&testCode=${encodeURIComponent(testCode)}`
+      );
+
       const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Students loading failed");
+        return;
+      }
 
       setStudents(Array.isArray(data) ? data : []);
       setMarks({});
       setComments({});
       setErrors({});
+
+      if (!Array.isArray(data) || data.length === 0) {
+        alert("No students found for this test subject/class");
+      }
     } catch (err) {
       console.error("Error loading students:", err);
       alert("Students loading failed");
@@ -151,6 +164,11 @@ function MarksPageContent() {
   }
 
   async function submitMarks() {
+    if (students.length === 0) {
+      alert("Load students first");
+      return;
+    }
+
     const newErrors = {};
     let hasError = false;
 
@@ -170,6 +188,7 @@ function MarksPageContent() {
 
     const payload = students.map((s) => ({
       roll_no: s.roll_no,
+      student_name: s.name,
       marks: marks[s.roll_no],
       comments: comments[s.roll_no] || "",
       test_code: testCode.toUpperCase().trim(),
@@ -240,24 +259,19 @@ function MarksPageContent() {
                 Class
               </label>
 
-              <select
-                className={`w-full border rounded-lg px-4 py-3 ${
+              <input
+                type="text"
+                readOnly
+                value={
+                  selectedTest
+                    ? `${selectedTest.class} — ${selectedTest.board}`
+                    : ""
+                }
+                placeholder="Auto-filled"
+                className={`w-full border rounded-lg px-4 py-3 bg-gray-100 ${
                   classError ? "border-red-500" : "border-gray-300"
                 }`}
-                value={classBoard}
-                onChange={(e) => setClassBoard(e.target.value)}
-                disabled={loadingClasses}
-              >
-                <option value="">
-                  {loadingClasses ? "Loading classes..." : "Select Class"}
-                </option>
-
-                {classes.map((c, i) => (
-                  <option key={i} value={c.class}>
-                    {c.class} — {c.board}
-                  </option>
-                ))}
-              </select>
+              />
 
               {classError && (
                 <p className="text-red-500 text-xs mt-1">{classError}</p>
@@ -325,9 +339,7 @@ function MarksPageContent() {
                         />
                       </td>
 
-                      <td className="p-3">
-                        {comments[s.roll_no] || "-"}
-                      </td>
+                      <td className="p-3">{comments[s.roll_no] || "-"}</td>
 
                       <td className="p-3 text-red-500 text-sm">
                         {errors[s.roll_no] || ""}
