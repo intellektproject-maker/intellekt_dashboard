@@ -23,6 +23,7 @@ function FacultyProfileInner() {
   const [dailyTaskFilter, setDailyTaskFilter] = useState('All');
   const [classOptions, setClassOptions] = useState([]);
   const [testCodes, setTestCodes] = useState([]);
+  const [hasNotification, setHasNotification] = useState(false);
 
   const canAccessAllTasks =
     loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
@@ -214,6 +215,24 @@ function FacultyProfileInner() {
 
     fetchTestCodes();
   }, []);
+useEffect(() => {
+  async function fetchNotifications() {
+    try {
+      const data = await safeFetchJson(
+        `${API_BASE}/faculty-notifications/${facultyId}`
+      );
+
+      setHasNotification(Array.isArray(data) && data.length > 0);
+    } catch (err) {
+      console.error(err);
+      setHasNotification(false);
+    }
+  }
+
+  if (facultyId) {
+    fetchNotifications();
+  }
+}, [facultyId]);
 
   useEffect(() => {
     async function fetchMyTasks() {
@@ -691,26 +710,38 @@ function FacultyProfileInner() {
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() =>
-                setActiveSection(
-                  activeSection === 'myChecklist' ? '' : 'myChecklist'
-                )
-              }
-              className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                activeSection === 'myChecklist'
-                  ? 'border-blue-600 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:bg-gray-50'
-              }`}
-            >
-              <h4 className="mb-3 text-xl font-bold text-blue-700">
-                My Task Checklist
-              </h4>
-              <p className="text-gray-600 text-base">
-                View, filter and update my assigned tasks.
-              </p>
-            </button>
+           <button
+  type="button"
+  onClick={() => {
+    const nextSection =
+      activeSection === 'myChecklist' ? '' : 'myChecklist';
+
+    setActiveSection(nextSection);
+
+    if (nextSection === 'myChecklist') {
+      setHasNotification(false);
+    }
+  }}
+  className={`rounded-2xl border p-7 text-left shadow-md transition ${
+    activeSection === 'myChecklist'
+      ? 'border-blue-600 bg-blue-50'
+      : 'border-gray-200 bg-white hover:bg-gray-50'
+  }`}
+>
+  <div className="flex items-center gap-2 mb-3">
+    <h4 className="text-xl font-bold text-blue-700">
+      My Task Checklist
+    </h4>
+
+    {hasNotification && (
+      <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+    )}
+  </div>
+
+  <p className="text-gray-600 text-base">
+    View, filter and update my assigned tasks.
+  </p>
+</button>
           </div>
         </div>
 

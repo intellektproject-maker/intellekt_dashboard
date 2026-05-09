@@ -2890,23 +2890,25 @@ app.post('/faculty-tasks', async (req, res) => {
 				]
 			);
 
+await pool.query(
+  `
+  INSERT INTO faculty_notifications
+  (faculty_id, module_name, message)
+  VALUES ($1, $2, $3)
+  `,
+  [
+    faculty_id,
+    'tasks',
+    'New task assigned by admin'
+  ]
+);
+
 			return res.json({
 				message: 'Daily task assigned successfully',
 				task: todayTaskResult.rows[0]
 			});
 		}
-await pool.query(
-	`
-	INSERT INTO faculty_notifications
-	(faculty_id, module_name, message)
-	VALUES ($1, $2, $3)
-	`,
-	[
-		faculty_id,
-		'tasks',
-		'New task assigned by admin'
-	]
-);
+
 		const result = await pool.query(
 			`
 			INSERT INTO faculty_tasks (
@@ -2938,7 +2940,18 @@ await pool.query(
 				loginFacultyId
 			]
 		);
-
+await pool.query(
+  `
+  INSERT INTO faculty_notifications
+  (faculty_id, module_name, message)
+  VALUES ($1, $2, $3)
+  `,
+  [
+    faculty_id,
+    'tasks',
+    'New task assigned by admin'
+  ]
+);
 		res.json({
 			message: 'Task assigned successfully',
 			task: result.rows[0]
