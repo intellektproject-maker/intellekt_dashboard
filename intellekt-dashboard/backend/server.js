@@ -689,6 +689,36 @@ app.put('/student-notifications/read', async (req, res) => {
 		res.status(500).json({ error: 'Failed to update notifications' });
 	}
 });
+
+app.get('/student-notifications/:roll', async (req, res) => {
+	// existing code
+});
+
+app.get('/faculty-notifications/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+			SELECT *
+			FROM faculty_notifications
+			WHERE faculty_id = $1
+			  AND is_read = FALSE
+			ORDER BY created_at DESC
+			`,
+			[facultyId]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET faculty notifications error:', err);
+
+		res.status(500).json({
+			error: 'Failed to fetch faculty notifications'
+		});
+	}
+});
+
 /* =========================================================
    FEES
 ========================================================= */
@@ -1358,6 +1388,18 @@ app.post('/attendance', async (req, res) => {
 				);
 			}
 		}
+		await client.query(
+	`
+	INSERT INTO student_notifications
+	(roll_no, module_name, message)
+	VALUES ($1, $2, $3)
+	`,
+	[
+		record.roll_no,
+		'attendance',
+		'Attendance updated'
+	]
+);
 
 		if (duplicateFound && !overwrite) {
 			await client.query('ROLLBACK');
@@ -1698,7 +1740,30 @@ for (const student of studentsForNotification.rows) {
 	);
 }
 		await client.query('COMMIT');
+const studentsResult = await client.query(
+	`
+	SELECT roll_no
+	FROM students
+	WHERE TRIM(class) = TRIM($1)
+	  AND TRIM(board) = TRIM($2)
+	`,
+	[cleanClassName, cleanBoard]
+);
 
+for (const student of studentsResult.rows) {
+	await client.query(
+		`
+		INSERT INTO student_notifications
+		(roll_no, module_name, message)
+		VALUES ($1, $2, $3)
+		`,
+		[
+			student.roll_no,
+			'test-schedule',
+			'New test has been scheduled'
+		]
+	);
+}
 		res.json({
 			message: 'Test posted successfully',
 			test: insertResult.rows[0],
@@ -2830,7 +2895,18 @@ app.post('/faculty-tasks', async (req, res) => {
 				task: todayTaskResult.rows[0]
 			});
 		}
-
+await pool.query(
+	`
+	INSERT INTO faculty_notifications
+	(faculty_id, module_name, message)
+	VALUES ($1, $2, $3)
+	`,
+	[
+		faculty_id,
+		'tasks',
+		'New task assigned by admin'
+	]
+);
 		const result = await pool.query(
 			`
 			INSERT INTO faculty_tasks (
