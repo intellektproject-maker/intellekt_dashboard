@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const id = searchParams.get("id");
-  const role = searchParams.get("role");
+  const id = searchParams.get("id") || "";
+  const role = searchParams.get("role") || "";
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,7 +41,7 @@ export default function ResetPasswordPage() {
         }),
       });
 
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
         alert(data.error || "Failed to reset password");
@@ -109,5 +109,13 @@ export default function ResetPasswordPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-100" />}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
