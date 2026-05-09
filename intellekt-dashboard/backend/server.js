@@ -120,7 +120,7 @@ app.post('/login', async (req, res) => {
 
 	try {
 		if (prefix === 'IG' || prefix === 'IP') {
-			const result = await pool.query(`SELECT faculty_id, password FROM faculty WHERE faculty_id = $1`, [
+			const result = await pool.query(`SELECT faculty_id, password, must_reset_password FROM faculty WHERE faculty_id = $1`, [
 				idUpper
 			]);
 
@@ -135,14 +135,15 @@ app.post('/login', async (req, res) => {
 			}
 
 			return res.json({
-				success: true,
-				role: prefix === 'IG' ? 'faculty' : 'admin',
-				id: idUpper
-			});
+	success: true,
+	role: prefix === 'IG' ? 'faculty' : 'admin',
+	id: idUpper,
+	mustResetPassword: user.must_reset_password === true
+});
 		}
 
 		if (prefix === 'IA') {
-			const result = await pool.query(`SELECT roll_no, password FROM students WHERE roll_no = $1`, [ idUpper ]);
+			const result = await pool.query(`SELECT roll_no, password, must_reset_password FROM students WHERE roll_no = $1`, [ idUpper ]);
 
 			if (result.rows.length === 0) {
 				return res.status(401).json({ error: 'Invalid credentials' });
@@ -155,10 +156,11 @@ app.post('/login', async (req, res) => {
 			}
 
 			return res.json({
-				success: true,
-				role: 'student',
-				id: idUpper
-			});
+	success: true,
+	role: 'student',
+	id: idUpper,
+	mustResetPassword: user.must_reset_password === true
+});
 		}
 
 		return res.status(400).json({ error: 'Invalid id format' });
