@@ -71,6 +71,10 @@ function StudentLayoutContent({ children }) {
           <Link href={`/student/request-pdf?roll=${roll}`} onClick={() => setMenuOpen(false)}>
             Request PDF
           </Link>
+
+          <Link href={`/reset-password?id=${roll}&role=student`} onClick={() => setMenuOpen(false)}>
+            Reset Password
+          </Link>
         </nav>
 
         <div className="absolute bottom-6 left-0 w-full px-6">

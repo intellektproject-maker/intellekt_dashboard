@@ -29,12 +29,18 @@ export default function Login() {
 				return;
 			}
 
+			// ✅ FIRST LOGIN PASSWORD RESET CHECK
+			if (data.mustResetPassword === true) {
+				router.push(`/reset-password?id=${rollUpper}&role=${data.role}&firstLogin=true`);
+				return;
+			}
+
 			if (data.role === 'student') {
 				router.push(`/student?roll=${rollUpper}`);
 			} else if (data.role === 'faculty') {
 				router.push(`/faculty-dashboard/profile?id=${rollUpper}`);
 			} else if (data.role === 'admin') {
-				router.push(`/admin?roll=${rollUpper}`);
+				router.push(`/faculty-dashboard/profile?id=${rollUpper}`);
 			} else {
 				alert('Unknown role');
 			}

@@ -159,6 +159,16 @@ function FacultyLayoutContent({ children }) {
               </Link>
             </>
           )}
+
+          <Link
+            href={`/reset-password?id=${facultyId}&role=${
+              isPrivilegedFaculty ? "admin" : "faculty"
+            }`}
+            onClick={() => setMenuOpen(false)}
+            className={linkClass(isActive("/reset-password"))}
+          >
+            Reset Password
+          </Link>
         </nav>
 
         <div className="absolute bottom-6 left-0 w-full px-6">
