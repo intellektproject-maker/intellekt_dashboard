@@ -3059,8 +3059,26 @@ app.put('/reset-password', async (req, res) => {
 			if (result.rowCount === 0) {
 				return res.status(404).json({ error: 'Task not found' });
 			}
+const updatedTask = result.rows[0];
 
-			res.json(result.rows[0]);
+if (updatedTask.is_completed === true) {
+	await pool.query(
+		`
+		INSERT INTO faculty_notifications
+		(faculty_id, module_name, message)
+		VALUES ($1, $2, $3), ($4, $5, $6)
+		`,
+		[
+			'IG001',
+			'tasks',
+			`${updatedTask.faculty_name} completed a task`,
+			'IG002',
+			'tasks',
+			`${updatedTask.faculty_name} completed a task`
+		]
+	);
+}
+			res.json(updatedTask);
 		} catch (err) {
 			console.error('PUT /faculty-tasks/:id error:', err);
 			res.status(500).json({
