@@ -3070,43 +3070,58 @@ app.put('/reset-password', async (req, res) => {
 		}
 	});
 
-	app.delete('/faculty-tasks/:id', async (req, res) => {
-		const { id } = req.params;
-		const loginFacultyId = req.query.loginFacultyId;
+app.delete('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const loginFacultyId = req.query.loginFacultyId;
 
-		try {
-			if (!['IG001', 'IG002'].includes(loginFacultyId)) {
-				return res.status(403).json({
-					error: 'Only IG001 and IG002 can delete faculty tasks'
-				});
-			}
-
-			const result = await pool.query(
-				`
-				DELETE FROM faculty_tasks
-				WHERE id = $1
-				OR parent_daily_task_id = $1
-				RETURNING *
-				`,
-				[id]
-			);
-
-			if (result.rowCount === 0) {
-				return res.status(404).json({ error: 'Task not found' });
-			}
-
-			res.json({
-				message: 'Task deleted successfully',
-				deletedTask: result.rows[0]
-			});
-		} catch (err) {
-			console.error('DELETE /faculty-tasks/:id error:', err);
-			res.status(500).json({
-				error: 'Failed to delete task',
-				details: err.message
+	try {
+		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can delete faculty tasks'
 			});
 		}
-	});
+
+		const taskResult = await pool.query(
+			`
+			SELECT id, parent_daily_task_id, task_type
+			FROM faculty_tasks
+			WHERE id = $1
+			`,
+			[id]
+		);
+
+		if (taskResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Task not found' });
+		}
+
+		const task = taskResult.rows[0];
+
+		const deleteId = task.parent_daily_task_id
+			? task.parent_daily_task_id
+			: task.id;
+
+		const result = await pool.query(
+			`
+			DELETE FROM faculty_tasks
+			WHERE id = $1
+			   OR parent_daily_task_id = $1
+			RETURNING *
+			`,
+			[deleteId]
+		);
+
+		res.json({
+			message: 'Task deleted successfully',
+			deletedCount: result.rowCount
+		});
+	} catch (err) {
+		console.error('DELETE /faculty-tasks/:id error:', err);
+		res.status(500).json({
+			error: 'Failed to delete task',
+			details: err.message
+		});
+	}
+});
 
 	/* =========================================================
 	ENQUIRIES
