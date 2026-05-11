@@ -31,6 +31,8 @@ function ManageFacultyContent() {
     phone: "",
     email: "",
     password: "",
+    employment_type: "",
+    date_of_joining: "",
   });
 
   const [editingFacultyId, setEditingFacultyId] = useState(null);
@@ -44,9 +46,7 @@ function ManageFacultyContent() {
       setLoading(true);
       const res = await fetch(`${API_BASE}/faculty`, { cache: "no-store" });
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch faculty");
-      }
+      if (!res.ok) throw new Error("Failed to fetch faculty");
 
       const data = await res.json();
       setFacultyList(Array.isArray(data) ? data : []);
@@ -66,6 +66,8 @@ function ManageFacultyContent() {
       phone: "",
       email: "",
       password: "",
+      employment_type: "",
+      date_of_joining: "",
     });
     setEditingFacultyId(null);
   }
@@ -94,6 +96,8 @@ function ManageFacultyContent() {
     if (!form.phone.trim()) return "Phone number is required";
     if (form.phone.length !== 10) return "Phone number must be 10 digits";
     if (!form.email.trim()) return "Email is required";
+    if (!form.employment_type) return "Employment type is required";
+    if (!form.date_of_joining) return "Date of joining is required";
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.email.trim())) {
@@ -126,6 +130,8 @@ function ManageFacultyContent() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         password: form.password.trim(),
+        employment_type: form.employment_type,
+        date_of_joining: form.date_of_joining,
       };
 
       const url = editingFacultyId
@@ -168,6 +174,10 @@ function ManageFacultyContent() {
       phone: faculty.phone || "",
       email: faculty.email || "",
       password: "",
+      employment_type: faculty.employment_type || "",
+      date_of_joining: faculty.date_of_joining
+        ? String(faculty.date_of_joining).slice(0, 10)
+        : "",
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -213,7 +223,6 @@ function ManageFacultyContent() {
 
   const filteredFaculty = useMemo(() => {
     const q = search.trim().toLowerCase();
-
     if (!q) return facultyList;
 
     return facultyList.filter((f) => {
@@ -224,6 +233,7 @@ function ManageFacultyContent() {
         f.name?.toLowerCase().includes(q) ||
         f.phone?.toLowerCase().includes(q) ||
         f.email?.toLowerCase().includes(q) ||
+        f.employment_type?.toLowerCase().includes(q) ||
         subjectName.includes(q)
       );
     });
@@ -311,6 +321,25 @@ function ManageFacultyContent() {
             placeholder={editingFacultyId ? "New Password optional" : "Password"}
             className="w-full border rounded-lg px-4 py-3"
           />
+
+          <select
+            name="employment_type"
+            value={form.employment_type}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-4 py-3"
+          >
+            <option value="">Select Employment Type</option>
+            <option value="Part Time">Part Time</option>
+            <option value="Full Time">Full Time</option>
+          </select>
+
+          <input
+            type="date"
+            name="date_of_joining"
+            value={form.date_of_joining}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-4 py-3"
+          />
         </div>
 
         <div className="flex gap-3">
@@ -355,6 +384,8 @@ function ManageFacultyContent() {
                 <th className="p-3 text-left">Faculty ID</th>
                 <th className="p-3 text-left">Name</th>
                 <th className="p-3 text-left">Subject / Role</th>
+                <th className="p-3 text-left">Employment</th>
+                <th className="p-3 text-left">Date of Joining</th>
                 <th className="p-3 text-left">Phone</th>
                 <th className="p-3 text-left">Email</th>
                 <th className="p-3 text-center">Actions</th>
@@ -364,7 +395,7 @@ function ManageFacultyContent() {
             <tbody>
               {filteredFaculty.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-4 text-center text-gray-500">
+                  <td colSpan="8" className="p-4 text-center text-gray-500">
                     No faculty found
                   </td>
                 </tr>
@@ -374,6 +405,12 @@ function ManageFacultyContent() {
                     <td className="p-3 font-semibold">{faculty.faculty_id}</td>
                     <td className="p-3">{faculty.name}</td>
                     <td className="p-3">{getSubjectName(faculty.subject_id)}</td>
+                    <td className="p-3">{faculty.employment_type || "-"}</td>
+                    <td className="p-3">
+                      {faculty.date_of_joining
+                        ? String(faculty.date_of_joining).slice(0, 10)
+                        : "-"}
+                    </td>
                     <td className="p-3">{faculty.phone}</td>
                     <td className="p-3">{faculty.email}</td>
                     <td className="p-3">
