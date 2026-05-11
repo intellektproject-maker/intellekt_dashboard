@@ -119,10 +119,14 @@ app.post('/login', async (req, res) => {
 	const prefix = idUpper.substring(0, 2);
 
 	try {
+		const sessionToken = crypto.randomBytes(32).toString('hex');
+
 		if (prefix === 'IG' || prefix === 'IP') {
 			const result = await pool.query(
-				`SELECT faculty_id, password, must_reset_password FROM faculty WHERE faculty_id = $1`,
-				[ idUpper ]
+				`SELECT faculty_id, password, must_reset_password 
+				 FROM faculty 
+				 WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))`,
+				[idUpper]
 			);
 
 			if (result.rows.length === 0) {
@@ -135,18 +139,28 @@ app.post('/login', async (req, res) => {
 				return res.status(401).json({ error: 'Invalid credentials' });
 			}
 
+			await pool.query(
+				`UPDATE faculty
+				 SET active_session_token = $1
+				 WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($2))`,
+				[sessionToken, idUpper]
+			);
+
 			return res.json({
 				success: true,
 				role: prefix === 'IG' ? 'faculty' : 'admin',
 				id: idUpper,
+				sessionToken,
 				mustResetPassword: user.must_reset_password === true
 			});
 		}
 
 		if (prefix === 'IA') {
 			const result = await pool.query(
-				`SELECT roll_no, password, must_reset_password FROM students WHERE roll_no = $1`,
-				[ idUpper ]
+				`SELECT roll_no, password, must_reset_password 
+				 FROM students 
+				 WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[idUpper]
 			);
 
 			if (result.rows.length === 0) {
@@ -159,10 +173,18 @@ app.post('/login', async (req, res) => {
 				return res.status(401).json({ error: 'Invalid credentials' });
 			}
 
+			await pool.query(
+				`UPDATE students
+				 SET active_session_token = $1
+				 WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($2))`,
+				[sessionToken, idUpper]
+			);
+
 			return res.json({
 				success: true,
 				role: 'student',
 				id: idUpper,
+				sessionToken,
 				mustResetPassword: user.must_reset_password === true
 			});
 		}
@@ -3695,6 +3717,48 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 		console.error('PUT /posted-tests/:testCode error:', err);
 		res.status(500).json({ error: 'Failed to update test' });
 	}
+});
+app.post("/check-session", async (req, res) => {
+  const { loginId, role, sessionToken } = req.body;
+
+  if (!loginId || !role || !sessionToken) {
+    return res.status(401).json({ valid: false });
+  }
+
+  try {
+    let result;
+
+    if (role === "student") {
+      result = await pool.query(
+        `SELECT active_session_token 
+         FROM students 
+         WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+        [loginId]
+      );
+    } else {
+      result = await pool.query(
+        `SELECT active_session_token 
+         FROM faculty 
+         WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))`,
+        [loginId]
+      );
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ valid: false });
+    }
+
+    const dbToken = result.rows[0].active_session_token;
+
+    if (dbToken !== sessionToken) {
+      return res.status(401).json({ valid: false });
+    }
+
+    res.json({ valid: true });
+  } catch (err) {
+    console.error("POST /check-session error:", err);
+    res.status(500).json({ valid: false });
+  }
 });
 /* =========================================================
 	SERVER START

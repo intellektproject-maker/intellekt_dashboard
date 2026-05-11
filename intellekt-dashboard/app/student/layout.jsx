@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 function StudentLayoutContent({ children }) {
@@ -9,6 +9,49 @@ function StudentLayoutContent({ children }) {
   const roll = searchParams.get("roll") || "";
 
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    async function checkSession() {
+      const loginId = localStorage.getItem("loginId");
+      const role = localStorage.getItem("role");
+      const sessionToken = localStorage.getItem("sessionToken");
+
+      if (!loginId || !role || !sessionToken) {
+        window.location.href = "/login";
+        return;
+      }
+
+      try {
+        const apiBase =
+          process.env.NEXT_PUBLIC_API_URL ||
+          "https://responsible-wonder-production.up.railway.app";
+
+        const res = await fetch(`${apiBase}/check-session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ loginId, role, sessionToken }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || data.valid !== true) {
+          alert("This account is logged in on another device.");
+          localStorage.clear();
+          window.location.href = "/login";
+        }
+      } catch (err) {
+        console.error("Session check error:", err);
+      }
+    }
+
+    checkSession();
+
+    const interval = setInterval(checkSession, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-100 relative">
@@ -80,6 +123,7 @@ function StudentLayoutContent({ children }) {
         <div className="absolute bottom-6 left-0 w-full px-6">
           <Link
             href="/"
+            onClick={() => localStorage.clear()}
             className="block text-center bg-red-500 text-white py-2 rounded"
           >
             Sign Out
