@@ -14,6 +14,17 @@ const SUBJECT_OPTIONS = [
   { subject_id: "6", subject_name: "Robotics" },
 ];
 
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-gray-700 mb-2">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 function ManageFacultyContent() {
   const searchParams = useSearchParams();
   const loggedInFacultyId = searchParams.get("id");
@@ -153,7 +164,12 @@ function ManageFacultyContent() {
         return;
       }
 
-      alert(editingFacultyId ? "Faculty updated successfully" : "Faculty added successfully");
+      alert(
+        editingFacultyId
+          ? "Faculty updated successfully"
+          : "Faculty added successfully"
+      );
+
       resetForm();
       loadInitialData();
     } catch (err) {
@@ -267,79 +283,95 @@ function ManageFacultyContent() {
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            name="faculty_id"
-            value={form.faculty_id}
-            onChange={handleChange}
-            disabled={!!editingFacultyId}
-            placeholder="Faculty ID"
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Faculty ID">
+            <input
+              name="faculty_id"
+              value={form.faculty_id}
+              onChange={handleChange}
+              disabled={!!editingFacultyId}
+              placeholder="Faculty ID"
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
 
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Faculty Name"
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Faculty Name">
+            <input
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              placeholder="Faculty Name"
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
 
-          <select
-            name="subject_id"
-            value={form.subject_id}
-            onChange={handleChange}
-            className="w-full border rounded-lg px-4 py-3"
-          >
-            <option value="">Select Subject / Role</option>
-            {subjects.map((subject) => (
-              <option key={subject.subject_id} value={subject.subject_id}>
-                {subject.subject_name}
-              </option>
-            ))}
-          </select>
+          <Field label="Subject / Role">
+            <select
+              name="subject_id"
+              value={form.subject_id}
+              onChange={handleChange}
+              className="w-full border rounded-lg px-4 py-3"
+            >
+              <option value="">Select Subject / Role</option>
+              {subjects.map((subject) => (
+                <option key={subject.subject_id} value={subject.subject_id}>
+                  {subject.subject_name}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-          <input
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            placeholder="Phone Number"
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Phone Number">
+            <input
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
+              placeholder="Phone Number"
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
 
-          <input
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="Email"
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Email">
+            <input
+              name="email"
+              value={form.email}
+              onChange={handleChange}
+              placeholder="Email"
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
 
-          <input
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            placeholder={editingFacultyId ? "New Password optional" : "Password"}
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Password">
+            <input
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+              placeholder={editingFacultyId ? "New Password optional" : "Password"}
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
 
-          <select
-            name="employment_type"
-            value={form.employment_type}
-            onChange={handleChange}
-            className="w-full border rounded-lg px-4 py-3"
-          >
-            <option value="">Select Employment Type</option>
-            <option value="Part Time">Part Time</option>
-            <option value="Full Time">Full Time</option>
-          </select>
+          <Field label="Employment Type">
+            <select
+              name="employment_type"
+              value={form.employment_type}
+              onChange={handleChange}
+              className="w-full border rounded-lg px-4 py-3"
+            >
+              <option value="">Select Employment Type</option>
+              <option value="Part Time">Part Time</option>
+              <option value="Full Time">Full Time</option>
+            </select>
+          </Field>
 
-          <input
-            type="date"
-            name="date_of_joining"
-            value={form.date_of_joining}
-            onChange={handleChange}
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <Field label="Date of Joining">
+            <input
+              type="date"
+              name="date_of_joining"
+              value={form.date_of_joining}
+              onChange={handleChange}
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </Field>
         </div>
 
         <div className="flex gap-3">
@@ -348,7 +380,11 @@ function ManageFacultyContent() {
             disabled={saving}
             className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
           >
-            {saving ? "Saving..." : editingFacultyId ? "Update Faculty" : "Add Faculty"}
+            {saving
+              ? "Saving..."
+              : editingFacultyId
+              ? "Update Faculty"
+              : "Add Faculty"}
           </button>
 
           {editingFacultyId && (
@@ -401,7 +437,10 @@ function ManageFacultyContent() {
                 </tr>
               ) : (
                 filteredFaculty.map((faculty) => (
-                  <tr key={faculty.faculty_id} className="border-b hover:bg-gray-50">
+                  <tr
+                    key={faculty.faculty_id}
+                    className="border-b hover:bg-gray-50"
+                  >
                     <td className="p-3 font-semibold">{faculty.faculty_id}</td>
                     <td className="p-3">{faculty.name}</td>
                     <td className="p-3">{getSubjectName(faculty.subject_id)}</td>
