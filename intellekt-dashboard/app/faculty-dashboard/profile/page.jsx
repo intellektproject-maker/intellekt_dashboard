@@ -23,7 +23,7 @@ function FacultyProfileInner() {
   const [dailyTaskFilter, setDailyTaskFilter] = useState('All');
   const [classOptions, setClassOptions] = useState([]);
   const [testCodes, setTestCodes] = useState([]);
-  const [hasNotification, setHasNotification] = useState(false);
+  const [facultyNotifications, setFacultyNotifications] = useState([]);
 
   const canAccessAllTasks =
     loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
@@ -68,6 +68,18 @@ function FacultyProfileInner() {
     return data;
   }
 
+  function hasFacultyNotification(moduleName) {
+    return facultyNotifications.some(
+      (item) => item.module_name === moduleName
+    );
+  }
+
+  function clearFacultyNotification(moduleName) {
+    setFacultyNotifications((prev) =>
+      prev.filter((item) => item.module_name !== moduleName)
+    );
+  }
+
   function isOverdue(task) {
     if (!task.due_date || task.is_completed) return false;
 
@@ -91,18 +103,6 @@ function FacultyProfileInner() {
       today.getMonth() === due.getMonth() &&
       today.getDate() === due.getDate()
     );
-  }
-
-  function getPriorityBadge(priority) {
-    if (priority === 'High') {
-      return 'bg-red-100 text-red-700 border border-red-200';
-    }
-
-    if (priority === 'Medium') {
-      return 'bg-yellow-100 text-yellow-700 border border-yellow-200';
-    }
-
-    return 'bg-green-100 text-green-700 border border-green-200';
   }
 
   function getTaskCardClass(task) {
@@ -165,6 +165,25 @@ function FacultyProfileInner() {
   }, [facultyId]);
 
   useEffect(() => {
+    async function fetchNotifications() {
+      try {
+        const data = await safeFetchJson(
+          `${API_BASE}/faculty-notifications/${facultyId}`
+        );
+
+        setFacultyNotifications(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error(err);
+        setFacultyNotifications([]);
+      }
+    }
+
+    if (facultyId) {
+      fetchNotifications();
+    }
+  }, [facultyId]);
+
+  useEffect(() => {
     async function fetchAllFaculty() {
       try {
         const data = await safeFetchJson(`${API_BASE}/faculty`);
@@ -215,24 +234,6 @@ function FacultyProfileInner() {
 
     fetchTestCodes();
   }, []);
-useEffect(() => {
-  async function fetchNotifications() {
-    try {
-      const data = await safeFetchJson(
-        `${API_BASE}/faculty-notifications/${facultyId}`
-      );
-
-      setHasNotification(Array.isArray(data) && data.length > 0);
-    } catch (err) {
-      console.error(err);
-      setHasNotification(false);
-    }
-  }
-
-  if (facultyId) {
-    fetchNotifications();
-  }
-}, [facultyId]);
 
   useEffect(() => {
     async function fetchMyTasks() {
@@ -644,20 +645,28 @@ useEffect(() => {
             {canAccessAllTasks && (
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
                   setActiveSection(
                     activeSection === 'allTasks' ? '' : 'allTasks'
-                  )
-                }
+                  );
+                  clearFacultyNotification('all-tasks');
+                }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
                   activeSection === 'allTasks'
                     ? 'border-blue-600 bg-blue-50'
                     : 'border-gray-200 bg-white hover:bg-gray-50'
                 }`}
               >
-                <h4 className="mb-3 text-xl font-bold text-blue-700">
-                  All Faculty Assigned Tasks
-                </h4>
+                <div className="mb-3 flex items-center gap-2">
+                  <h4 className="text-xl font-bold text-blue-700">
+                    All Faculty Assigned Tasks
+                  </h4>
+
+                  {hasFacultyNotification('all-tasks') && (
+                    <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+                  )}
+                </div>
+
                 <p className="text-gray-600 text-base">
                   View, filter and delete tasks assigned to all faculty members.
                 </p>
@@ -667,20 +676,28 @@ useEffect(() => {
             {canAccessAllTasks && (
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
                   setActiveSection(
                     activeSection === 'dailyTasks' ? '' : 'dailyTasks'
-                  )
-                }
+                  );
+                  clearFacultyNotification('daily-tasks');
+                }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
                   activeSection === 'dailyTasks'
                     ? 'border-blue-600 bg-blue-50'
                     : 'border-gray-200 bg-white hover:bg-gray-50'
                 }`}
               >
-                <h4 className="mb-3 text-xl font-bold text-blue-700">
-                  All Faculty Daily Task
-                </h4>
+                <div className="mb-3 flex items-center gap-2">
+                  <h4 className="text-xl font-bold text-blue-700">
+                    All Faculty Daily Task
+                  </h4>
+
+                  {hasFacultyNotification('daily-tasks') && (
+                    <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+                  )}
+                </div>
+
                 <p className="text-gray-600 text-base">
                   View daily repeated tasks for all faculty.
                 </p>
@@ -710,38 +727,38 @@ useEffect(() => {
               </button>
             )}
 
-           <button
-  type="button"
-  onClick={() => {
-    const nextSection =
-      activeSection === 'myChecklist' ? '' : 'myChecklist';
+            <button
+              type="button"
+              onClick={() => {
+                const nextSection =
+                  activeSection === 'myChecklist' ? '' : 'myChecklist';
 
-    setActiveSection(nextSection);
+                setActiveSection(nextSection);
 
-    if (nextSection === 'myChecklist') {
-      setHasNotification(false);
-    }
-  }}
-  className={`rounded-2xl border p-7 text-left shadow-md transition ${
-    activeSection === 'myChecklist'
-      ? 'border-blue-600 bg-blue-50'
-      : 'border-gray-200 bg-white hover:bg-gray-50'
-  }`}
->
-  <div className="flex items-center gap-2 mb-3">
-    <h4 className="text-xl font-bold text-blue-700">
-      My Task Checklist
-    </h4>
+                if (nextSection === 'myChecklist') {
+                  clearFacultyNotification('tasks');
+                }
+              }}
+              className={`rounded-2xl border p-7 text-left shadow-md transition ${
+                activeSection === 'myChecklist'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <h4 className="text-xl font-bold text-blue-700">
+                  My Task Checklist
+                </h4>
 
-    {hasNotification && (
-      <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
-    )}
-  </div>
+                {hasFacultyNotification('tasks') && (
+                  <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+                )}
+              </div>
 
-  <p className="text-gray-600 text-base">
-    View, filter and update my assigned tasks.
-  </p>
-</button>
+              <p className="text-gray-600 text-base">
+                View, filter and update my assigned tasks.
+              </p>
+            </button>
           </div>
         </div>
 

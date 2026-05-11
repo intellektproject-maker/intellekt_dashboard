@@ -1,176 +1,180 @@
-	const express = require('express');
-	const cors = require('cors');
-	const pool = require('./db');
+const express = require('express');
+const cors = require('cors');
+const pool = require('./db');
 
-	const app = express();
+const app = express();
 
-	app.use(cors());
-	app.use(express.json());
+app.use(cors());
+app.use(express.json());
 
-	/* =========================================================
+/* =========================================================
 	HELPERS
 	========================================================= */
-	function formatTimeFromMinutes(totalMinutes) {
-		const hours24 = Math.floor(totalMinutes / 60);
-		const minutes = totalMinutes % 60;
-		const suffix = hours24 >= 12 ? 'PM' : 'AM';
-		const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+function formatTimeFromMinutes(totalMinutes) {
+	const hours24 = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	const suffix = hours24 >= 12 ? 'PM' : 'AM';
+	const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
 
-		return `${hours12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+	return `${hours12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
+function timeStringToMinutes(timeString) {
+	const [ hours, minutes ] = String(timeString).split(':').map(Number);
+	return hours * 60 + minutes;
+}
+
+function getFixedSlots(durationMinutes) {
+	const duration = Number(durationMinutes);
+
+	if (duration === 90) {
+		return [
+			{ start: '07:00', end: '08:30' },
+			{ start: '08:30', end: '10:00' },
+			{ start: '10:00', end: '11:30' },
+			{ start: '11:30', end: '13:00' }
+		];
 	}
 
-	function timeStringToMinutes(timeString) {
-		const [ hours, minutes ] = String(timeString).split(':').map(Number);
-		return hours * 60 + minutes;
+	if (duration === 180) {
+		return [ { start: '07:00', end: '10:00' }, { start: '10:00', end: '13:00' } ];
 	}
 
-	function getFixedSlots(durationMinutes) {
-		const duration = Number(durationMinutes);
+	return [];
+}
 
-		if (duration === 90) {
-			return [
-				{ start: '07:00', end: '08:30' },
-				{ start: '08:30', end: '10:00' },
-				{ start: '10:00', end: '11:30' },
-				{ start: '11:30', end: '13:00' }
-			];
-		}
+function isSunday(dateStr) {
+	return new Date(dateStr).getDay() === 0;
+}
 
-		if (duration === 180) {
-			return [ { start: '07:00', end: '10:00' }, { start: '10:00', end: '13:00' } ];
-		}
+function getNextMonday(dateValue) {
+	const date = new Date(dateValue);
+	date.setHours(0, 0, 0, 0);
 
-		return [];
-	}
+	const day = date.getDay();
+	let daysToAdd;
 
-	function isSunday(dateStr) {
-		return new Date(dateStr).getDay() === 0;
-	}
+	if (day === 1) daysToAdd = 7;
+	else if (day === 0) daysToAdd = 1;
+	else daysToAdd = 8 - day;
 
-	function getNextMonday(dateValue) {
-		const date = new Date(dateValue);
-		date.setHours(0, 0, 0, 0);
+	date.setDate(date.getDate() + daysToAdd);
+	return date;
+}
 
-		const day = date.getDay();
-		let daysToAdd;
-
-		if (day === 1) daysToAdd = 7;
-		else if (day === 0) daysToAdd = 1;
-		else daysToAdd = 8 - day;
-
-		date.setDate(date.getDate() + daysToAdd);
-		return date;
-	}
-
-	async function cleanupCompletedTasks() {
-		const result = await pool.query(`
+async function cleanupCompletedTasks() {
+	const result = await pool.query(`
 		SELECT id, completed_at
 		FROM faculty_tasks
 		WHERE is_completed = TRUE
 		AND completed_at IS NOT NULL
 	`);
 
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
 
-		for (const row of result.rows) {
-			const deleteOn = getNextMonday(row.completed_at);
+	for (const row of result.rows) {
+		const deleteOn = getNextMonday(row.completed_at);
 
-			if (today >= deleteOn) {
-				await pool.query(`DELETE FROM faculty_tasks WHERE id = $1`, [ row.id ]);
-			}
+		if (today >= deleteOn) {
+			await pool.query(`DELETE FROM faculty_tasks WHERE id = $1`, [ row.id ]);
 		}
 	}
+}
 
-	/* =========================================================
+/* =========================================================
 	REQUEST LOGGER
 	========================================================= */
-	app.use((req, res, next) => {
-		console.log('API CALL:', req.method, req.url);
-		next();
-	});
+app.use((req, res, next) => {
+	console.log('API CALL:', req.method, req.url);
+	next();
+});
 
-	/* =========================================================
+/* =========================================================
 	TEST ROUTE
 	========================================================= */
-	app.get('/', (req, res) => {
-		res.send('API is working');
-	});
+app.get('/', (req, res) => {
+	res.send('API is working');
+});
 
-	app.get('/_debug/student-answer-sheet-data/:rollNo', (req, res) => {
-		res.json({
-			ok: true,
-			route: '/student-answer-sheet-data/:rollNo',
-			params: req.params
-		});
+app.get('/_debug/student-answer-sheet-data/:rollNo', (req, res) => {
+	res.json({
+		ok: true,
+		route: '/student-answer-sheet-data/:rollNo',
+		params: req.params
 	});
+});
 
-	/* =========================================================
+/* =========================================================
 	LOGIN / AUTH
 	========================================================= */
-	app.post('/login', async (req, res) => {
-		const { id, password } = req.body || {};
+app.post('/login', async (req, res) => {
+	const { id, password } = req.body || {};
 
-		if (!id || !password) {
-			return res.status(400).json({ error: 'id and password are required' });
-		}
+	if (!id || !password) {
+		return res.status(400).json({ error: 'id and password are required' });
+	}
 
-		const idUpper = String(id).toUpperCase().trim();
-		const prefix = idUpper.substring(0, 2);
+	const idUpper = String(id).toUpperCase().trim();
+	const prefix = idUpper.substring(0, 2);
 
-		try {
-			if (prefix === 'IG' || prefix === 'IP') {
-				const result = await pool.query(`SELECT faculty_id, password, must_reset_password FROM faculty WHERE faculty_id = $1`, [
-					idUpper
-				]);
+	try {
+		if (prefix === 'IG' || prefix === 'IP') {
+			const result = await pool.query(
+				`SELECT faculty_id, password, must_reset_password FROM faculty WHERE faculty_id = $1`,
+				[ idUpper ]
+			);
 
-				if (result.rows.length === 0) {
-					return res.status(401).json({ error: 'Invalid credentials' });
-				}
-
-				const user = result.rows[0];
-
-				if (String(user.password) !== String(password)) {
-					return res.status(401).json({ error: 'Invalid credentials' });
-				}
-
-				return res.json({
-		success: true,
-		role: prefix === 'IG' ? 'faculty' : 'admin',
-		id: idUpper,
-		mustResetPassword: user.must_reset_password === true
-	});
+			if (result.rows.length === 0) {
+				return res.status(401).json({ error: 'Invalid credentials' });
 			}
 
-			if (prefix === 'IA') {
-				const result = await pool.query(`SELECT roll_no, password, must_reset_password FROM students WHERE roll_no = $1`, [ idUpper ]);
+			const user = result.rows[0];
 
-				if (result.rows.length === 0) {
-					return res.status(401).json({ error: 'Invalid credentials' });
-				}
-
-				const user = result.rows[0];
-
-				if (String(user.password) !== String(password)) {
-					return res.status(401).json({ error: 'Invalid credentials' });
-				}
-
-				return res.json({
-		success: true,
-		role: 'student',
-		id: idUpper,
-		mustResetPassword: user.must_reset_password === true
-	});
+			if (String(user.password) !== String(password)) {
+				return res.status(401).json({ error: 'Invalid credentials' });
 			}
 
-			return res.status(400).json({ error: 'Invalid id format' });
-		} catch (err) {
-			console.error('POST /login error:', err);
-			res.status(500).json({ error: 'Server error' });
+			return res.json({
+				success: true,
+				role: prefix === 'IG' ? 'faculty' : 'admin',
+				id: idUpper,
+				mustResetPassword: user.must_reset_password === true
+			});
 		}
-	});
 
-	/* =========================================================
+		if (prefix === 'IA') {
+			const result = await pool.query(
+				`SELECT roll_no, password, must_reset_password FROM students WHERE roll_no = $1`,
+				[ idUpper ]
+			);
+
+			if (result.rows.length === 0) {
+				return res.status(401).json({ error: 'Invalid credentials' });
+			}
+
+			const user = result.rows[0];
+
+			if (String(user.password) !== String(password)) {
+				return res.status(401).json({ error: 'Invalid credentials' });
+			}
+
+			return res.json({
+				success: true,
+				role: 'student',
+				id: idUpper,
+				mustResetPassword: user.must_reset_password === true
+			});
+		}
+
+		return res.status(400).json({ error: 'Invalid id format' });
+	} catch (err) {
+		console.error('POST /login error:', err);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+
+/* =========================================================
    RESET PASSWORD
 ========================================================= */
 app.put('/reset-password', async (req, res) => {
@@ -192,7 +196,7 @@ app.put('/reset-password', async (req, res) => {
 					must_reset_password = false
 				WHERE roll_no = $2
 				`,
-				[newPassword, id]
+				[ newPassword, id ]
 			);
 		} else {
 			await pool.query(
@@ -203,7 +207,7 @@ app.put('/reset-password', async (req, res) => {
 					must_reset_password = false
 				WHERE faculty_id = $2
 				`,
-				[newPassword, id]
+				[ newPassword, id ]
 			);
 		}
 
@@ -219,58 +223,58 @@ app.put('/reset-password', async (req, res) => {
 		});
 	}
 });
-	/* =========================================================
+/* =========================================================
 	STUDENT PROFILE
 	========================================================= */
-	app.get('/student/:rollNo', async (req, res) => {
-		const { rollNo } = req.params;
+app.get('/student/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
 
-		try {
-			const result = await pool.query(`SELECT * FROM students WHERE roll_no = $1`, [ rollNo ]);
+	try {
+		const result = await pool.query(`SELECT * FROM students WHERE roll_no = $1`, [ rollNo ]);
 
-			if (result.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
-
-			res.json(result.rows[0]);
-		} catch (err) {
-			console.error('GET /student/:rollNo error:', err);
-			res.status(500).json({ error: 'Server error' });
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
 		}
-	});
 
-	/* =========================================================
+		res.json(result.rows[0]);
+	} catch (err) {
+		console.error('GET /student/:rollNo error:', err);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+
+/* =========================================================
 	STUDENT ATTENDANCE
 	========================================================= */
-	app.get('/attendance/:rollNo', async (req, res) => {
-		const { rollNo } = req.params;
+app.get('/attendance/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 				SELECT roll_no, subject_id, attendance_date, status, updated_by
 				FROM attendance
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				ORDER BY attendance_date DESC
 				`,
-				[rollNo]
-			);
+			[ rollNo ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /attendance/:rollNo error:', err);
-			res.status(500).json({ error: 'Server error' });
-		}
-	});
-	/* =========================================================
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /attendance/:rollNo error:', err);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+/* =========================================================
 	STUDENT MARKS
 	========================================================= */
-	app.get('/marks/:roll', async (req, res) => {
-		const { roll } = req.params;
+app.get('/marks/:roll', async (req, res) => {
+	const { roll } = req.params;
 
-		try {
-	const result = await pool.query(
-		`
+	try {
+		const result = await pool.query(
+			`
 		SELECT 
 			m.test_code,
 			m.marks_obtained,
@@ -287,42 +291,42 @@ app.put('/reset-password', async (req, res) => {
 		WHERE m.roll_no = $1
 		ORDER BY m.test_code
 		`,
-		[ roll ]
-	);
+			[ roll ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /marks/:roll error:', err);
-			res.status(500).json({ error: 'Database error' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /marks/:roll error:', err);
+		res.status(500).json({ error: 'Database error' });
+	}
+});
 
-	/* =========================================================
+/* =========================================================
 	TEST SCHEDULE WITH REGISTRATION DETAILS
 	========================================================= */
-	app.get('/test-schedule/:roll', async (req, res) => {
-		const { roll } = req.params;
+app.get('/test-schedule/:roll', async (req, res) => {
+	const { roll } = req.params;
 
-		try {
-			const studentRes = await pool.query(
-				`
+	try {
+		const studentRes = await pool.query(
+			`
 				SELECT 
 					TRIM(class) AS class,
 					TRIM(board) AS board
 				FROM students
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				`,
-				[roll]
-			);
+			[ roll ]
+		);
 
-			if (studentRes.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentRes.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const { class: className, board } = studentRes.rows[0];
+		const { class: className, board } = studentRes.rows[0];
 
-			const testsRes = await pool.query(
-				`
+		const testsRes = await pool.query(
+			`
 		SELECT 
 			t.test_code,
 			t.subject_id,
@@ -344,302 +348,302 @@ app.put('/reset-password', async (req, res) => {
 			AND t.board = $3
 		ORDER BY t.test_date ASC
 		`,
-				[ roll, className, board ]
-			);
+			[ roll, className, board ]
+		);
 
-			const formatted = testsRes.rows.map((row) => ({
-				test_code: row.test_code,
-				subject_id: row.subject_id,
-				subject_name: row.subject_name,
-				test_date: row.test_date,
-				total_marks: row.total_marks,
-				portion: row.portion,
-				duration_minutes: row.duration_minutes,
-				registration_end_date: row.registration_end_date,
-				writing_allowed_till: row.writing_allowed_till,
-				test_slot_link: row.test_slot_link,
-				is_registered: !!row.writing_date,
-				writing_date: row.writing_date || null,
-				registered_slot_label:
-					row.slot_start && row.slot_end
-						? `${String(row.slot_start).slice(0, 5)} - ${String(row.slot_end).slice(0, 5)}`
-						: null
-			}));
+		const formatted = testsRes.rows.map((row) => ({
+			test_code: row.test_code,
+			subject_id: row.subject_id,
+			subject_name: row.subject_name,
+			test_date: row.test_date,
+			total_marks: row.total_marks,
+			portion: row.portion,
+			duration_minutes: row.duration_minutes,
+			registration_end_date: row.registration_end_date,
+			writing_allowed_till: row.writing_allowed_till,
+			test_slot_link: row.test_slot_link,
+			is_registered: !!row.writing_date,
+			writing_date: row.writing_date || null,
+			registered_slot_label:
+				row.slot_start && row.slot_end
+					? `${String(row.slot_start).slice(0, 5)} - ${String(row.slot_end).slice(0, 5)}`
+					: null
+		}));
 
-			res.json(formatted);
-		} catch (err) {
-			console.error('GET /test-schedule/:roll error:', err);
-			res.status(500).json({ error: 'Failed to fetch schedule' });
-		}
-	});
-	/* =========================================================
+		res.json(formatted);
+	} catch (err) {
+		console.error('GET /test-schedule/:roll error:', err);
+		res.status(500).json({ error: 'Failed to fetch schedule' });
+	}
+});
+/* =========================================================
 	TEST SLOTS
 	========================================================= */
-	app.get('/test-slots/:testCode/:rollNo', async (req, res) => {
-		const { testCode, rollNo } = req.params;
-		const { writing_date } = req.query;
+app.get('/test-slots/:testCode/:rollNo', async (req, res) => {
+	const { testCode, rollNo } = req.params;
+	const { writing_date } = req.query;
 
-		try {
-			const testResult = await pool.query(
-				`
+	try {
+		const testResult = await pool.query(
+			`
 		SELECT test_code, subject_id, test_date, duration_minutes, class, board,
 				registration_end_date, writing_allowed_till
 		FROM tests
 		WHERE test_code = $1
 		`,
-				[ testCode ]
-			);
+			[ testCode ]
+		);
 
-			if (testResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Test not found' });
-			}
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
 
-			const test = testResult.rows[0];
+		const test = testResult.rows[0];
 
-			const studentResult = await pool.query(`SELECT roll_no, name, class, board FROM students WHERE roll_no = $1`, [
-				rollNo
-			]);
+		const studentResult = await pool.query(`SELECT roll_no, name, class, board FROM students WHERE roll_no = $1`, [
+			rollNo
+		]);
 
-			if (studentResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const student = studentResult.rows[0];
+		const student = studentResult.rows[0];
 
-			if (student.class !== test.class || student.board !== test.board) {
-				return res.status(403).json({
-					error: "This test does not belong to the student's class/board"
-				});
-			}
+		if (student.class !== test.class || student.board !== test.board) {
+			return res.status(403).json({
+				error: "This test does not belong to the student's class/board"
+			});
+		}
 
-			const today = new Date();
-			today.setHours(0, 0, 0, 0);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 
-			const registrationEndDate = new Date(test.registration_end_date);
-			registrationEndDate.setHours(0, 0, 0, 0);
+		const registrationEndDate = new Date(test.registration_end_date);
+		registrationEndDate.setHours(0, 0, 0, 0);
 
-			if (today > registrationEndDate) {
-				return res.status(400).json({
-					error: 'Registration period has ended for this test'
-				});
-			}
+		if (today > registrationEndDate) {
+			return res.status(400).json({
+				error: 'Registration period has ended for this test'
+			});
+		}
 
-			const selectedWritingDate = writing_date || test.test_date;
+		const selectedWritingDate = writing_date || test.test_date;
 
-			const selectedDateObj = new Date(selectedWritingDate);
-			selectedDateObj.setHours(0, 0, 0, 0);
+		const selectedDateObj = new Date(selectedWritingDate);
+		selectedDateObj.setHours(0, 0, 0, 0);
 
-			const testDateObj = new Date(test.test_date);
-			testDateObj.setHours(0, 0, 0, 0);
+		const testDateObj = new Date(test.test_date);
+		testDateObj.setHours(0, 0, 0, 0);
 
-			const writingAllowedTillObj = new Date(test.writing_allowed_till);
-			writingAllowedTillObj.setHours(0, 0, 0, 0);
+		const writingAllowedTillObj = new Date(test.writing_allowed_till);
+		writingAllowedTillObj.setHours(0, 0, 0, 0);
 
-			if (selectedDateObj < testDateObj || selectedDateObj > writingAllowedTillObj) {
-				return res.status(400).json({
-					error: 'Selected writing date is outside the allowed range'
-				});
-			}
+		if (selectedDateObj < testDateObj || selectedDateObj > writingAllowedTillObj) {
+			return res.status(400).json({
+				error: 'Selected writing date is outside the allowed range'
+			});
+		}
 
-			const existingSameTest = await pool.query(
-				`
+		const existingSameTest = await pool.query(
+			`
 		SELECT id
 		FROM test_registrations
 		WHERE roll_no = $1 AND test_code = $2
 		LIMIT 1
 		`,
-				[ rollNo, testCode ]
-			);
+			[ rollNo, testCode ]
+		);
 
-			if (existingSameTest.rows.length > 0) {
-				return res.status(400).json({
-					error: 'Student already registered for this test'
-				});
-			}
+		if (existingSameTest.rows.length > 0) {
+			return res.status(400).json({
+				error: 'Student already registered for this test'
+			});
+		}
 
-			if (!isSunday(selectedWritingDate)) {
-				return res.json({
-					requires_slot: false,
-					slots: []
-				});
-			}
+		if (!isSunday(selectedWritingDate)) {
+			return res.json({
+				requires_slot: false,
+				slots: []
+			});
+		}
 
-			const existingRegistrations = await pool.query(
-				`
+		const existingRegistrations = await pool.query(
+			`
 		SELECT slot_start, slot_end
 		FROM test_registrations
 		WHERE roll_no = $1
 			AND writing_date = $2
 			AND slot_start IS NOT NULL
 		`,
-				[ rollNo, selectedWritingDate ]
-			);
+			[ rollNo, selectedWritingDate ]
+		);
 
-			const bookedIntervals = existingRegistrations.rows.map((row) => ({
-				start: String(row.slot_start).slice(0, 5),
-				end: String(row.slot_end).slice(0, 5)
-			}));
+		const bookedIntervals = existingRegistrations.rows.map((row) => ({
+			start: String(row.slot_start).slice(0, 5),
+			end: String(row.slot_end).slice(0, 5)
+		}));
 
-			const allSlots = getFixedSlots(test.duration_minutes);
+		const allSlots = getFixedSlots(test.duration_minutes);
 
-			const availableSlots = allSlots.filter(
-				(slot) => !bookedIntervals.some((booked) => booked.start === slot.start && booked.end === slot.end)
-			);
+		const availableSlots = allSlots.filter(
+			(slot) => !bookedIntervals.some((booked) => booked.start === slot.start && booked.end === slot.end)
+		);
 
-			res.json({
-				requires_slot: true,
-				slots: availableSlots
-			});
-		} catch (error) {
-			console.error('GET /test-slots/:testCode/:rollNo error:', error);
-			res.status(500).json({ error: 'Failed to fetch available slots' });
-		}
-	});
+		res.json({
+			requires_slot: true,
+			slots: availableSlots
+		});
+	} catch (error) {
+		console.error('GET /test-slots/:testCode/:rollNo error:', error);
+		res.status(500).json({ error: 'Failed to fetch available slots' });
+	}
+});
 
-	/* =========================================================
+/* =========================================================
 	REGISTER TEST SLOT
 	========================================================= */
-	app.post('/register-test-slot', async (req, res) => {
-		const client = await pool.connect();
+app.post('/register-test-slot', async (req, res) => {
+	const client = await pool.connect();
 
-		try {
-			const { roll_no, test_code, slot_start, slot_end, writing_date } = req.body;
+	try {
+		const { roll_no, test_code, slot_start, slot_end, writing_date } = req.body;
 
-			if (!roll_no || !test_code || !writing_date) {
-				return res.status(400).json({
-					error: 'roll_no, test_code and writing_date are required'
-				});
-			}
+		if (!roll_no || !test_code || !writing_date) {
+			return res.status(400).json({
+				error: 'roll_no, test_code and writing_date are required'
+			});
+		}
 
-			const isWritingOnSunday = isSunday(writing_date);
+		const isWritingOnSunday = isSunday(writing_date);
 
-			if (isWritingOnSunday && (!slot_start || !slot_end)) {
-				return res.status(400).json({
-					error: 'slot_start and slot_end are required for Sunday writing dates'
-				});
-			}
+		if (isWritingOnSunday && (!slot_start || !slot_end)) {
+			return res.status(400).json({
+				error: 'slot_start and slot_end are required for Sunday writing dates'
+			});
+		}
 
-			await client.query('BEGIN');
+		await client.query('BEGIN');
 
-			const testResult = await client.query(
-				`
+		const testResult = await client.query(
+			`
 		SELECT test_code, subject_id, test_date, duration_minutes, class, board,
 				registration_end_date, writing_allowed_till
 		FROM tests
 		WHERE test_code = $1
 		`,
-				[ test_code ]
-			);
+			[ test_code ]
+		);
 
-			if (testResult.rows.length === 0) {
-				await client.query('ROLLBACK');
-				return res.status(404).json({ error: 'Test not found' });
-			}
+		if (testResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Test not found' });
+		}
 
-			const test = testResult.rows[0];
+		const test = testResult.rows[0];
 
-			const studentResult = await client.query(
-				`SELECT roll_no, name, class, board FROM students WHERE roll_no = $1`,
-				[ roll_no ]
-			);
+		const studentResult = await client.query(
+			`SELECT roll_no, name, class, board FROM students WHERE roll_no = $1`,
+			[ roll_no ]
+		);
 
-			if (studentResult.rows.length === 0) {
-				await client.query('ROLLBACK');
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const student = studentResult.rows[0];
+		const student = studentResult.rows[0];
 
-			if (student.class !== test.class || student.board !== test.board) {
-				await client.query('ROLLBACK');
-				return res.status(403).json({
-					error: "This test does not belong to the student's class/board"
-				});
-			}
+		if (student.class !== test.class || student.board !== test.board) {
+			await client.query('ROLLBACK');
+			return res.status(403).json({
+				error: "This test does not belong to the student's class/board"
+			});
+		}
 
-			const today = new Date();
-			today.setHours(0, 0, 0, 0);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 
-			const registrationEndDate = new Date(test.registration_end_date);
-			registrationEndDate.setHours(0, 0, 0, 0);
+		const registrationEndDate = new Date(test.registration_end_date);
+		registrationEndDate.setHours(0, 0, 0, 0);
 
-			if (today > registrationEndDate) {
-				await client.query('ROLLBACK');
-				return res.status(400).json({
-					error: 'Registration period has ended for this test'
-				});
-			}
+		if (today > registrationEndDate) {
+			await client.query('ROLLBACK');
+			return res.status(400).json({
+				error: 'Registration period has ended for this test'
+			});
+		}
 
-			const selectedWritingDate = new Date(writing_date);
-			selectedWritingDate.setHours(0, 0, 0, 0);
+		const selectedWritingDate = new Date(writing_date);
+		selectedWritingDate.setHours(0, 0, 0, 0);
 
-			const testDateObj = new Date(test.test_date);
-			testDateObj.setHours(0, 0, 0, 0);
+		const testDateObj = new Date(test.test_date);
+		testDateObj.setHours(0, 0, 0, 0);
 
-			const writingAllowedTillObj = new Date(test.writing_allowed_till);
-			writingAllowedTillObj.setHours(0, 0, 0, 0);
+		const writingAllowedTillObj = new Date(test.writing_allowed_till);
+		writingAllowedTillObj.setHours(0, 0, 0, 0);
 
-			if (selectedWritingDate < testDateObj || selectedWritingDate > writingAllowedTillObj) {
-				await client.query('ROLLBACK');
-				return res.status(400).json({
-					error: 'Selected writing date is outside the allowed range'
-				});
-			}
+		if (selectedWritingDate < testDateObj || selectedWritingDate > writingAllowedTillObj) {
+			await client.query('ROLLBACK');
+			return res.status(400).json({
+				error: 'Selected writing date is outside the allowed range'
+			});
+		}
 
-			const duplicateResult = await client.query(
-				`
+		const duplicateResult = await client.query(
+			`
 		SELECT id
 		FROM test_registrations
 		WHERE roll_no = $1 AND test_code = $2
 		LIMIT 1
 		`,
-				[ roll_no, test_code ]
-			);
+			[ roll_no, test_code ]
+		);
 
-			if (duplicateResult.rows.length > 0) {
+		if (duplicateResult.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(400).json({
+				error: 'Student already registered for this test'
+			});
+		}
+
+		if (isWritingOnSunday) {
+			const validSlots = getFixedSlots(test.duration_minutes);
+			const isValidSlot = validSlots.some((slot) => slot.start === slot_start && slot.end === slot_end);
+
+			if (!isValidSlot) {
 				await client.query('ROLLBACK');
 				return res.status(400).json({
-					error: 'Student already registered for this test'
+					error: 'Invalid slot selected for this test duration'
 				});
 			}
 
-			if (isWritingOnSunday) {
-				const validSlots = getFixedSlots(test.duration_minutes);
-				const isValidSlot = validSlots.some((slot) => slot.start === slot_start && slot.end === slot_end);
-
-				if (!isValidSlot) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({
-						error: 'Invalid slot selected for this test duration'
-					});
-				}
-
-				const existingRegistrations = await client.query(
-					`
+			const existingRegistrations = await client.query(
+				`
 			SELECT slot_start, slot_end
 			FROM test_registrations
 			WHERE roll_no = $1
 			AND writing_date = $2
 			AND slot_start IS NOT NULL
 			`,
-					[ roll_no, writing_date ]
-				);
+				[ roll_no, writing_date ]
+			);
 
-				const alreadyBooked = existingRegistrations.rows.some(
-					(row) =>
-						String(row.slot_start).slice(0, 5) === slot_start && String(row.slot_end).slice(0, 5) === slot_end
-				);
+			const alreadyBooked = existingRegistrations.rows.some(
+				(row) =>
+					String(row.slot_start).slice(0, 5) === slot_start && String(row.slot_end).slice(0, 5) === slot_end
+			);
 
-				if (alreadyBooked) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({
-						error: 'Selected slot is already booked'
-					});
-				}
+			if (alreadyBooked) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: 'Selected slot is already booked'
+				});
 			}
+		}
 
-			const insertResult = await client.query(
-				`
+		const insertResult = await client.query(
+			`
 		INSERT INTO test_registrations (
 			roll_no,
 			student_name,
@@ -656,152 +660,152 @@ app.put('/reset-password', async (req, res) => {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING *
 		`,
-				[
-					student.roll_no,
-					student.name,
-					student.class,
-					student.board,
-					test.test_code,
-					test.subject_id,
-					test.test_date,
-					writing_date,
-					isWritingOnSunday ? slot_start : null,
-					isWritingOnSunday ? slot_end : null,
-					test.duration_minutes
-				]
-			);
+			[
+				student.roll_no,
+				student.name,
+				student.class,
+				student.board,
+				test.test_code,
+				test.subject_id,
+				test.test_date,
+				writing_date,
+				isWritingOnSunday ? slot_start : null,
+				isWritingOnSunday ? slot_end : null,
+				test.duration_minutes
+			]
+		);
 
-			await client.query('COMMIT');
+		await client.query('COMMIT');
 
-			res.status(201).json({
-				message: 'Test slot registered successfully',
-				registration: insertResult.rows[0]
+		res.status(201).json({
+			message: 'Test slot registered successfully',
+			registration: insertResult.rows[0]
+		});
+	} catch (error) {
+		await client.query('ROLLBACK');
+		console.error('POST /register-test-slot error:', error);
+
+		if (error.code === '23505') {
+			return res.status(400).json({
+				error: 'Student already registered for this test'
 			});
-		} catch (error) {
-			await client.query('ROLLBACK');
-			console.error('POST /register-test-slot error:', error);
-
-			if (error.code === '23505') {
-				return res.status(400).json({
-					error: 'Student already registered for this test'
-				});
-			}
-
-			res.status(500).json({
-				error: 'Failed to register test slot',
-				details: error.message
-			});
-		} finally {
-			client.release();
 		}
-	});
 
-	app.get('/student-notifications/:roll', async (req, res) => {
-		const { roll } = req.params;
+		res.status(500).json({
+			error: 'Failed to register test slot',
+			details: error.message
+		});
+	} finally {
+		client.release();
+	}
+});
 
-		try {
-			const result = await pool.query(
-				`
+app.get('/student-notifications/:roll', async (req, res) => {
+	const { roll } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
 		SELECT *
 		FROM student_notifications
 		WHERE roll_no = $1
 		AND is_read = FALSE
 		ORDER BY created_at DESC
 		`,
-				[ roll ]
-			);
+			[ roll ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET notifications error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch notifications'
-			});
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET notifications error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch notifications'
+		});
+	}
+});
 
-	app.put('/student-notifications/read', async (req, res) => {
-		const { roll_no, module_name } = req.body;
+app.put('/student-notifications/read', async (req, res) => {
+	const { roll_no, module_name } = req.body;
 
-		try {
-			await pool.query(
-				`
+	try {
+		await pool.query(
+			`
 				UPDATE student_notifications
 				SET is_read = TRUE
 				WHERE roll_no = $1
 				AND module_name = $2
 				`,
-				[roll_no, module_name]
-			);
+			[ roll_no, module_name ]
+		);
 
-			res.json({ message: 'Notifications marked as read' });
-		} catch (err) {
-			console.error('PUT /student-notifications/read error:', err);
-			res.status(500).json({ error: 'Failed to update notifications' });
-		}
-	});
+		res.json({ message: 'Notifications marked as read' });
+	} catch (err) {
+		console.error('PUT /student-notifications/read error:', err);
+		res.status(500).json({ error: 'Failed to update notifications' });
+	}
+});
 
-	app.get('/student-notifications/:roll', async (req, res) => {
-		// existing code
-	});
+app.get('/student-notifications/:roll', async (req, res) => {
+	// existing code
+});
 
-	app.get('/faculty-notifications/:facultyId', async (req, res) => {
-		const { facultyId } = req.params;
+app.get('/faculty-notifications/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 				SELECT *
 				FROM faculty_notifications
 				WHERE faculty_id = $1
 				AND is_read = FALSE
 				ORDER BY created_at DESC
 				`,
-				[facultyId]
-			);
+			[ facultyId ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET faculty notifications error:', err);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET faculty notifications error:', err);
 
-			res.status(500).json({
-				error: 'Failed to fetch faculty notifications'
-			});
-		}
-	});
+		res.status(500).json({
+			error: 'Failed to fetch faculty notifications'
+		});
+	}
+});
 
-	/* =========================================================
+/* =========================================================
 	FEES
 	========================================================= */
-	app.get('/fees/:roll', async (req, res) => {
-		const { roll } = req.params;
+app.get('/fees/:roll', async (req, res) => {
+	const { roll } = req.params;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 		SELECT total_fee, fee_paid, next_due
 		FROM fees
 		WHERE roll_no = $1
 		`,
-				[ roll ]
-			);
+			[ roll ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /fees/:roll error:', err);
-			res.status(500).json({ error: 'Database error' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /fees/:roll error:', err);
+		res.status(500).json({ error: 'Database error' });
+	}
+});
 
-	/* =========================================================
+/* =========================================================
 	FACULTY PROFILE
 	========================================================= */
-	app.get('/faculty/:id', async (req, res) => {
-		const { id } = req.params;
+app.get('/faculty/:id', async (req, res) => {
+	const { id } = req.params;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 		SELECT 
 			f.faculty_id,
 			f.name,
@@ -814,76 +818,76 @@ app.put('/reset-password', async (req, res) => {
 			ON f.subject_id = s.subject_id
 		WHERE f.faculty_id = $1
 		`,
-				[ id ]
-			);
+			[ id ]
+		);
 
-			if (result.rows.length === 0) {
-				return res.status(404).json({ error: 'Faculty not found' });
-			}
-
-			res.json(result.rows[0]);
-		} catch (err) {
-			console.error('GET /faculty/:id error:', err);
-			res.status(500).json({ error: 'Server error' });
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Faculty not found' });
 		}
-	});
-	/* =========================================================
+
+		res.json(result.rows[0]);
+	} catch (err) {
+		console.error('GET /faculty/:id error:', err);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
+/* =========================================================
 	MARKS SAVE / MANAGE / UPDATE
 	========================================================= */
-	app.post('/marks', async (req, res) => {
-		const { records } = req.body;
+app.post('/marks', async (req, res) => {
+	const { records } = req.body;
 
-		if (!records || !Array.isArray(records) || records.length === 0) {
-			return res.status(400).json({ error: 'records are required' });
-		}
+	if (!records || !Array.isArray(records) || records.length === 0) {
+		return res.status(400).json({ error: 'records are required' });
+	}
 
-		try {
-			for (const record of records) {
-				if (record.marks === undefined || record.marks === null || record.marks === '') {
-					continue;
-				}
+	try {
+		for (const record of records) {
+			if (record.marks === undefined || record.marks === null || record.marks === '') {
+				continue;
+			}
 
-				const testResult = await pool.query(
-					`
+			const testResult = await pool.query(
+				`
 					SELECT test_code, total_marks
 					FROM tests
 					WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
 					`,
-					[record.test_code]
-				);
+				[ record.test_code ]
+			);
 
-				if (testResult.rows.length === 0) {
-					return res.status(400).json({
-						error: `Invalid test code: ${record.test_code}`
-					});
-				}
+			if (testResult.rows.length === 0) {
+				return res.status(400).json({
+					error: `Invalid test code: ${record.test_code}`
+				});
+			}
 
-				const studentResult = await pool.query(
-					`
+			const studentResult = await pool.query(
+				`
 					SELECT roll_no, name
 					FROM students
 					WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 					`,
-					[record.roll_no]
-				);
+				[ record.roll_no ]
+			);
 
-				if (studentResult.rows.length === 0) {
-					return res.status(400).json({
-						error: `Invalid student: ${record.roll_no}`
-					});
-				}
+			if (studentResult.rows.length === 0) {
+				return res.status(400).json({
+					error: `Invalid student: ${record.roll_no}`
+				});
+			}
 
-				const totalMarks = Number(testResult.rows[0].total_marks);
-				const obtainedMarks = Number(record.marks);
+			const totalMarks = Number(testResult.rows[0].total_marks);
+			const obtainedMarks = Number(record.marks);
 
-				if (obtainedMarks > totalMarks) {
-					return res.status(400).json({
-						error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
-					});
-				}
+			if (obtainedMarks > totalMarks) {
+				return res.status(400).json({
+					error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
+				});
+			}
 
-				await pool.query(
-					`
+			await pool.query(
+				`
 					INSERT INTO marks (
 						roll_no,
 						student_name,
@@ -900,31 +904,31 @@ app.put('/reset-password', async (req, res) => {
 						comments = EXCLUDED.comments,
 						total_marks = EXCLUDED.total_marks
 					`,
-					[
-						studentResult.rows[0].roll_no,
-						studentResult.rows[0].name,
-						String(record.test_code).toUpperCase().trim(),
-						obtainedMarks,
-						record.comments || null,
-						totalMarks
-					]
-				);
-			}
-
-			res.json({ message: 'Marks saved successfully' });
-		} catch (err) {
-			console.error('POST /marks error:', err);
-			res.status(500).json({
-				error: 'Marks save failed',
-				details: err.message
-			});
+				[
+					studentResult.rows[0].roll_no,
+					studentResult.rows[0].name,
+					String(record.test_code).toUpperCase().trim(),
+					obtainedMarks,
+					record.comments || null,
+					totalMarks
+				]
+			);
 		}
-	});
-	app.get('/marks', async (req, res) => {
-		const { name, className, testCode } = req.query;
 
-		try {
-			let query = `
+		res.json({ message: 'Marks saved successfully' });
+	} catch (err) {
+		console.error('POST /marks error:', err);
+		res.status(500).json({
+			error: 'Marks save failed',
+			details: err.message
+		});
+	}
+});
+app.get('/marks', async (req, res) => {
+	const { name, className, testCode } = req.query;
+
+	try {
+		let query = `
 		SELECT 
 			s.roll_no,
 			s.name,
@@ -940,103 +944,103 @@ app.put('/reset-password', async (req, res) => {
 		WHERE 1=1
 		`;
 
-			const values = [];
+		const values = [];
 
-			if (name) {
-				values.push(`%${name}%`);
-				query += ` AND s.name ILIKE $${values.length}`;
-			}
-
-			if (className) {
-				const lastDash = String(className).lastIndexOf('-');
-
-				if (lastDash !== -1) {
-					const board = String(className).slice(0, lastDash).trim();
-					const classOnly = String(className).slice(lastDash + 1).trim();
-
-					values.push(classOnly);
-					query += ` AND TRIM(s.class) = TRIM($${values.length})`;
-
-					values.push(board);
-					query += ` AND TRIM(s.board) = TRIM($${values.length})`;
-				} else {
-					values.push(className);
-					query += ` AND TRIM(s.class) = TRIM($${values.length})`;
-				}
-			}
-
-			if (testCode) {
-				values.push(testCode);
-				query += ` AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($${values.length}))`;
-			}
-
-			query += ` ORDER BY s.roll_no ASC`;
-
-			const result = await pool.query(query, values);
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /marks error:', err);
-			res.status(500).json({ error: 'Failed to fetch marks' });
+		if (name) {
+			values.push(`%${name}%`);
+			query += ` AND s.name ILIKE $${values.length}`;
 		}
-	});
-	app.put('/marks/:roll_no/:test_code', async (req, res) => {
-		const { roll_no, test_code } = req.params;
-		const { marks, comments } = req.body;
 
-		try {
-			const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+		if (className) {
+			const lastDash = String(className).lastIndexOf('-');
 
-			if (testResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Test not found' });
+			if (lastDash !== -1) {
+				const board = String(className).slice(0, lastDash).trim();
+				const classOnly = String(className).slice(lastDash + 1).trim();
+
+				values.push(classOnly);
+				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+
+				values.push(board);
+				query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+			} else {
+				values.push(className);
+				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
 			}
+		}
 
-			const totalMarks = Number(testResult.rows[0].total_marks);
-			const obtainedMarks = Number(marks);
+		if (testCode) {
+			values.push(testCode);
+			query += ` AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($${values.length}))`;
+		}
 
-			if (obtainedMarks > totalMarks) {
-				return res.status(400).json({
-					error: `Marks cannot be greater than total marks (${totalMarks})`
-				});
-			}
+		query += ` ORDER BY s.roll_no ASC`;
 
-			await pool.query(
-				`
+		const result = await pool.query(query, values);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /marks error:', err);
+		res.status(500).json({ error: 'Failed to fetch marks' });
+	}
+});
+app.put('/marks/:roll_no/:test_code', async (req, res) => {
+	const { roll_no, test_code } = req.params;
+	const { marks, comments } = req.body;
+
+	try {
+		const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		const totalMarks = Number(testResult.rows[0].total_marks);
+		const obtainedMarks = Number(marks);
+
+		if (obtainedMarks > totalMarks) {
+			return res.status(400).json({
+				error: `Marks cannot be greater than total marks (${totalMarks})`
+			});
+		}
+
+		await pool.query(
+			`
 		UPDATE marks
 		SET marks_obtained = $1,
 			comments = COALESCE($2, comments)
 		WHERE roll_no = $3 AND test_code = $4
 		`,
-				[ obtainedMarks, comments || null, roll_no, test_code ]
-			);
+			[ obtainedMarks, comments || null, roll_no, test_code ]
+		);
 
-			res.json({ message: 'Marks updated successfully' });
-		} catch (err) {
-			console.error('PUT /marks/:roll_no/:test_code error:', err);
-			res.status(500).json({ error: 'Failed to update marks' });
+		res.json({ message: 'Marks updated successfully' });
+	} catch (err) {
+		console.error('PUT /marks/:roll_no/:test_code error:', err);
+		res.status(500).json({ error: 'Failed to update marks' });
+	}
+});
+
+app.put('/update-marks', async (req, res) => {
+	const { name, test_code, marks_obtained } = req.body;
+
+	try {
+		const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
 		}
-	});
 
-	app.put('/update-marks', async (req, res) => {
-		const { name, test_code, marks_obtained } = req.body;
+		const totalMarks = Number(testResult.rows[0].total_marks);
+		const obtainedMarks = Number(marks_obtained);
 
-		try {
-			const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+		if (obtainedMarks > totalMarks) {
+			return res.status(400).json({
+				error: `Marks cannot be greater than total marks (${totalMarks})`
+			});
+		}
 
-			if (testResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Test not found' });
-			}
-
-			const totalMarks = Number(testResult.rows[0].total_marks);
-			const obtainedMarks = Number(marks_obtained);
-
-			if (obtainedMarks > totalMarks) {
-				return res.status(400).json({
-					error: `Marks cannot be greater than total marks (${totalMarks})`
-				});
-			}
-
-			await pool.query(
-				`
+		await pool.query(
+			`
 		UPDATE marks
 		SET marks_obtained = $1
 		FROM students
@@ -1044,39 +1048,39 @@ app.put('/reset-password', async (req, res) => {
 			AND students.name = $2
 			AND marks.test_code = $3
 		`,
-				[ obtainedMarks, name, test_code ]
-			);
+			[ obtainedMarks, name, test_code ]
+		);
 
-			res.json({ message: 'Marks updated' });
-		} catch (err) {
-			console.error('PUT /update-marks error:', err);
-			res.status(500).json({ error: 'Update failed' });
-		}
-	});
+		res.json({ message: 'Marks updated' });
+	} catch (err) {
+		console.error('PUT /update-marks error:', err);
+		res.status(500).json({ error: 'Update failed' });
+	}
+});
 
-	/* =========================================================
+/* =========================================================
 	ATTENDANCE FETCH / SAVE / UPDATE
 	========================================================= */
 
-	function splitClassBoard(classBoard) {
-		if (!classBoard) return { board: null, classOnly: null };
+function splitClassBoard(classBoard) {
+	if (!classBoard) return { board: null, classOnly: null };
 
-		const value = String(classBoard).trim();
-		const lastDash = value.lastIndexOf('-');
+	const value = String(classBoard).trim();
+	const lastDash = value.lastIndexOf('-');
 
-		if (lastDash === -1) {
-			return { board: null, classOnly: value };
-		}
-
-		return {
-			board: value.slice(0, lastDash).trim(),
-			classOnly: value.slice(lastDash + 1).trim()
-		};
+	if (lastDash === -1) {
+		return { board: null, classOnly: value };
 	}
 
-	app.get('/classes', async (req, res) => {
-		try {
-			const result = await pool.query(`
+	return {
+		board: value.slice(0, lastDash).trim(),
+		classOnly: value.slice(lastDash + 1).trim()
+	};
+}
+
+app.get('/classes', async (req, res) => {
+	try {
+		const result = await pool.query(`
 				SELECT DISTINCT 
 					TRIM(class) AS class,
 					TRIM(board) AS board
@@ -1088,28 +1092,28 @@ app.put('/reset-password', async (req, res) => {
 				ORDER BY TRIM(board) ASC, TRIM(class) ASC
 			`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /classes error:', err);
-			res.status(500).json({ error: 'Failed to fetch classes' });
-		}
-	});
-	/* =========================================================
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /classes error:', err);
+		res.status(500).json({ error: 'Failed to fetch classes' });
+	}
+});
+/* =========================================================
 	STUDENT RECORD REPORT - IG001 / IG002
 	========================================================= */
 
-	app.get('/student-records', async (req, res) => {
-		const { className, board } = req.query;
+app.get('/student-records', async (req, res) => {
+	const { className, board } = req.query;
 
-		if (!className || !board) {
-			return res.status(400).json({
-				error: 'className and board are required'
-			});
-		}
+	if (!className || !board) {
+		return res.status(400).json({
+			error: 'className and board are required'
+		});
+	}
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 				SELECT
 					roll_no,
 					name,
@@ -1123,25 +1127,25 @@ app.put('/reset-password', async (req, res) => {
 				AND TRIM(board) = TRIM($2)
 				ORDER BY roll_no ASC
 				`,
-				[className, board]
-			);
+			[ className, board ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /student-records error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch student records',
-				details: err.message
-			});
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-records error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student records',
+			details: err.message
+		});
+	}
+});
 
-	app.get('/student-record-report/:rollNo', async (req, res) => {
-		const { rollNo } = req.params;
+app.get('/student-record-report/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
 
-		try {
-			const studentResult = await pool.query(
-				`
+	try {
+		const studentResult = await pool.query(
+			`
 				SELECT
 					roll_no,
 					name,
@@ -1154,15 +1158,15 @@ app.put('/reset-password', async (req, res) => {
 				FROM students
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				`,
-				[rollNo]
-			);
+			[ rollNo ]
+		);
 
-			if (studentResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const marksResult = await pool.query(
-				`
+		const marksResult = await pool.query(
+			`
 				SELECT
 					m.test_code,
 					m.marks_obtained,
@@ -1184,59 +1188,59 @@ app.put('/reset-password', async (req, res) => {
 				ORDER BY t.test_date DESC, m.test_code DESC
 				LIMIT 5
 				`,
-				[rollNo]
-			);
+			[ rollNo ]
+		);
 
-			const attendanceResult = await pool.query(
-				`
+		const attendanceResult = await pool.query(
+			`
 				SELECT
 					COUNT(*) FILTER (WHERE LOWER(TRIM(status)) = 'present') AS present_days,
 					COUNT(*) FILTER (WHERE LOWER(TRIM(status)) = 'absent') AS absent_days
 				FROM attendance
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				`,
-				[rollNo]
-			);
+			[ rollNo ]
+		);
 
-			res.json({
-				student: studentResult.rows[0],
-				marks: marksResult.rows,
-				attendance: {
-					present_days: Number(attendanceResult.rows[0].present_days || 0),
-					absent_days: Number(attendanceResult.rows[0].absent_days || 0)
-				}
-			});
-		} catch (err) {
-			console.error('GET /student-record-report/:rollNo error:', err);
-			res.status(500).json({
-				error: 'Failed to generate student report',
-				details: err.message
-			});
-		}
-	});
+		res.json({
+			student: studentResult.rows[0],
+			marks: marksResult.rows,
+			attendance: {
+				present_days: Number(attendanceResult.rows[0].present_days || 0),
+				absent_days: Number(attendanceResult.rows[0].absent_days || 0)
+			}
+		});
+	} catch (err) {
+		console.error('GET /student-record-report/:rollNo error:', err);
+		res.status(500).json({
+			error: 'Failed to generate student report',
+			details: err.message
+		});
+	}
+});
 
-	app.get('/attendance', async (req, res) => {
-		const { mode, class: classBoard, from, to, subject } = req.query;
+app.get('/attendance', async (req, res) => {
+	const { mode, class: classBoard, from, to, subject } = req.query;
 
-		if (!mode) {
-			return res.status(400).json({ error: 'mode is required' });
-		}
+	if (!mode) {
+		return res.status(400).json({ error: 'mode is required' });
+	}
 
-		try {
-			if (mode === 'report') {
-				if (!classBoard || !from || !to) {
-					return res.status(400).json({
-						error: 'class, from and to are required'
-					});
-				}
+	try {
+		if (mode === 'report') {
+			if (!classBoard || !from || !to) {
+				return res.status(400).json({
+					error: 'class, from and to are required'
+				});
+			}
 
-				const { board, classOnly } = splitClassBoard(classBoard);
+			const { board, classOnly } = splitClassBoard(classBoard);
 
-				if (!classOnly) {
-					return res.status(400).json({ error: 'Invalid class selected' });
-				}
+			if (!classOnly) {
+				return res.status(400).json({ error: 'Invalid class selected' });
+			}
 
-				let query = `
+			let query = `
 					SELECT
 						a.roll_no,
 						s.name,
@@ -1257,28 +1261,28 @@ app.put('/reset-password', async (req, res) => {
 					AND a.attendance_date BETWEEN $2 AND $3
 				`;
 
-				const values = [classOnly, from, to];
+			const values = [ classOnly, from, to ];
 
-				if (board) {
-					values.push(board);
-					query += ` AND TRIM(s.board) = TRIM($${values.length})`;
-				}
+			if (board) {
+				values.push(board);
+				query += ` AND TRIM(s.board) = TRIM($${values.length})`;
+			}
 
-				if (subject) {
-					values.push(subject);
-					query += ` AND a.subject_id = $${values.length}`;
-				}
+			if (subject) {
+				values.push(subject);
+				query += ` AND a.subject_id = $${values.length}`;
+			}
 
-				query += `
+			query += `
 					ORDER BY a.attendance_date DESC, a.attendance_time DESC, a.roll_no ASC
 				`;
 
-				const result = await pool.query(query, values);
-				return res.json(result.rows);
-			}
+			const result = await pool.query(query, values);
+			return res.json(result.rows);
+		}
 
-			if (mode === 'markedToday') {
-				let query = `
+		if (mode === 'markedToday') {
+			let query = `
 					SELECT
 						a.roll_no,
 						s.name,
@@ -1298,51 +1302,51 @@ app.put('/reset-password', async (req, res) => {
 					WHERE a.attendance_date = CURRENT_DATE
 				`;
 
-				const values = [];
+			const values = [];
 
-				if (classBoard) {
-					const { board, classOnly } = splitClassBoard(classBoard);
+			if (classBoard) {
+				const { board, classOnly } = splitClassBoard(classBoard);
 
-					if (classOnly) {
-						values.push(classOnly);
-						query += ` AND TRIM(s.class) = TRIM($${values.length})`;
-					}
-
-					if (board) {
-						values.push(board);
-						query += ` AND TRIM(s.board) = TRIM($${values.length})`;
-					}
+				if (classOnly) {
+					values.push(classOnly);
+					query += ` AND TRIM(s.class) = TRIM($${values.length})`;
 				}
 
-				if (subject) {
-					values.push(subject);
-					query += ` AND a.subject_id = $${values.length}`;
+				if (board) {
+					values.push(board);
+					query += ` AND TRIM(s.board) = TRIM($${values.length})`;
 				}
+			}
 
-				query += `
+			if (subject) {
+				values.push(subject);
+				query += ` AND a.subject_id = $${values.length}`;
+			}
+
+			query += `
 					ORDER BY a.marked_at DESC, a.attendance_time DESC, a.roll_no ASC
 				`;
 
-				const result = await pool.query(query, values);
-				return res.json(result.rows);
-			}
-
-			return res.status(400).json({ error: 'Invalid attendance mode' });
-		} catch (err) {
-			console.error('GET /attendance error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch attendance',
-				details: err.message
-			});
+			const result = await pool.query(query, values);
+			return res.json(result.rows);
 		}
-	});
 
-	app.get('/attendance/:rollNo', async (req, res) => {
-		const { rollNo } = req.params;
+		return res.status(400).json({ error: 'Invalid attendance mode' });
+	} catch (err) {
+		console.error('GET /attendance error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch attendance',
+			details: err.message
+		});
+	}
+});
 
-		try {
-			const result = await pool.query(
-				`
+app.get('/attendance/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
 				SELECT 
 					roll_no,
 					subject_id,
@@ -1357,63 +1361,63 @@ app.put('/reset-password', async (req, res) => {
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				ORDER BY attendance_date DESC, attendance_time DESC
 				`,
-				[rollNo]
-			);
+			[ rollNo ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /attendance/:rollNo error:', err);
-			res.status(500).json({ error: 'Server error' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /attendance/:rollNo error:', err);
+		res.status(500).json({ error: 'Server error' });
+	}
+});
 
-	app.post('/attendance', async (req, res) => {
-		const { records, subject, facultyId, overwrite = false } = req.body;
-		const selectedDate = req.body.date || req.body.attendanceDate;
+app.post('/attendance', async (req, res) => {
+	const { records, subject, facultyId, overwrite = false } = req.body;
+	const selectedDate = req.body.date || req.body.attendanceDate;
 
-		if (!records || !Array.isArray(records) || records.length === 0) {
-			return res.status(400).json({ error: 'records are required' });
-		}
+	if (!records || !Array.isArray(records) || records.length === 0) {
+		return res.status(400).json({ error: 'records are required' });
+	}
 
-		if (!subject) {
-			return res.status(400).json({ error: 'subject is required' });
-		}
+	if (!subject) {
+		return res.status(400).json({ error: 'subject is required' });
+	}
 
-		if (!facultyId) {
-			return res.status(400).json({ error: 'facultyId is required' });
-		}
+	if (!facultyId) {
+		return res.status(400).json({ error: 'facultyId is required' });
+	}
 
-		if (!selectedDate) {
-			return res.status(400).json({ error: 'date is required' });
-		}
+	if (!selectedDate) {
+		return res.status(400).json({ error: 'date is required' });
+	}
 
-		const client = await pool.connect();
+	const client = await pool.connect();
 
-		try {
-			await client.query('BEGIN');
+	try {
+		await client.query('BEGIN');
 
-			let duplicateFound = false;
-			const existingStudents = [];
+		let duplicateFound = false;
+		const existingStudents = [];
 
-			for (const record of records) {
-				const exists = await client.query(
-					`
+		for (const record of records) {
+			const exists = await client.query(
+				`
 					SELECT 1
 					FROM attendance
 					WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 					AND subject_id = $2
 					AND attendance_date = $3
 					`,
-					[record.roll_no, subject, selectedDate]
-				);
+				[ record.roll_no, subject, selectedDate ]
+			);
 
-				if (exists.rows.length > 0) {
-					duplicateFound = true;
-					existingStudents.push(record.roll_no);
+			if (exists.rows.length > 0) {
+				duplicateFound = true;
+				existingStudents.push(record.roll_no);
 
-					if (overwrite) {
-						await client.query(
-							`
+				if (overwrite) {
+					await client.query(
+						`
 							UPDATE attendance
 							SET status = $1,
 								updated_by = $2,
@@ -1425,84 +1429,78 @@ app.put('/reset-password', async (req, res) => {
 							AND subject_id = $4
 							AND attendance_date = $5
 							`,
-							[record.status, facultyId, record.roll_no, subject, selectedDate]
-						);
-					}
-				} else {
-					await client.query(
-						`
+						[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+					);
+				}
+			} else {
+				await client.query(
+					`
 						INSERT INTO attendance
 							(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, marked_at)
 						VALUES ($1, $2, $3, CURRENT_TIME, $4, $5, CURRENT_TIMESTAMP)
 						`,
-						[record.roll_no, subject, selectedDate, record.status, facultyId]
-					);
-				}
+					[ record.roll_no, subject, selectedDate, record.status, facultyId ]
+				);
 			}
-			await client.query(
-		`
+		}
+		await client.query(
+			`
 		INSERT INTO student_notifications
 		(roll_no, module_name, message)
 		VALUES ($1, $2, $3)
 		`,
-		[
-			record.roll_no,
-			'attendance',
-			'Attendance updated'
-		]
-	);
+			[ record.roll_no, 'attendance', 'Attendance updated' ]
+		);
 
-			if (duplicateFound && !overwrite) {
-				await client.query('ROLLBACK');
-
-				return res.status(409).json({
-					error: 'Attendance already marked for one or more students',
-					duplicateFound: true,
-					existingStudents
-				});
-			}
-
-			await client.query('COMMIT');
-
-			res.json({
-				message: overwrite
-					? 'Attendance overwritten successfully'
-					: 'Attendance saved successfully'
-			});
-		} catch (err) {
+		if (duplicateFound && !overwrite) {
 			await client.query('ROLLBACK');
-			console.error('POST /attendance error:', err);
-			res.status(500).json({
-				error: 'Failed to save attendance',
-				details: err.message
-			});
-		} finally {
-			client.release();
-		}
-	});
 
-	app.put('/attendance', async (req, res) => {
-		const { records, subject, facultyId } = req.body;
-		const selectedDate = req.body.date || req.body.attendanceDate;
-
-		if (!records || !Array.isArray(records) || records.length === 0) {
-			return res.status(400).json({ error: 'records are required' });
-		}
-
-		if (!subject || !facultyId || !selectedDate) {
-			return res.status(400).json({
-				error: 'subject, facultyId and date are required'
+			return res.status(409).json({
+				error: 'Attendance already marked for one or more students',
+				duplicateFound: true,
+				existingStudents
 			});
 		}
 
-		const client = await pool.connect();
+		await client.query('COMMIT');
 
-		try {
-			await client.query('BEGIN');
+		res.json({
+			message: overwrite ? 'Attendance overwritten successfully' : 'Attendance saved successfully'
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /attendance error:', err);
+		res.status(500).json({
+			error: 'Failed to save attendance',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
 
-			for (const record of records) {
-				const result = await client.query(
-					`
+app.put('/attendance', async (req, res) => {
+	const { records, subject, facultyId } = req.body;
+	const selectedDate = req.body.date || req.body.attendanceDate;
+
+	if (!records || !Array.isArray(records) || records.length === 0) {
+		return res.status(400).json({ error: 'records are required' });
+	}
+
+	if (!subject || !facultyId || !selectedDate) {
+		return res.status(400).json({
+			error: 'subject, facultyId and date are required'
+		});
+	}
+
+	const client = await pool.connect();
+
+	try {
+		await client.query('BEGIN');
+
+		for (const record of records) {
+			const result = await client.query(
+				`
 					UPDATE attendance
 					SET status = $1,
 						edited_by = $2,
@@ -1512,52 +1510,48 @@ app.put('/reset-password', async (req, res) => {
 					AND attendance_date = $5
 					RETURNING *
 					`,
-					[record.status, facultyId, record.roll_no, subject, selectedDate]
-				);
+				[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+			);
 
-				if (result.rows.length === 0) {
-					await client.query('ROLLBACK');
+			if (result.rows.length === 0) {
+				await client.query('ROLLBACK');
 
-					return res.status(404).json({
-						error: `Attendance record not found for ${record.roll_no}`
-					});
-				}
+				return res.status(404).json({
+					error: `Attendance record not found for ${record.roll_no}`
+				});
 			}
-			for (const record of records) {
-				await client.query(
-			`
+		}
+		for (const record of records) {
+			await client.query(
+				`
 			INSERT INTO student_notifications
 			(roll_no, module_name, message)
 			VALUES ($1, $2, $3)
 			`,
-			[
-				record.roll_no,
-				'attendance',
-				'Attendance updated'
-			]
-		);
-	}
-
-			await client.query('COMMIT');
-			res.json({ message: 'Attendance updated successfully' });
-		} catch (err) {
-			await client.query('ROLLBACK');
-			console.error('PUT /attendance error:', err);
-			res.status(500).json({
-				error: 'Failed to update attendance',
-				details: err.message
-			});
-		} finally {
-			client.release();
+				[ record.roll_no, 'attendance', 'Attendance updated' ]
+			);
 		}
-	});
-	/* =========================================================
+
+		await client.query('COMMIT');
+		res.json({ message: 'Attendance updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /attendance error:', err);
+		res.status(500).json({
+			error: 'Failed to update attendance',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+/* =========================================================
 	POST TEST WITH SLOT LINK + DURATION + REGISTRATION DATES
 	========================================================= */
-	// ================== GET ALL POSTED TESTS ==================
-	app.get('/tests', async (req, res) => {
-		try {
-			const result = await pool.query(`
+// ================== GET ALL POSTED TESTS ==================
+app.get('/tests', async (req, res) => {
+	try {
+		const result = await pool.query(`
 				SELECT
 					test_code,
 					subject_id,
@@ -1579,16 +1573,16 @@ app.put('/reset-password', async (req, res) => {
 				ORDER BY test_date DESC
 			`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /tests error:', err);
-			res.status(500).json({ error: 'Failed to fetch tests' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /tests error:', err);
+		res.status(500).json({ error: 'Failed to fetch tests' });
+	}
+});
 
-	app.get('/posted-tests', async (req, res) => {
-		try {
-			const result = await pool.query(`
+app.get('/posted-tests', async (req, res) => {
+	try {
+		const result = await pool.query(`
 				SELECT
 					test_code,
 					subject_id,
@@ -1610,130 +1604,122 @@ app.put('/reset-password', async (req, res) => {
 				ORDER BY test_date DESC
 			`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /posted-tests error:', err);
-			res.status(500).json({ error: 'Failed to fetch posted tests' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /posted-tests error:', err);
+		res.status(500).json({ error: 'Failed to fetch posted tests' });
+	}
+});
 
-	app.delete('/posted-tests/:testCode', async (req, res) => {
-		const { testCode } = req.params;
+app.delete('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 				DELETE FROM tests
 				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
 				RETURNING *
 				`,
-				[testCode]
-			);
+			[ testCode ]
+		);
 
-			if (result.rows.length === 0) {
-				return res.status(404).json({ error: 'Test not found' });
-			}
-
-			res.json({ message: 'Test deleted successfully' });
-		} catch (err) {
-			console.error('DELETE /posted-tests/:testCode error:', err);
-			res.status(500).json({ error: 'Failed to delete test' });
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
 		}
-	});
 
-	app.post('/post-test', async (req, res) => {
-		const client = await pool.connect();
+		res.json({ message: 'Test deleted successfully' });
+	} catch (err) {
+		console.error('DELETE /posted-tests/:testCode error:', err);
+		res.status(500).json({ error: 'Failed to delete test' });
+	}
+});
 
-		try {
-			await client.query('BEGIN');
+app.post('/post-test', async (req, res) => {
+	const client = await pool.connect();
 
-			const {
-				test_code,
-				subject_id,
-				test_date,
-				total_marks,
-				portion,
-				created_by,
-				class_name,
-				board,
-				duration_minutes,
-				registration_end_date,
-				writing_allowed_till
-			} = req.body;
+	try {
+		await client.query('BEGIN');
 
-			console.log('POST /post-test BODY:', req.body);
+		const {
+			test_code,
+			subject_id,
+			test_date,
+			total_marks,
+			portion,
+			created_by,
+			class_name,
+			board,
+			duration_minutes,
+			registration_end_date,
+			writing_allowed_till
+		} = req.body;
 
-			if (
-				!test_code ||
-				!subject_id ||
-				!test_date ||
-				!total_marks ||
-				!created_by ||
-				!class_name ||
-				!board
-			) {
+		console.log('POST /post-test BODY:', req.body);
+
+		if (!test_code || !subject_id || !test_date || !total_marks || !created_by || !class_name || !board) {
+			await client.query('ROLLBACK');
+			return res.status(400).json({
+				error: 'Required fields are missing'
+			});
+		}
+
+		if (registration_end_date) {
+			const testDateObj = new Date(test_date);
+			const regEndObj = new Date(registration_end_date);
+
+			testDateObj.setHours(0, 0, 0, 0);
+			regEndObj.setHours(0, 0, 0, 0);
+
+			if (regEndObj >= testDateObj) {
 				await client.query('ROLLBACK');
 				return res.status(400).json({
-					error: 'Required fields are missing'
+					error: 'Registration must end BEFORE test date'
 				});
 			}
+		}
 
-			if (registration_end_date) {
-				const testDateObj = new Date(test_date);
-				const regEndObj = new Date(registration_end_date);
+		const cleanTestCode = String(test_code).trim().toUpperCase();
+		const cleanClassName = String(class_name).trim();
+		const cleanBoard = String(board).trim();
 
-				testDateObj.setHours(0, 0, 0, 0);
-				regEndObj.setHours(0, 0, 0, 0);
-
-				if (regEndObj >= testDateObj) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({
-						error: 'Registration must end BEFORE test date'
-					});
-				}
-			}
-
-			const cleanTestCode = String(test_code).trim().toUpperCase();
-			const cleanClassName = String(class_name).trim();
-			const cleanBoard = String(board).trim();
-
-			const existingTest = await client.query(
-				`
+		const existingTest = await client.query(
+			`
 				SELECT test_code
 				FROM tests
 				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
 				`,
-				[cleanTestCode]
-			);
+			[ cleanTestCode ]
+		);
 
-			if (existingTest.rows.length > 0) {
-				await client.query('ROLLBACK');
-				return res.status(400).json({
-					error: 'Test code already exists'
-				});
-			}
+		if (existingTest.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(400).json({
+				error: 'Test code already exists'
+			});
+		}
 
-			const existingLink = await client.query(
-				`
+		const existingLink = await client.query(
+			`
 				SELECT test_slot_link
 				FROM tests
 				WHERE test_date = $1
 				AND test_slot_link IS NOT NULL
 				LIMIT 1
 				`,
-				[test_date]
-			);
+			[ test_date ]
+		);
 
-			let link;
+		let link;
 
-			if (existingLink.rows.length > 0) {
-				link = existingLink.rows[0].test_slot_link;
-			} else {
-				link = `https://responsible-wonder-production.up.railway.app/register-test?date=${test_date}`;
-			}
+		if (existingLink.rows.length > 0) {
+			link = existingLink.rows[0].test_slot_link;
+		} else {
+			link = `https://responsible-wonder-production.up.railway.app/register-test?date=${test_date}`;
+		}
 
-			const insertResult = await client.query(
-				`
+		const insertResult = await client.query(
+			`
 				INSERT INTO tests (
 					test_code,
 					subject_id,
@@ -1751,99 +1737,91 @@ app.put('/reset-password', async (req, res) => {
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 				RETURNING *
 				`,
-				[
-					cleanTestCode,
-					subject_id,
-					test_date,
-					total_marks,
-					portion || '',
-					created_by,
-					cleanClassName,
-					cleanBoard,
-					link,
-					duration_minutes || null,
-					registration_end_date || null,
-					writing_allowed_till || null
-				]
+			[
+				cleanTestCode,
+				subject_id,
+				test_date,
+				total_marks,
+				portion || '',
+				created_by,
+				cleanClassName,
+				cleanBoard,
+				link,
+				duration_minutes || null,
+				registration_end_date || null,
+				writing_allowed_till || null
+			]
+		);
+		const studentsForNotification = await client.query(
+			`
+		SELECT roll_no
+		FROM students
+		WHERE TRIM(class) = TRIM($1)
+		AND TRIM(board) = TRIM($2)
+		`,
+			[ cleanClassName, cleanBoard ]
+		);
+
+		for (const student of studentsForNotification.rows) {
+			await client.query(
+				`
+			INSERT INTO student_notifications
+			(roll_no, module_name, message)
+			VALUES ($1, $2, $3)
+			`,
+				[ student.roll_no, 'test-schedule', 'New test has been scheduled' ]
 			);
-	const studentsForNotification = await client.query(
-		`
-		SELECT roll_no
-		FROM students
-		WHERE TRIM(class) = TRIM($1)
-		AND TRIM(board) = TRIM($2)
-		`,
-		[cleanClassName, cleanBoard]
-	);
-
-	for (const student of studentsForNotification.rows) {
-		await client.query(
-			`
-			INSERT INTO student_notifications
-			(roll_no, module_name, message)
-			VALUES ($1, $2, $3)
-			`,
-			[
-				student.roll_no,
-				'test-schedule',
-				'New test has been scheduled'
-			]
-		);
-	}
-			await client.query('COMMIT');
-	const studentsResult = await client.query(
-		`
-		SELECT roll_no
-		FROM students
-		WHERE TRIM(class) = TRIM($1)
-		AND TRIM(board) = TRIM($2)
-		`,
-		[cleanClassName, cleanBoard]
-	);
-
-	for (const student of studentsResult.rows) {
-		await client.query(
-			`
-			INSERT INTO student_notifications
-			(roll_no, module_name, message)
-			VALUES ($1, $2, $3)
-			`,
-			[
-				student.roll_no,
-				'test-schedule',
-				'New test has been scheduled'
-			]
-		);
-	}
-			res.json({
-				message: 'Test posted successfully',
-				test: insertResult.rows[0],
-				link
-			});
-		} catch (err) {
-			await client.query('ROLLBACK');
-			console.error('POST /post-test error:', err);
-
-			if (err.code === '23505') {
-				return res.status(400).json({
-					error: 'Test code already exists'
-				});
-			}
-
-			res.status(500).json({
-				error: 'Failed to create test',
-				details: err.message
-			});
-		} finally {
-			client.release();
 		}
-	});
-	/* =========================================================
+		await client.query('COMMIT');
+		const studentsResult = await client.query(
+			`
+		SELECT roll_no
+		FROM students
+		WHERE TRIM(class) = TRIM($1)
+		AND TRIM(board) = TRIM($2)
+		`,
+			[ cleanClassName, cleanBoard ]
+		);
+
+		for (const student of studentsResult.rows) {
+			await client.query(
+				`
+			INSERT INTO student_notifications
+			(roll_no, module_name, message)
+			VALUES ($1, $2, $3)
+			`,
+				[ student.roll_no, 'test-schedule', 'New test has been scheduled' ]
+			);
+		}
+		res.json({
+			message: 'Test posted successfully',
+			test: insertResult.rows[0],
+			link
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /post-test error:', err);
+
+		if (err.code === '23505') {
+			return res.status(400).json({
+				error: 'Test code already exists'
+			});
+		}
+
+		res.status(500).json({
+			error: 'Failed to create test',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+/* =========================================================
 	FACULTY MANAGEMENT
 	========================================================= */
-	app.get('/faculty', async (req, res) => {
-		try {
-			const result = await pool.query(`
+app.get('/faculty', async (req, res) => {
+	try {
+		const result = await pool.query(`
 		SELECT 
 			f.faculty_id,
 			f.name,
@@ -1857,52 +1835,52 @@ app.put('/reset-password', async (req, res) => {
 		ORDER BY f.faculty_id ASC
 		`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /faculty error:', err);
-			res.status(500).json({ error: 'Failed to fetch faculty list' });
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty list' });
+	}
+});
 
-	app.get('/subjects', async (req, res) => {
-		try {
-			const result = await pool.query(`
+app.get('/subjects', async (req, res) => {
+	try {
+		const result = await pool.query(`
 		SELECT subject_id, subject_name
 		FROM subjects
 		ORDER BY subject_id ASC
 		`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /subjects error:', err);
-			res.status(500).json({ error: 'Failed to fetch subjects' });
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /subjects error:', err);
+		res.status(500).json({ error: 'Failed to fetch subjects' });
+	}
+});
+
+app.post('/faculty', async (req, res) => {
+	const { faculty_id, name, subject_id, phone, email, password } = req.body;
+
+	if (!faculty_id || !name || !subject_id || !phone || !email || !password) {
+		return res.status(400).json({ error: 'All fields are required' });
+	}
+
+	try {
+		const existingFaculty = await pool.query(`SELECT faculty_id FROM faculty WHERE faculty_id = $1`, [
+			faculty_id
+		]);
+
+		if (existingFaculty.rows.length > 0) {
+			return res.status(400).json({ error: 'Faculty ID already exists' });
 		}
-	});
 
-	app.post('/faculty', async (req, res) => {
-		const { faculty_id, name, subject_id, phone, email, password } = req.body;
+		const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
 
-		if (!faculty_id || !name || !subject_id || !phone || !email || !password) {
-			return res.status(400).json({ error: 'All fields are required' });
+		if (subjectCheck.rows.length === 0) {
+			return res.status(400).json({ error: 'Selected subject does not exist' });
 		}
 
-		try {
-			const existingFaculty = await pool.query(`SELECT faculty_id FROM faculty WHERE faculty_id = $1`, [
-				faculty_id
-			]);
-
-			if (existingFaculty.rows.length > 0) {
-				return res.status(400).json({ error: 'Faculty ID already exists' });
-			}
-
-			const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
-
-			if (subjectCheck.rows.length === 0) {
-				return res.status(400).json({ error: 'Selected subject does not exist' });
-			}
-
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 		INSERT INTO faculty (
 			faculty_id,
 			name,
@@ -1914,52 +1892,52 @@ app.put('/reset-password', async (req, res) => {
 		VALUES ($1,$2,$3,$4,$5,$6)
 		RETURNING *
 		`,
-				[ faculty_id, name, subject_id, phone, email, password ]
-			);
+			[ faculty_id, name, subject_id, phone, email, password ]
+		);
 
-			res.status(201).json({
-				message: 'Faculty added successfully',
-				faculty: result.rows[0]
-			});
-		} catch (err) {
-			console.error('POST /faculty error:', err);
+		res.status(201).json({
+			message: 'Faculty added successfully',
+			faculty: result.rows[0]
+		});
+	} catch (err) {
+		console.error('POST /faculty error:', err);
 
-			if (err.code === '23505') {
-				return res.status(400).json({ error: 'Duplicate faculty entry' });
-			}
-
-			res.status(500).json({ error: 'Failed to add faculty' });
-		}
-	});
-
-	app.put('/faculty/:faculty_id', async (req, res) => {
-		const { faculty_id } = req.params;
-		const { name, subject_id, phone, email, password } = req.body;
-
-		if (!name || !subject_id || !phone || !email) {
-			return res.status(400).json({
-				error: 'Name, subject, phone and email are required'
-			});
+		if (err.code === '23505') {
+			return res.status(400).json({ error: 'Duplicate faculty entry' });
 		}
 
-		try {
-			const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+		res.status(500).json({ error: 'Failed to add faculty' });
+	}
+});
 
-			if (existingFaculty.rows.length === 0) {
-				return res.status(404).json({ error: 'Faculty not found' });
-			}
+app.put('/faculty/:faculty_id', async (req, res) => {
+	const { faculty_id } = req.params;
+	const { name, subject_id, phone, email, password } = req.body;
 
-			const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
+	if (!name || !subject_id || !phone || !email) {
+		return res.status(400).json({
+			error: 'Name, subject, phone and email are required'
+		});
+	}
 
-			if (subjectCheck.rows.length === 0) {
-				return res.status(400).json({ error: 'Selected subject does not exist' });
-			}
+	try {
+		const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
 
-			let result;
+		if (existingFaculty.rows.length === 0) {
+			return res.status(404).json({ error: 'Faculty not found' });
+		}
 
-			if (password && password.trim() !== '') {
-				result = await pool.query(
-					`
+		const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
+
+		if (subjectCheck.rows.length === 0) {
+			return res.status(400).json({ error: 'Selected subject does not exist' });
+		}
+
+		let result;
+
+		if (password && password.trim() !== '') {
+			result = await pool.query(
+				`
 			UPDATE faculty
 			SET name = $1,
 				subject_id = $2,
@@ -1969,11 +1947,11 @@ app.put('/reset-password', async (req, res) => {
 			WHERE faculty_id = $6
 			RETURNING *
 			`,
-					[ name, subject_id, phone, email, password, faculty_id ]
-				);
-			} else {
-				result = await pool.query(
-					`
+				[ name, subject_id, phone, email, password, faculty_id ]
+			);
+		} else {
+			result = await pool.query(
+				`
 			UPDATE faculty
 			SET name = $1,
 				subject_id = $2,
@@ -1982,64 +1960,64 @@ app.put('/reset-password', async (req, res) => {
 			WHERE faculty_id = $5
 			RETURNING *
 			`,
-					[ name, subject_id, phone, email, faculty_id ]
-				);
-			}
+				[ name, subject_id, phone, email, faculty_id ]
+			);
+		}
 
-			res.json({
-				message: 'Faculty updated successfully',
-				faculty: result.rows[0]
+		res.json({
+			message: 'Faculty updated successfully',
+			faculty: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /faculty/:faculty_id error:', err);
+		res.status(500).json({ error: 'Failed to update faculty' });
+	}
+});
+
+app.delete('/faculty/:faculty_id', async (req, res) => {
+	const { faculty_id } = req.params;
+
+	try {
+		const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+
+		if (existingFaculty.rows.length === 0) {
+			return res.status(404).json({ error: 'Faculty not found' });
+		}
+
+		const linkedTests = await pool.query(`SELECT test_code FROM tests WHERE created_by = $1 LIMIT 1`, [
+			faculty_id
+		]);
+
+		if (linkedTests.rows.length > 0) {
+			return res.status(400).json({
+				error: 'Cannot delete this faculty because test records are linked to this faculty ID'
 			});
-		} catch (err) {
-			console.error('PUT /faculty/:faculty_id error:', err);
-			res.status(500).json({ error: 'Failed to update faculty' });
 		}
-	});
 
-	app.delete('/faculty/:faculty_id', async (req, res) => {
-		const { faculty_id } = req.params;
+		const linkedAttendance = await pool.query(`SELECT roll_no FROM attendance WHERE updated_by = $1 LIMIT 1`, [
+			faculty_id
+		]);
 
-		try {
-			const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
-
-			if (existingFaculty.rows.length === 0) {
-				return res.status(404).json({ error: 'Faculty not found' });
-			}
-
-			const linkedTests = await pool.query(`SELECT test_code FROM tests WHERE created_by = $1 LIMIT 1`, [
-				faculty_id
-			]);
-
-			if (linkedTests.rows.length > 0) {
-				return res.status(400).json({
-					error: 'Cannot delete this faculty because test records are linked to this faculty ID'
-				});
-			}
-
-			const linkedAttendance = await pool.query(`SELECT roll_no FROM attendance WHERE updated_by = $1 LIMIT 1`, [
-				faculty_id
-			]);
-
-			if (linkedAttendance.rows.length > 0) {
-				return res.status(400).json({
-					error: 'Cannot delete this faculty because attendance records are linked to this faculty ID'
-				});
-			}
-
-			await pool.query(`DELETE FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
-
-			res.json({ message: 'Faculty deleted successfully' });
-		} catch (err) {
-			console.error('DELETE /faculty/:faculty_id error:', err);
-			res.status(500).json({ error: 'Failed to delete faculty' });
+		if (linkedAttendance.rows.length > 0) {
+			return res.status(400).json({
+				error: 'Cannot delete this faculty because attendance records are linked to this faculty ID'
+			});
 		}
-	});
 
-	/* =========================================================
+		await pool.query(`DELETE FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+
+		res.json({ message: 'Faculty deleted successfully' });
+	} catch (err) {
+		console.error('DELETE /faculty/:faculty_id error:', err);
+		res.status(500).json({ error: 'Failed to delete faculty' });
+	}
+});
+
+/* =========================================================
 	STUDENT MANAGEMENT
 	========================================================= */
-	async function generateNextStudentRollNo(client) {
-		const result = await client.query(`
+async function generateNextStudentRollNo(client) {
+	const result = await client.query(`
 			SELECT roll_no
 			FROM students
 			WHERE UPPER(TRIM(roll_no)) LIKE 'IA%'
@@ -2047,22 +2025,22 @@ app.put('/reset-password', async (req, res) => {
 			LIMIT 1
 		`);
 
-		if (result.rows.length === 0) {
-			return 'IA001';
-		}
-
-		const lastRollNo = String(result.rows[0].roll_no || '').toUpperCase().trim();
-		const lastNumber = Number(lastRollNo.replace('IA', ''));
-
-		const nextNumber = Number.isNaN(lastNumber) ? 1 : lastNumber + 1;
-
-		return `IA${String(nextNumber).padStart(3, '0')}`;
+	if (result.rows.length === 0) {
+		return 'IA001';
 	}
-	app.get('/students', async (req, res) => {
-		const { search = '', class: className = '', board = '' } = req.query;
 
-		try {
-			let query = `
+	const lastRollNo = String(result.rows[0].roll_no || '').toUpperCase().trim();
+	const lastNumber = Number(lastRollNo.replace('IA', ''));
+
+	const nextNumber = Number.isNaN(lastNumber) ? 1 : lastNumber + 1;
+
+	return `IA${String(nextNumber).padStart(3, '0')}`;
+}
+app.get('/students', async (req, res) => {
+	const { search = '', class: className = '', board = '' } = req.query;
+
+	try {
+		let query = `
 		SELECT 
 			s.roll_no,
 			s.name,
@@ -2079,11 +2057,11 @@ app.put('/reset-password', async (req, res) => {
 		WHERE 1=1
 		`;
 
-			const values = [];
-			let index = 1;
+		const values = [];
+		let index = 1;
 
-			if (search.trim()) {
-				query += `
+		if (search.trim()) {
+			query += `
 			AND (
 			s.roll_no ILIKE $${index}
 			OR s.name ILIKE $${index}
@@ -2093,82 +2071,82 @@ app.put('/reset-password', async (req, res) => {
 			OR s.password ILIKE $${index}
 			)
 		`;
-				values.push(`%${search.trim()}%`);
-				index++;
-			}
-
-			if (className.trim()) {
-				query += ` AND s.class = $${index}`;
-				values.push(className.trim());
-				index++;
-			}
-
-			if (board.trim()) {
-				query += ` AND s.board = $${index}`;
-				values.push(board.trim());
-				index++;
-			}
-
-			query += ` ORDER BY s.roll_no ASC`;
-
-			const result = await pool.query(query, values);
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /students error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch students',
-				details: err.message
-			});
+			values.push(`%${search.trim()}%`);
+			index++;
 		}
-	});
 
-	app.get('/students-by-class/:class', async (req, res) => {
-		const studentClass = req.params.class;
+		if (className.trim()) {
+			query += ` AND s.class = $${index}`;
+			values.push(className.trim());
+			index++;
+		}
 
-		try {
-			const result = await pool.query(
-				`
+		if (board.trim()) {
+			query += ` AND s.board = $${index}`;
+			values.push(board.trim());
+			index++;
+		}
+
+		query += ` ORDER BY s.roll_no ASC`;
+
+		const result = await pool.query(query, values);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch students',
+			details: err.message
+		});
+	}
+});
+
+app.get('/students-by-class/:class', async (req, res) => {
+	const studentClass = req.params.class;
+
+	try {
+		const result = await pool.query(
+			`
 		SELECT roll_no, name
 		FROM students
 		WHERE class = $1
 		ORDER BY roll_no ASC
 		`,
-				[studentClass]
-			);
+			[ studentClass ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /students-by-class/:class error:', err);
-			res.status(500).json({ error: 'Database error' });
-		}
-	});
-	app.get('/enter-marks-students', async (req, res) => {
-		const { className, board, testCode } = req.query;
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /students-by-class/:class error:', err);
+		res.status(500).json({ error: 'Database error' });
+	}
+});
+app.get('/enter-marks-students', async (req, res) => {
+	const { className, board, testCode } = req.query;
 
-		if (!className || !board || !testCode) {
-			return res.status(400).json({
-				error: 'className, board and testCode are required'
-			});
-		}
+	if (!className || !board || !testCode) {
+		return res.status(400).json({
+			error: 'className, board and testCode are required'
+		});
+	}
 
-		try {
-			const testResult = await pool.query(
-				`
+	try {
+		const testResult = await pool.query(
+			`
 				SELECT subject_id
 				FROM tests
 				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
 				`,
-				[testCode]
-			);
+			[ testCode ]
+		);
 
-			if (testResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Test not found' });
-			}
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
 
-			const subjectId = testResult.rows[0].subject_id;
+		const subjectId = testResult.rows[0].subject_id;
 
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 				SELECT DISTINCT
 					s.roll_no,
 					s.name
@@ -2180,32 +2158,32 @@ app.put('/reset-password', async (req, res) => {
 				AND ss.subject_id = $3
 				ORDER BY s.roll_no ASC
 				`,
-				[className, board, subjectId]
-			);
+			[ className, board, subjectId ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /enter-marks-students error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch students',
-				details: err.message
-			});
-		}
-	});
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enter-marks-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch students',
+			details: err.message
+		});
+	}
+});
 
-	/*
+/*
 	Smart route:
 	- /students/IA001 gives one student's full details
 	- /students/CBSE-11 gives student list for class
 	*/
-	app.get('/students/:value', async (req, res) => {
-		const { value } = req.params;
-		const upperValue = String(value).toUpperCase();
+app.get('/students/:value', async (req, res) => {
+	const { value } = req.params;
+	const upperValue = String(value).toUpperCase();
 
-		try {
-			if (upperValue.startsWith('IA') || upperValue.startsWith('IG')) {
-				const studentResult = await pool.query(
-					`
+	try {
+		if (upperValue.startsWith('IA') || upperValue.startsWith('IG')) {
+			const studentResult = await pool.query(
+				`
 			SELECT 
 			s.roll_no,
 			s.name,
@@ -2223,15 +2201,15 @@ app.put('/reset-password', async (req, res) => {
 			LEFT JOIN fees f ON s.roll_no = f.roll_no
 			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
 			`,
-					[upperValue]
-				);
+				[ upperValue ]
+			);
 
-				if (studentResult.rows.length === 0) {
-					return res.status(404).json({ error: 'Student not found' });
-				}
+			if (studentResult.rows.length === 0) {
+				return res.status(404).json({ error: 'Student not found' });
+			}
 
-				const subjectsResult = await pool.query(
-					`
+			const subjectsResult = await pool.query(
+				`
 			SELECT
 			ss.subject_id,
 			sub.subject_name
@@ -2240,75 +2218,73 @@ app.put('/reset-password', async (req, res) => {
 			WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM($1))
 			ORDER BY ss.subject_id ASC
 			`,
-					[upperValue]
-				);
+				[ upperValue ]
+			);
 
-				return res.json({
-					...studentResult.rows[0],
-					subjects: subjectsResult.rows
-				});
-			}
+			return res.json({
+				...studentResult.rows[0],
+				subjects: subjectsResult.rows
+			});
+		}
 
-			const classResult = await pool.query(
-				`
+		const classResult = await pool.query(
+			`
 		SELECT roll_no, name
 		FROM students
 		WHERE class = $1
 		ORDER BY roll_no ASC
 		`,
-				[value]
-			);
+			[ value ]
+		);
 
-			return res.json(classResult.rows);
-		} catch (err) {
-			console.error('GET /students/:value error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch student data',
-				details: err.message
+		return res.json(classResult.rows);
+	} catch (err) {
+		console.error('GET /students/:value error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student data',
+			details: err.message
+		});
+	}
+});
+
+app.post('/students', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const {
+			name,
+			class: className,
+			board,
+			mode_of_education,
+			phone,
+			email,
+			school_name,
+			password,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		if (!name || !className || !board || !mode_of_education || !phone || !email || !school_name) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
 			});
 		}
-	});
 
-	app.post('/students', async (req, res) => {
-		const client = await pool.connect();
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
 
-		try {
-			const {
-				name,
-				class: className,
-				board,
-				mode_of_education,
-				phone,
-				email,
-				school_name,
-				password,
-				subject_ids,
-				total_fee,
-				fee_paid,
-				next_due
-			} = req.body;
+		await client.query('BEGIN');
 
-			if (!name || !className || !board || !mode_of_education || !phone || !email || !school_name) {
-				return res.status(400).json({
-					error: 'All basic student fields are required'
-				});
-			}
+		const newRoll = await generateNextStudentRollNo(client);
+		const finalPassword = password && String(password).trim() !== '' ? String(password).trim() : newRoll;
 
-			if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
-				return res.status(400).json({
-					error: 'At least one subject must be selected'
-				});
-			}
-
-			await client.query('BEGIN');
-
-			const newRoll = await generateNextStudentRollNo(client);
-			const finalPassword = password && String(password).trim() !== ''
-				? String(password).trim()
-				: newRoll;
-
-			await client.query(
-				`
+		await client.query(
+			`
 		INSERT INTO students (
 			roll_no,
 			name,
@@ -2322,43 +2298,42 @@ app.put('/reset-password', async (req, res) => {
 		)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		`,
-				[
-					newRoll,
-					String(name).trim(),
-					String(className).trim(),
-					String(board).trim(),
-					String(mode_of_education).trim(),
-					String(phone).trim(),
-					String(email).trim(),
-					String(school_name).trim(),
-					finalPassword
-				]
-			);
+			[
+				newRoll,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(mode_of_education).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				finalPassword
+			]
+		);
 
-			for (const subjectId of subject_ids) {
-				const subjectCheck = await client.query(
-					`SELECT subject_id FROM subjects WHERE subject_id = $1`,
-					[subjectId]
-				);
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
 
-				if (subjectCheck.rows.length === 0) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({
-						error: `Subject ${subjectId} does not exist`
-					});
-				}
-
-				await client.query(
-					`
-			INSERT INTO student_subjects (roll_no, subject_id)
-			VALUES ($1,$2)
-			`,
-					[newRoll, Number(subjectId)]
-				);
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
 			}
 
 			await client.query(
 				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRoll, Number(subjectId) ]
+			);
+		}
+
+		await client.query(
+			`
 		INSERT INTO fees (
 			roll_no,
 			total_fee,
@@ -2367,103 +2342,113 @@ app.put('/reset-password', async (req, res) => {
 		)
 		VALUES ($1,$2,$3,$4)
 		`,
-				[
-					newRoll,
-					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
-					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
-					next_due || null
-				]
-			);
+			[
+				newRoll,
+				total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+				fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+				next_due || null
+			]
+		);
 
-			await client.query('COMMIT');
+		await client.query('COMMIT');
 
-			res.status(201).json({
-				message: 'Student added successfully',
-				roll_no: newRoll
-			});
-		} catch (err) {
-			await client.query('ROLLBACK');
-			console.error('POST /students error:', err);
+		res.status(201).json({
+			message: 'Student added successfully',
+			roll_no: newRoll
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /students error:', err);
 
-			if (err.code === '23505') {
-				return res.status(400).json({ error: 'Duplicate student entry' });
-			}
-
-			res.status(500).json({
-				error: 'Failed to add student',
-				details: err.message
-			});
-		} finally {
-			client.release();
+		if (err.code === '23505') {
+			return res.status(400).json({ error: 'Duplicate student entry' });
 		}
-	});
-	app.put('/students/:roll_no', async (req, res) => {
-		const client = await pool.connect();
 
-		try {
-			const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
+		res.status(500).json({
+			error: 'Failed to add student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+app.put('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
 
-			const {
-				roll_no,
-				name,
-				class: className,
-				board,
-				mode_of_education,
-				phone,
-				email,
-				school_name,
-				password,
-				subject_ids,
-				total_fee,
-				fee_paid,
-				next_due
-			} = req.body;
+	try {
+		const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
 
-			if (!roll_no || !name || !className || !board || !mode_of_education || !phone || !email || !school_name || !password) {
-				return res.status(400).json({
-					error: 'All basic student fields are required'
-				});
-			}
+		const {
+			roll_no,
+			name,
+			class: className,
+			board,
+			mode_of_education,
+			phone,
+			email,
+			school_name,
+			password,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
 
-			if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
-				return res.status(400).json({
-					error: 'At least one subject must be selected'
-				});
-			}
+		if (
+			!roll_no ||
+			!name ||
+			!className ||
+			!board ||
+			!mode_of_education ||
+			!phone ||
+			!email ||
+			!school_name ||
+			!password
+		) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
 
-			await client.query('BEGIN');
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
 
-			const existingStudent = await client.query(
-				`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
-				[oldRollNo]
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ oldRollNo ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const newRollNo = String(roll_no).trim().toUpperCase();
+
+		if (oldRollNo !== newRollNo) {
+			const duplicateCheck = await client.query(
+				`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[ newRollNo ]
 			);
 
-			if (existingStudent.rows.length === 0) {
+			if (duplicateCheck.rows.length > 0) {
 				await client.query('ROLLBACK');
-				return res.status(404).json({ error: 'Student not found' });
+				return res.status(400).json({ error: 'New roll number already exists' });
 			}
 
-			const newRollNo = String(roll_no).trim().toUpperCase();
+			await client.query(`UPDATE student_subjects SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+		}
 
-			if (oldRollNo !== newRollNo) {
-				const duplicateCheck = await client.query(
-					`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
-					[newRollNo]
-				);
-
-				if (duplicateCheck.rows.length > 0) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({ error: 'New roll number already exists' });
-				}
-
-				await client.query(`UPDATE student_subjects SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
-				await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
-				await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
-				await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [newRollNo, oldRollNo]);
-			}
-
-			await client.query(
-				`
+		await client.query(
+			`
 		UPDATE students
 		SET
 			roll_no = $1,
@@ -2477,65 +2462,64 @@ app.put('/reset-password', async (req, res) => {
 			password = $9
 		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($10))
 		`,
-				[
-					newRollNo,
-					String(name).trim(),
-					String(className).trim(),
-					String(board).trim(),
-					String(mode_of_education).trim(),
-					String(phone).trim(),
-					String(email).trim(),
-					String(school_name).trim(),
-					String(password).trim(),
-					oldRollNo
-				]
-			);
+			[
+				newRollNo,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(mode_of_education).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				String(password).trim(),
+				oldRollNo
+			]
+		);
 
-			await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [newRollNo]);
+		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ newRollNo ]);
 
-			for (const subjectId of subject_ids) {
-				const subjectCheck = await client.query(
-					`SELECT subject_id FROM subjects WHERE subject_id = $1`,
-					[subjectId]
-				);
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
 
-				if (subjectCheck.rows.length === 0) {
-					await client.query('ROLLBACK');
-					return res.status(400).json({
-						error: `Subject ${subjectId} does not exist`
-					});
-				}
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
 
-				await client.query(
-					`
+			await client.query(
+				`
 			INSERT INTO student_subjects (roll_no, subject_id)
 			VALUES ($1,$2)
 			`,
-					[newRollNo, Number(subjectId)]
-				);
-			}
+				[ newRollNo, Number(subjectId) ]
+			);
+		}
 
-			const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [newRollNo]);
+		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [ newRollNo ]);
 
-			if (feeCheck.rows.length > 0) {
-				await client.query(
-					`
+		if (feeCheck.rows.length > 0) {
+			await client.query(
+				`
 			UPDATE fees
 			SET total_fee = $1,
 				fee_paid = $2,
 				next_due = $3
 			WHERE roll_no = $4
 			`,
-					[
-						total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
-						fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
-						next_due || null,
-						newRollNo
-					]
-				);
-			} else {
-				await client.query(
-					`
+				[
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null,
+					newRollNo
+				]
+			);
+		} else {
+			await client.query(
+				`
 			INSERT INTO fees (
 			roll_no,
 			total_fee,
@@ -2544,111 +2528,111 @@ app.put('/reset-password', async (req, res) => {
 			)
 			VALUES ($1,$2,$3,$4)
 			`,
-					[
-						newRollNo,
-						total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
-						fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
-						next_due || null
-					]
-				);
-			}
-
-			await client.query('COMMIT');
-
-			res.json({ message: 'Student updated successfully' });
-		} catch (err) {
-			await client.query('ROLLBACK');
-			console.error('PUT /students/:roll_no error:', err);
-			res.status(500).json({
-				error: 'Failed to update student',
-				details: err.message
-			});
-		} finally {
-			client.release();
-		}
-	});
-
-	app.delete('/students/:roll_no', async (req, res) => {
-		const client = await pool.connect();
-		const { roll_no } = req.params;
-
-		try {
-			await client.query('BEGIN');
-
-			const existingStudent = await client.query(
-				`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
-				[roll_no]
+				[
+					newRollNo,
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null
+				]
 			);
-
-			if (existingStudent.rows.length === 0) {
-				await client.query('ROLLBACK');
-				return res.status(404).json({ error: 'Student not found' });
-			}
-
-			await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
-			await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
-			await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
-			await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
-			await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [roll_no]);
-
-			await client.query('COMMIT');
-
-			res.json({ message: 'Student deleted successfully' });
-		} catch (err) {
-			await client.query('ROLLBACK');
-			console.error('DELETE /students/:roll_no error:', err);
-			res.status(500).json({
-				error: 'Failed to delete student',
-				details: err.message
-			});
-		} finally {
-			client.release();
 		}
-	});
 
-	app.get('/student-class-board-options', async (req, res) => {
-		try {
-			const result = await pool.query(`
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to update student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.delete('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+	const { roll_no } = req.params;
+
+	try {
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ roll_no ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student deleted successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('DELETE /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to delete student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.get('/student-class-board-options', async (req, res) => {
+	try {
+		const result = await pool.query(`
 		SELECT DISTINCT class, board
 		FROM students
 		ORDER BY board, class
 		`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /student-class-board-options error:', err);
-			res.status(500).json({ error: 'Failed to fetch class/board options' });
-		}
-	});
-	/* =========================================================
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-class-board-options error:', err);
+		res.status(500).json({ error: 'Failed to fetch class/board options' });
+	}
+});
+/* =========================================================
 	FACULTY TASKS
 	========================================================= */
 
-	async function ensureDailyTasksForToday() {
-		const today = new Date().toISOString().slice(0, 10);
+async function ensureDailyTasksForToday() {
+	const today = new Date().toISOString().slice(0, 10);
 
-		const templates = await pool.query(`
+	const templates = await pool.query(`
 			SELECT *
 			FROM faculty_tasks
 			WHERE task_type = 'Daily'
 			AND parent_daily_task_id IS NULL
 		`);
 
-		for (const template of templates.rows) {
-			const existing = await pool.query(
-				`
+	for (const template of templates.rows) {
+		const existing = await pool.query(
+			`
 				SELECT id
 				FROM faculty_tasks
 				WHERE parent_daily_task_id = $1
 				AND task_date = $2
 				LIMIT 1
 				`,
-				[template.id, today]
-			);
+			[ template.id, today ]
+		);
 
-			if (existing.rows.length === 0) {
-				await pool.query(
-					`
+		if (existing.rows.length === 0) {
+			await pool.query(
+				`
 					INSERT INTO faculty_tasks (
 						faculty_id,
 						faculty_name,
@@ -2667,33 +2651,33 @@ app.put('/reset-password', async (req, res) => {
 					)
 					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
 					`,
-					[
-						template.faculty_id,
-						template.faculty_name,
-						template.class_name,
-						template.subject_name || '',
-						template.total_test_note || '',
-						template.other_tasks || '',
-						today,
-						template.priority || 'Medium',
-						template.assigned_by,
-						template.id,
-						today
-					]
-				);
-			}
+				[
+					template.faculty_id,
+					template.faculty_name,
+					template.class_name,
+					template.subject_name || '',
+					template.total_test_note || '',
+					template.other_tasks || '',
+					today,
+					template.priority || 'Medium',
+					template.assigned_by,
+					template.id,
+					today
+				]
+			);
 		}
 	}
+}
 
-	app.get('/faculty-tasks/:facultyId', async (req, res) => {
-		const { facultyId } = req.params;
+app.get('/faculty-tasks/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
 
-		try {
-			await cleanupCompletedTasks();
-			await ensureDailyTasksForToday();
+	try {
+		await cleanupCompletedTasks();
+		await ensureDailyTasksForToday();
 
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 				SELECT
 					id,
 					faculty_id,
@@ -2724,32 +2708,32 @@ app.put('/reset-password', async (req, res) => {
 	)
 				ORDER BY created_at DESC
 				`,
-				[facultyId]
-			);
+			[ facultyId ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /faculty-tasks/:facultyId error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch faculty tasks',
-				details: err.message
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks/:facultyId error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty tasks'
 			});
 		}
-	});
 
-	app.get('/faculty-tasks-all', async (req, res) => {
-		const loginFacultyId = req.query.loginFacultyId;
+		await cleanupCompletedTasks();
 
-		try {
-			if (!['IG001', 'IG002'].includes(loginFacultyId)) {
-				return res.status(403).json({
-					error: 'Only IG001 and IG002 can view all faculty tasks'
-				});
-			}
-
-			await cleanupCompletedTasks();
-
-			const result = await pool.query(`
+		const result = await pool.query(`
 				SELECT
 					id,
 					faculty_id,
@@ -2773,32 +2757,32 @@ app.put('/reset-password', async (req, res) => {
 				ORDER BY created_at DESC
 			`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /faculty-tasks-all error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch all faculty tasks',
-				details: err.message
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch all faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-daily-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty daily tasks'
 			});
 		}
-	});
 
-	app.get('/faculty-daily-tasks-all', async (req, res) => {
-		const loginFacultyId = req.query.loginFacultyId;
+		await ensureDailyTasksForToday();
 
-		try {
-			if (!['IG001', 'IG002'].includes(loginFacultyId)) {
-				return res.status(403).json({
-					error: 'Only IG001 and IG002 can view all faculty daily tasks'
-				});
-			}
+		const today = new Date().toISOString().slice(0, 10);
 
-			await ensureDailyTasksForToday();
-
-			const today = new Date().toISOString().slice(0, 10);
-
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 				SELECT
 					id,
 					faculty_id,
@@ -2822,58 +2806,58 @@ app.put('/reset-password', async (req, res) => {
 				AND task_date = $1
 				ORDER BY faculty_id ASC, created_at DESC
 				`,
-				[today]
-			);
+			[ today ]
+		);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /faculty-daily-tasks-all error:', err);
-			res.status(500).json({
-				error: 'Failed to fetch daily tasks',
-				details: err.message
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-daily-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch daily tasks',
+			details: err.message
+		});
+	}
+});
+
+app.post('/faculty-tasks', async (req, res) => {
+	const {
+		loginFacultyId,
+		faculty_id,
+		faculty_name,
+		class_name,
+		subject_name,
+		total_test_note,
+		other_tasks,
+		due_date,
+		priority,
+		task_type
+	} = req.body;
+
+	try {
+		if (!faculty_id || !faculty_name || !class_name) {
+			return res.status(400).json({
+				error: 'Faculty Name and Class are required'
 			});
 		}
-	});
 
-	app.post('/faculty-tasks', async (req, res) => {
-		const {
-			loginFacultyId,
-			faculty_id,
-			faculty_name,
-			class_name,
-			subject_name,
-			total_test_note,
-			other_tasks,
-			due_date,
-			priority,
-			task_type
-		} = req.body;
+		if (!subject_name && !other_tasks) {
+			return res.status(400).json({
+				error: 'Please select Test Code or enter Other Tasks'
+			});
+		}
 
-		try {
-			if (!faculty_id || !faculty_name || !class_name) {
-				return res.status(400).json({
-					error: 'Faculty Name and Class are required'
-				});
-			}
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can assign tasks'
+			});
+		}
 
-			if (!subject_name && !other_tasks) {
-				return res.status(400).json({
-					error: 'Please select Test Code or enter Other Tasks'
-				});
-			}
+		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
+		const today = new Date().toISOString().slice(0, 10);
 
-			if (!['IG001', 'IG002'].includes(loginFacultyId)) {
-				return res.status(403).json({
-					error: 'Only IG001 and IG002 can assign tasks'
-				});
-			}
-
-			const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
-			const today = new Date().toISOString().slice(0, 10);
-
-			if (finalTaskType === 'Daily') {
-				const templateResult = await pool.query(
-					`
+		if (finalTaskType === 'Daily') {
+			const templateResult = await pool.query(
+				`
 					INSERT INTO faculty_tasks (
 						faculty_id,
 						faculty_name,
@@ -2891,22 +2875,22 @@ app.put('/reset-password', async (req, res) => {
 					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
 					RETURNING *
 					`,
-					[
-						faculty_id,
-						faculty_name,
-						class_name,
-						subject_name || '',
-						total_test_note || '',
-						other_tasks || '',
-						priority || 'Medium',
-						loginFacultyId
-					]
-				);
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					priority || 'Medium',
+					loginFacultyId
+				]
+			);
 
-				const template = templateResult.rows[0];
+			const template = templateResult.rows[0];
 
-				const todayTaskResult = await pool.query(
-					`
+			const todayTaskResult = await pool.query(
+				`
 					INSERT INTO faculty_tasks (
 						faculty_id,
 						faculty_name,
@@ -2926,42 +2910,38 @@ app.put('/reset-password', async (req, res) => {
 					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
 					RETURNING *
 					`,
-					[
-						faculty_id,
-						faculty_name,
-						class_name,
-						subject_name || '',
-						total_test_note || '',
-						other_tasks || '',
-						today,
-						priority || 'Medium',
-						loginFacultyId,
-						template.id,
-						today
-					]
-				);
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					today,
+					priority || 'Medium',
+					loginFacultyId,
+					template.id,
+					today
+				]
+			);
 
-	await pool.query(
-	`
+			await pool.query(
+				`
 	INSERT INTO faculty_notifications
 	(faculty_id, module_name, message)
 	VALUES ($1, $2, $3)
 	`,
-	[
-		faculty_id,
-		'tasks',
-		'New task assigned by admin'
-	]
-	);
+				[ faculty_id, 'tasks', 'New task assigned by admin' ]
+			);
 
-				return res.json({
-					message: 'Daily task assigned successfully',
-					task: todayTaskResult.rows[0]
-				});
-			}
+			return res.json({
+				message: 'Daily task assigned successfully',
+				task: todayTaskResult.rows[0]
+			});
+		}
 
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 				INSERT INTO faculty_tasks (
 					faculty_id,
 					faculty_name,
@@ -2979,53 +2959,49 @@ app.put('/reset-password', async (req, res) => {
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
 				RETURNING *
 				`,
-				[
-					faculty_id,
-					faculty_name,
-					class_name,
-					subject_name || '',
-					total_test_note || '',
-					other_tasks || '',
-					due_date || null,
-					priority || 'Medium',
-					loginFacultyId
-				]
-			);
-	await pool.query(
-	`
+			[
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name || '',
+				total_test_note || '',
+				other_tasks || '',
+				due_date || null,
+				priority || 'Medium',
+				loginFacultyId
+			]
+		);
+		await pool.query(
+			`
 	INSERT INTO faculty_notifications
 	(faculty_id, module_name, message)
 	VALUES ($1, $2, $3)
 	`,
-	[
-		faculty_id,
-		'tasks',
-		'New task assigned by admin'
-	]
-	);
-			res.json({
-				message: 'Task assigned successfully',
-				task: result.rows[0]
-			});
-		} catch (err) {
-			console.error('POST /faculty-tasks error:', err);
-			res.status(500).json({
-				error: 'Failed to assign task',
-				details: err.message
-			});
-		}
-	});
+			[ faculty_id, 'tasks', 'New task assigned by admin' ]
+		);
+		res.json({
+			message: 'Task assigned successfully',
+			task: result.rows[0]
+		});
+	} catch (err) {
+		console.error('POST /faculty-tasks error:', err);
+		res.status(500).json({
+			error: 'Failed to assign task',
+			details: err.message
+		});
+	}
+});
 
-	app.put('/faculty-tasks/:id', async (req, res) => {
-		const { id } = req.params;
-		const { is_completed, faculty_id, faculty_name } = req.body;
+app.put('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const { is_completed, faculty_id, faculty_name } = req.body;
 
-		try {
-			let result;
+	try {
+		let result;
 
-			if (faculty_id && faculty_name) {
-				result = await pool.query(
-					`
+		if (faculty_id && faculty_name) {
+			result = await pool.query(
+				`
 					UPDATE faculty_tasks
 					SET faculty_id = $1,
 						faculty_name = $2,
@@ -3034,11 +3010,11 @@ app.put('/reset-password', async (req, res) => {
 					WHERE id = $3
 					RETURNING *
 					`,
-					[faculty_id, faculty_name, id]
-				);
-			} else if (typeof is_completed === 'boolean') {
-				result = await pool.query(
-					`
+				[ faculty_id, faculty_name, id ]
+			);
+		} else if (typeof is_completed === 'boolean') {
+			result = await pool.query(
+				`
 					UPDATE faculty_tasks
 					SET is_completed = $1,
 						completed_at = CASE
@@ -3048,52 +3024,52 @@ app.put('/reset-password', async (req, res) => {
 					WHERE id = $2
 					RETURNING *
 					`,
-					[is_completed, id]
-				);
-			} else {
-				return res.status(400).json({
-					error: 'No valid update data provided'
-				});
-			}
+				[ is_completed, id ]
+			);
+		} else {
+			return res.status(400).json({
+				error: 'No valid update data provided'
+			});
+		}
 
-			if (result.rowCount === 0) {
-				return res.status(404).json({ error: 'Task not found' });
-			}
-const updatedTask = result.rows[0];
+		if (result.rowCount === 0) {
+			return res.status(404).json({ error: 'Task not found' });
+		}
+		const updatedTask = result.rows[0];
 
-if (updatedTask.is_completed === true) {
-	await pool.query(
-		`
+		if (updatedTask.is_completed === true) {
+			const moduleName = updatedTask.task_type === 'Daily' ? 'daily-tasks' : 'all-tasks';
+
+			const message =
+				updatedTask.task_type === 'Daily'
+					? `${updatedTask.faculty_name} completed a daily task`
+					: `${updatedTask.faculty_name} completed a weekly task`;
+
+			await pool.query(
+				`
 		INSERT INTO faculty_notifications
 		(faculty_id, module_name, message)
 		VALUES ($1, $2, $3), ($4, $5, $6)
 		`,
-		[
-			'IG001',
-			'tasks',
-			`${updatedTask.faculty_name} completed a task`,
-			'IG002',
-			'tasks',
-			`${updatedTask.faculty_name} completed a task`
-		]
-	);
-}
-			res.json(updatedTask);
-		} catch (err) {
-			console.error('PUT /faculty-tasks/:id error:', err);
-			res.status(500).json({
-				error: 'Failed to update task',
-				details: err.message
-			});
+				[ 'IG001', moduleName, message, 'IG002', moduleName, message ]
+			);
 		}
-	});
+		res.json(updatedTask);
+	} catch (err) {
+		console.error('PUT /faculty-tasks/:id error:', err);
+		res.status(500).json({
+			error: 'Failed to update task',
+			details: err.message
+		});
+	}
+});
 
 app.delete('/faculty-tasks/:id', async (req, res) => {
 	const { id } = req.params;
 	const loginFacultyId = req.query.loginFacultyId;
 
 	try {
-		if (!['IG001', 'IG002'].includes(loginFacultyId)) {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
 			return res.status(403).json({
 				error: 'Only IG001 and IG002 can delete faculty tasks'
 			});
@@ -3105,7 +3081,7 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 			FROM faculty_tasks
 			WHERE id = $1
 			`,
-			[id]
+			[ id ]
 		);
 
 		if (taskResult.rows.length === 0) {
@@ -3114,9 +3090,7 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 
 		const task = taskResult.rows[0];
 
-		const deleteId = task.parent_daily_task_id
-			? task.parent_daily_task_id
-			: task.id;
+		const deleteId = task.parent_daily_task_id ? task.parent_daily_task_id : task.id;
 
 		const result = await pool.query(
 			`
@@ -3125,7 +3099,7 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 			   OR parent_daily_task_id = $1
 			RETURNING *
 			`,
-			[deleteId]
+			[ deleteId ]
 		);
 
 		res.json({
@@ -3141,16 +3115,16 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 	}
 });
 
-	/* =========================================================
+/* =========================================================
 	ENQUIRIES
 	========================================================= */
-	app.put('/enquiries/:id', async (req, res) => {
-		const { id } = req.params;
-		const { status, comment, reason } = req.body;
+app.put('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status, comment, reason } = req.body;
 
-		try {
-			const result = await pool.query(
-				`
+	try {
+		const result = await pool.query(
+			`
 		UPDATE enquiries
 		SET status = $1,
 			comment = $2,
@@ -3158,131 +3132,131 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		WHERE id = $4
 		RETURNING *
 		`,
-				[status || 'Pending', comment || null, reason || null, id]
-			);
+			[ status || 'Pending', comment || null, reason || null, id ]
+		);
 
-			if (result.rowCount === 0) {
-				return res.status(404).json({
-					success: false,
-					error: 'Enquiry not found'
-				});
-			}
-
-			res.json({
-				success: true,
-				message: 'Enquiry updated successfully',
-				enquiry: result.rows[0]
-			});
-		} catch (err) {
-			console.error('PUT /enquiries/:id error:', err);
-			res.status(500).json({
+		if (result.rowCount === 0) {
+			return res.status(404).json({
 				success: false,
-				error: 'Failed to update enquiry'
+				error: 'Enquiry not found'
 			});
 		}
-	});
 
-	app.delete('/enquiries/:id', async (req, res) => {
-		const { id } = req.params;
+		res.json({
+			success: true,
+			message: 'Enquiry updated successfully',
+			enquiry: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to update enquiry'
+		});
+	}
+});
 
-		try {
-			const result = await pool.query(
-				`
+app.delete('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
 		DELETE FROM enquiries
 		WHERE id = $1
 		RETURNING *
 		`,
-				[id]
-			);
+			[ id ]
+		);
 
-			if (result.rowCount === 0) {
-				return res.status(404).json({
-					success: false,
-					error: 'Enquiry not found'
-				});
-			}
-
-			res.json({
-				success: true,
-				message: 'Enquiry deleted successfully',
-				deleted: result.rows[0]
-			});
-		} catch (err) {
-			console.error('DELETE /enquiries/:id error:', err);
-			res.status(500).json({
+		if (result.rowCount === 0) {
+			return res.status(404).json({
 				success: false,
-				error: 'Failed to delete enquiry',
-				details: err.message
+				error: 'Enquiry not found'
 			});
 		}
-	});
 
-	app.post('/enquiries', async (req, res) => {
-		try {
-			const {
-				studentName,
-				classBoard,
-				schoolName,
-				subjects,
-				academicYearFrom,
-				academicYearTo,
-				modeOfEducation,
-				parentName,
-				mobileNumber,
-				secondaryContact,
-				area,
-				reference
-			} = req.body;
+		res.json({
+			success: true,
+			message: 'Enquiry deleted successfully',
+			deleted: result.rows[0]
+		});
+	} catch (err) {
+		console.error('DELETE /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to delete enquiry',
+			details: err.message
+		});
+	}
+});
 
-			const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
-			const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
-			const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
-			const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
+app.post('/enquiries', async (req, res) => {
+	try {
+		const {
+			studentName,
+			classBoard,
+			schoolName,
+			subjects,
+			academicYearFrom,
+			academicYearTo,
+			modeOfEducation,
+			parentName,
+			mobileNumber,
+			secondaryContact,
+			area,
+			reference
+		} = req.body;
 
-			if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
-				return res.status(400).json({
-					message: 'Academic Year From must contain 4 digits'
-				});
-			}
+		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
+		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
 
-			if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
-				return res.status(400).json({
-					message: 'Academic Year To must contain 4 digits'
-				});
-			}
+		if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year From must contain 4 digits'
+			});
+		}
 
-			if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
-				return res.status(400).json({
-					message: 'Academic Year To must be greater than From'
-				});
-			}
+		if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
+			return res.status(400).json({
+				message: 'Academic Year To must contain 4 digits'
+			});
+		}
 
-			if (!/^\d{10}$/.test(cleanMobile)) {
-				return res.status(400).json({
-					message: 'Phone number must contain exactly 10 digits'
-				});
-			}
+		if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year To must be greater than From'
+			});
+		}
 
-			if (!cleanSecondary) {
-				return res.status(400).json({
-					message: 'Secondary contact is required'
-				});
-			}
+		if (!/^\d{10}$/.test(cleanMobile)) {
+			return res.status(400).json({
+				message: 'Phone number must contain exactly 10 digits'
+			});
+		}
 
-			if (!/^\d{10}$/.test(cleanSecondary)) {
-				return res.status(400).json({
-					message: 'Secondary contact must contain exactly 10 digits'
-				});
-			}
+		if (!cleanSecondary) {
+			return res.status(400).json({
+				message: 'Secondary contact is required'
+			});
+		}
 
-			if (cleanMobile === cleanSecondary) {
-				return res.status(400).json({
-					message: 'Primary and Secondary contact numbers cannot be the same'
-				});
-			}
+		if (!/^\d{10}$/.test(cleanSecondary)) {
+			return res.status(400).json({
+				message: 'Secondary contact must contain exactly 10 digits'
+			});
+		}
 
-			const result = await pool.query(
-				`
+		if (cleanMobile === cleanSecondary) {
+			return res.status(400).json({
+				message: 'Primary and Secondary contact numbers cannot be the same'
+			});
+		}
+
+		const result = await pool.query(
+			`
 		INSERT INTO enquiries
 		(
 			student_name,
@@ -3301,32 +3275,32 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING *
 		`,
-				[
-					studentName,
-					cleanMobile,
-					classBoard,
-					schoolName,
-					subjects,
-					cleanAcademicYearFrom,
-					cleanAcademicYearTo,
-					parentName,
-					cleanSecondary,
-					area,
-					modeOfEducation,
-					reference || null
-				]
-			);
+			[
+				studentName,
+				cleanMobile,
+				classBoard,
+				schoolName,
+				subjects,
+				cleanAcademicYearFrom,
+				cleanAcademicYearTo,
+				parentName,
+				cleanSecondary,
+				area,
+				modeOfEducation,
+				reference || null
+			]
+		);
 
-			res.status(201).json(result.rows[0]);
-		} catch (err) {
-			console.error('POST /enquiries error:', err);
-			res.status(500).json({ message: 'Failed to submit enquiry' });
-		}
-	});
+		res.status(201).json(result.rows[0]);
+	} catch (err) {
+		console.error('POST /enquiries error:', err);
+		res.status(500).json({ message: 'Failed to submit enquiry' });
+	}
+});
 
-	app.get('/enquiries', async (req, res) => {
-		try {
-			const result = await pool.query(`
+app.get('/enquiries', async (req, res) => {
+	try {
+		const result = await pool.query(`
 		SELECT
 			enq_id,
 			id,
@@ -3350,125 +3324,125 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		ORDER BY created_at DESC
 		`);
 
-			res.json(result.rows);
-		} catch (err) {
-			console.error('GET /enquiries error:', err);
-			res.status(500).json({ error: err.message });
-		}
-	});
-	/* =========================================================
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enquiries error:', err);
+		res.status(500).json({ error: err.message });
+	}
+});
+/* =========================================================
 	ANSWER SHEET REQUESTS
 	========================================================= */
-	app.get('/student-answer-sheet-data/:rollNo', async (req, res) => {
-		const { rollNo } = req.params;
+app.get('/student-answer-sheet-data/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
 
-		try {
-			const studentResult = await pool.query(
-				`
+	try {
+		const studentResult = await pool.query(
+			`
 		SELECT roll_no, name, class, board
 		FROM students
 		WHERE roll_no = $1
 		`,
-				[ rollNo ]
-			);
+			[ rollNo ]
+		);
 
-			if (studentResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const student = studentResult.rows[0];
+		const student = studentResult.rows[0];
 
-			const testsResult = await pool.query(
-				`
+		const testsResult = await pool.query(
+			`
 		SELECT test_code, test_date, subject_id, total_marks, portion
 		FROM tests
 		WHERE class = $1 AND board = $2
 		ORDER BY test_date DESC, test_code ASC
 		`,
-				[ student.class, student.board ]
-			);
+			[ student.class, student.board ]
+		);
 
-			res.json({
-				student,
-				tests: testsResult.rows
-			});
-		} catch (error) {
-			console.error('GET /student-answer-sheet-data/:rollNo error:', error);
-			res.status(500).json({
-				error: 'Server error while fetching data'
+		res.json({
+			student,
+			tests: testsResult.rows
+		});
+	} catch (error) {
+		console.error('GET /student-answer-sheet-data/:rollNo error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching data'
+		});
+	}
+});
+
+app.post('/answer-sheet-requests', async (req, res) => {
+	const { roll_no, test_code, requested_phone } = req.body;
+
+	try {
+		if (!roll_no || !test_code || !requested_phone) {
+			return res.status(400).json({
+				error: 'roll_no, test_code and requested_phone are required'
 			});
 		}
-	});
 
-	app.post('/answer-sheet-requests', async (req, res) => {
-		const { roll_no, test_code, requested_phone } = req.body;
+		const cleanPhone = String(requested_phone).replace(/\D/g, '').trim();
 
-		try {
-			if (!roll_no || !test_code || !requested_phone) {
-				return res.status(400).json({
-					error: 'roll_no, test_code and requested_phone are required'
-				});
-			}
+		if (!/^\d{10}$/.test(cleanPhone)) {
+			return res.status(400).json({
+				error: 'Phone number must contain exactly 10 digits'
+			});
+		}
 
-			const cleanPhone = String(requested_phone).replace(/\D/g, '').trim();
-
-			if (!/^\d{10}$/.test(cleanPhone)) {
-				return res.status(400).json({
-					error: 'Phone number must contain exactly 10 digits'
-				});
-			}
-
-			const studentResult = await pool.query(
-				`
+		const studentResult = await pool.query(
+			`
 		SELECT roll_no, name, class, board
 		FROM students
 		WHERE roll_no = $1
 		`,
-				[ roll_no ]
-			);
+			[ roll_no ]
+		);
 
-			if (studentResult.rows.length === 0) {
-				return res.status(404).json({ error: 'Student not found' });
-			}
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
 
-			const student = studentResult.rows[0];
+		const student = studentResult.rows[0];
 
-			const validTestResult = await pool.query(
-				`
+		const validTestResult = await pool.query(
+			`
 		SELECT test_code
 		FROM tests
 		WHERE test_code = $1
 			AND class = $2
 			AND board = $3
 		`,
-				[ test_code, student.class, student.board ]
-			);
+			[ test_code, student.class, student.board ]
+		);
 
-			if (validTestResult.rows.length === 0) {
-				return res.status(400).json({
-					error: 'Selected test code is not valid for this student'
-				});
-			}
+		if (validTestResult.rows.length === 0) {
+			return res.status(400).json({
+				error: 'Selected test code is not valid for this student'
+			});
+		}
 
-			const duplicateResult = await pool.query(
-				`
+		const duplicateResult = await pool.query(
+			`
 		SELECT id
 		FROM answer_sheet_requests
 		WHERE roll_no = $1
 			AND test_code = $2
 			AND status = 'Pending'
 		`,
-				[ roll_no, test_code ]
-			);
+			[ roll_no, test_code ]
+		);
 
-			if (duplicateResult.rows.length > 0) {
-				return res.status(400).json({
-					error: 'You already have a pending request for this test code'
-				});
-			}
+		if (duplicateResult.rows.length > 0) {
+			return res.status(400).json({
+				error: 'You already have a pending request for this test code'
+			});
+		}
 
-			const insertResult = await pool.query(
-				`
+		const insertResult = await pool.query(
+			`
 		INSERT INTO answer_sheet_requests
 		(
 			roll_no,
@@ -3482,112 +3456,112 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		VALUES ($1,$2,$3,$4,$5,$6,'Pending')
 		RETURNING *
 		`,
-				[ student.roll_no, student.name, student.class, student.board, test_code, cleanPhone ]
-			);
+			[ student.roll_no, student.name, student.class, student.board, test_code, cleanPhone ]
+		);
 
-			res.status(201).json({
-				message: 'Answer sheet request submitted successfully',
-				request: insertResult.rows[0]
-			});
-		} catch (error) {
-			console.error('POST /answer-sheet-requests error:', error);
-			res.status(500).json({
-				error: 'Server error while saving request'
-			});
-		}
-	});
+		res.status(201).json({
+			message: 'Answer sheet request submitted successfully',
+			request: insertResult.rows[0]
+		});
+	} catch (error) {
+		console.error('POST /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while saving request'
+		});
+	}
+});
 
-	app.get('/answer-sheet-requests', async (req, res) => {
-		try {
-			const result = await pool.query(`
+app.get('/answer-sheet-requests', async (req, res) => {
+	try {
+		const result = await pool.query(`
 		SELECT *
 		FROM answer_sheet_requests
 		ORDER BY requested_at DESC
 		`);
 
-			res.json(result.rows);
-		} catch (error) {
-			console.error('GET /answer-sheet-requests error:', error);
-			res.status(500).json({
-				error: 'Server error while fetching requests',
-				details: error.message
-			});
+		res.json(result.rows);
+	} catch (error) {
+		console.error('GET /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching requests',
+			details: error.message
+		});
+	}
+});
+
+app.put('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status } = req.body;
+
+	try {
+		if (!status) {
+			return res.status(400).json({ error: 'status is required' });
 		}
-	});
 
-	app.put('/answer-sheet-requests/:id', async (req, res) => {
-		const { id } = req.params;
-		const { status } = req.body;
-
-		try {
-			if (!status) {
-				return res.status(400).json({ error: 'status is required' });
-			}
-
-			const result = await pool.query(
-				`
+		const result = await pool.query(
+			`
 		UPDATE answer_sheet_requests
 		SET status = $1
 		WHERE id = $2
 		RETURNING *
 		`,
-				[ status, id ]
-			);
+			[ status, id ]
+		);
 
-			if (result.rows.length === 0) {
-				return res.status(404).json({ error: 'Request not found' });
-			}
-
-			res.json({
-				message: 'Request updated successfully',
-				request: result.rows[0]
-			});
-		} catch (error) {
-			console.error('PUT /answer-sheet-requests/:id error:', error);
-			res.status(500).json({
-				error: 'Server error while updating request'
-			});
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
 		}
-	});
 
-	app.delete('/answer-sheet-requests/:id', async (req, res) => {
-		const { id } = req.params;
+		res.json({
+			message: 'Request updated successfully',
+			request: result.rows[0]
+		});
+	} catch (error) {
+		console.error('PUT /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while updating request'
+		});
+	}
+});
 
-		try {
-			const result = await pool.query(
-				`
+app.delete('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
 		DELETE FROM answer_sheet_requests
 		WHERE id = $1
 		RETURNING *
 		`,
-				[ id ]
-			);
+			[ id ]
+		);
 
-			if (result.rows.length === 0) {
-				return res.status(404).json({ error: 'Request not found' });
-			}
-
-			res.json({
-				message: 'Request completed and deleted successfully',
-				deletedRequest: result.rows[0]
-			});
-		} catch (error) {
-			console.error('DELETE /answer-sheet-requests/:id error:', error);
-			res.status(500).json({
-				error: 'Server error while deleting request',
-				details: error.message
-			});
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
 		}
-	});
 
-	/* =========================================================
+		res.json({
+			message: 'Request completed and deleted successfully',
+			deletedRequest: result.rows[0]
+		});
+	} catch (error) {
+		console.error('DELETE /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while deleting request',
+			details: error.message
+		});
+	}
+});
+
+/* =========================================================
 	REGISTERED STUDENTS REPORT
 	========================================================= */
-	app.get('/registered-students', async (req, res) => {
-		const { className, board, date } = req.query;
+app.get('/registered-students', async (req, res) => {
+	const { className, board, date } = req.query;
 
-		try {
-			let query = `
+	try {
+		let query = `
 		SELECT
 			tr.id,
 			tr.roll_no,
@@ -3608,28 +3582,28 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		WHERE 1=1
 		`;
 
-			const values = [];
-			let index = 1;
+		const values = [];
+		let index = 1;
 
-			if (className) {
-				query += ` AND tr.class = $${index}`;
-				values.push(className);
-				index++;
-			}
+		if (className) {
+			query += ` AND tr.class = $${index}`;
+			values.push(className);
+			index++;
+		}
 
-			if (board) {
-				query += ` AND tr.board = $${index}`;
-				values.push(board);
-				index++;
-			}
+		if (board) {
+			query += ` AND tr.board = $${index}`;
+			values.push(board);
+			index++;
+		}
 
-			if (date) {
-				query += ` AND tr.writing_date = $${index}`;
-				values.push(date);
-				index++;
-			}
+		if (date) {
+			query += ` AND tr.writing_date = $${index}`;
+			values.push(date);
+			index++;
+		}
 
-			query += `
+		query += `
 		ORDER BY
 			tr.writing_date ASC NULLS LAST,
 			tr.test_date ASC,
@@ -3637,53 +3611,53 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 			tr.roll_no ASC
 		`;
 
-			const result = await pool.query(query, values);
+		const result = await pool.query(query, values);
 
-			const rows = result.rows.map((row) => {
-				let slotLabel = row.slot_raw || '';
+		const rows = result.rows.map((row) => {
+			let slotLabel = row.slot_raw || '';
 
-				if (row.slot_raw && row.slot_raw !== ' - ') {
-					const [ startRaw, endRaw ] = row.slot_raw.split(' - ');
+			if (row.slot_raw && row.slot_raw !== ' - ') {
+				const [ startRaw, endRaw ] = row.slot_raw.split(' - ');
 
-					if (startRaw && endRaw) {
-						const startMinutes = timeStringToMinutes(startRaw);
-						const endMinutes = timeStringToMinutes(endRaw);
+				if (startRaw && endRaw) {
+					const startMinutes = timeStringToMinutes(startRaw);
+					const endMinutes = timeStringToMinutes(endRaw);
 
-						slotLabel = `${formatTimeFromMinutes(startMinutes)} - ${formatTimeFromMinutes(endMinutes)}`;
-					}
+					slotLabel = `${formatTimeFromMinutes(startMinutes)} - ${formatTimeFromMinutes(endMinutes)}`;
 				}
+			}
 
-				return {
-					...row,
-					slot_label: slotLabel
-				};
-			});
+			return {
+				...row,
+				slot_label: slotLabel
+			};
+		});
 
-			res.json(rows);
-		} catch (err) {
-			console.error('GET /registered-students error:', err);
-			res.status(500).json({ error: 'Failed to fetch registered students' });
-		}
-	});
-app.put("/posted-tests/:testCode", async (req, res) => {
-  const { testCode } = req.params;
+		res.json(rows);
+	} catch (err) {
+		console.error('GET /registered-students error:', err);
+		res.status(500).json({ error: 'Failed to fetch registered students' });
+	}
+});
+app.put('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
 
-  const {
-    test_code,
-    subject_id,
-    test_date,
-    total_marks,
-    portion,
-    class_name,
-    board,
-    duration_minutes,
-    registration_end_date,
-    writing_allowed_till,
-  } = req.body;
+	const {
+		test_code,
+		subject_id,
+		test_date,
+		total_marks,
+		portion,
+		class_name,
+		board,
+		duration_minutes,
+		registration_end_date,
+		writing_allowed_till
+	} = req.body;
 
-  try {
-    const result = await pool.query(
-      `
+	try {
+		const result = await pool.query(
+			`
       UPDATE tests
       SET
         subject_id = $1,
@@ -3698,35 +3672,35 @@ app.put("/posted-tests/:testCode", async (req, res) => {
       WHERE test_code = $10
       RETURNING *
       `,
-      [
-        subject_id,
-        test_date,
-        total_marks,
-        portion,
-        class_name,
-        board,
-        duration_minutes,
-        registration_end_date,
-        writing_allowed_till,
-        testCode,
-      ]
-    );
+			[
+				subject_id,
+				test_date,
+				total_marks,
+				portion,
+				class_name,
+				board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till,
+				testCode
+			]
+		);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Test not found" });
-    }
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
 
-    res.json({ message: "Test updated successfully", test: result.rows[0] });
-  } catch (err) {
-    console.error("PUT /posted-tests/:testCode error:", err);
-    res.status(500).json({ error: "Failed to update test" });
-  }
+		res.json({ message: 'Test updated successfully', test: result.rows[0] });
+	} catch (err) {
+		console.error('PUT /posted-tests/:testCode error:', err);
+		res.status(500).json({ error: 'Failed to update test' });
+	}
 });
-	/* =========================================================
+/* =========================================================
 	SERVER START
 	========================================================= */
-	const PORT = process.env.PORT || 5050;
+const PORT = process.env.PORT || 5050;
 
-	app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, '0.0.0.0', () => {
 	console.log(`Server running on port ${PORT}`);
-	});
+});
