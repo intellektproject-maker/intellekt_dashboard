@@ -14,6 +14,8 @@ const SUBJECT_OPTIONS = [
   { subject_id: "6", subject_name: "Robotics" },
 ];
 
+const ITEMS_PER_PAGE = 10;
+
 function Field({ label, children }) {
   return (
     <div>
@@ -34,8 +36,21 @@ function ManageFacultyContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showEditPopup, setShowEditPopup] = useState(false);
 
   const [form, setForm] = useState({
+    faculty_id: "",
+    name: "",
+    subject_id: "",
+    phone: "",
+    email: "",
+    password: "",
+    employment_type: "",
+    date_of_joining: "",
+  });
+
+  const [editForm, setEditForm] = useState({
     faculty_id: "",
     name: "",
     subject_id: "",
@@ -51,6 +66,29 @@ function ManageFacultyContent() {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    if (!loading && !editingFacultyId) {
+      generateNextFacultyId(facultyList);
+    }
+  }, [facultyList, loading, editingFacultyId]);
+
+  function generateNextFacultyId(list) {
+    const maxNumber = list.reduce((max, faculty) => {
+      const match = String(faculty.faculty_id || "").match(/^IG(\d+)$/i);
+      if (!match) return max;
+      return Math.max(max, Number(match[1]));
+    }, 0);
+
+    const nextNumber = maxNumber + 1;
+    const nextId = `IG${String(nextNumber).padStart(3, "0")}`;
+
+    setForm((prev) => ({
+      ...prev,
+      faculty_id: nextId,
+      password: prev.password || nextId,
+    }));
+  }
 
   async function loadInitialData() {
     try {
@@ -70,52 +108,61 @@ function ManageFacultyContent() {
   }
 
   function resetForm() {
+    const maxNumber = facultyList.reduce((max, faculty) => {
+      const match = String(faculty.faculty_id || "").match(/^IG(\d+)$/i);
+      if (!match) return max;
+      return Math.max(max, Number(match[1]));
+    }, 0);
+
+    const nextId = `IG${String(maxNumber + 1).padStart(3, "0")}`;
+
     setForm({
-      faculty_id: "",
+      faculty_id: nextId,
       name: "",
       subject_id: "",
       phone: "",
       email: "",
-      password: "",
+      password: nextId,
       employment_type: "",
       date_of_joining: "",
     });
-    setEditingFacultyId(null);
   }
 
-  function handleChange(e) {
+  function handleChange(e, type = "add") {
     const { name, value } = e.target;
 
+    const setter = type === "edit" ? setEditForm : setForm;
+
     if (name === "phone") {
-      setForm((prev) => ({
+      setter((prev) => ({
         ...prev,
         phone: value.replace(/\D/g, "").slice(0, 10),
       }));
       return;
     }
 
-    setForm((prev) => ({
+    setter((prev) => ({
       ...prev,
       [name]: value,
     }));
   }
 
-  function validateForm() {
-    if (!form.faculty_id.trim()) return "Faculty ID is required";
-    if (!form.name.trim()) return "Faculty name is required";
-    if (!form.subject_id) return "Subject is required";
-    if (!form.phone.trim()) return "Phone number is required";
-    if (form.phone.length !== 10) return "Phone number must be 10 digits";
-    if (!form.email.trim()) return "Email is required";
-    if (!form.employment_type) return "Employment type is required";
-    if (!form.date_of_joining) return "Date of joining is required";
+  function validateForm(data, isEdit = false) {
+    if (!data.faculty_id.trim()) return "Faculty ID is required";
+    if (!data.name.trim()) return "Faculty name is required";
+    if (!data.subject_id) return "Subject is required";
+    if (!data.phone.trim()) return "Phone number is required";
+    if (data.phone.length !== 10) return "Phone number must be 10 digits";
+    if (!data.email.trim()) return "Email is required";
+    if (!data.employment_type) return "Employment type is required";
+    if (!data.date_of_joining) return "Date of joining is required";
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email.trim())) {
+    if (!emailRegex.test(data.email.trim())) {
       return "Enter a valid email address";
     }
 
-    if (!editingFacultyId && !form.password.trim()) {
+    if (!isEdit && !data.password.trim()) {
       return "Password is required";
     }
 
@@ -125,7 +172,7 @@ function ManageFacultyContent() {
   async function handleSubmit(e) {
     e.preventDefault();
 
-    const error = validateForm();
+    const error = validateForm(form, false);
     if (error) {
       alert(error);
       return;
@@ -145,14 +192,8 @@ function ManageFacultyContent() {
         date_of_joining: form.date_of_joining,
       };
 
-      const url = editingFacultyId
-        ? `${API_BASE}/faculty/${editingFacultyId}`
-        : `${API_BASE}/faculty`;
-
-      const method = editingFacultyId ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
+      const res = await fetch(`${API_BASE}/faculty`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -160,18 +201,13 @@ function ManageFacultyContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed to save faculty");
+        alert(data.error || "Failed to add faculty");
         return;
       }
 
-      alert(
-        editingFacultyId
-          ? "Faculty updated successfully"
-          : "Faculty added successfully"
-      );
-
+      alert("Faculty added successfully");
+      await loadInitialData();
       resetForm();
-      loadInitialData();
     } catch (err) {
       console.error("Save faculty error:", err);
       alert("Something went wrong while saving faculty");
@@ -183,7 +219,7 @@ function ManageFacultyContent() {
   function handleEdit(faculty) {
     setEditingFacultyId(faculty.faculty_id);
 
-    setForm({
+    setEditForm({
       faculty_id: faculty.faculty_id || "",
       name: faculty.name || "",
       subject_id: faculty.subject_id ? String(faculty.subject_id) : "",
@@ -196,7 +232,55 @@ function ManageFacultyContent() {
         : "",
     });
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setShowEditPopup(true);
+  }
+
+  async function handleUpdate(e) {
+    e.preventDefault();
+
+    const error = validateForm(editForm, true);
+    if (error) {
+      alert(error);
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        faculty_id: editForm.faculty_id.trim().toUpperCase(),
+        name: editForm.name.trim(),
+        subject_id: Number(editForm.subject_id),
+        phone: editForm.phone.trim(),
+        email: editForm.email.trim(),
+        password: editForm.password.trim(),
+        employment_type: editForm.employment_type,
+        date_of_joining: editForm.date_of_joining,
+      };
+
+      const res = await fetch(`${API_BASE}/faculty/${editingFacultyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Failed to update faculty");
+        return;
+      }
+
+      alert("Faculty updated successfully");
+      setShowEditPopup(false);
+      setEditingFacultyId(null);
+      await loadInitialData();
+    } catch (err) {
+      console.error("Update faculty error:", err);
+      alert("Something went wrong while updating faculty");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete(facultyId) {
@@ -239,6 +323,7 @@ function ManageFacultyContent() {
 
   const filteredFaculty = useMemo(() => {
     const q = search.trim().toLowerCase();
+
     if (!q) return facultyList;
 
     return facultyList.filter((f) => {
@@ -254,6 +339,17 @@ function ManageFacultyContent() {
       );
     });
   }, [facultyList, search]);
+
+  const totalPages = Math.ceil(filteredFaculty.length / ITEMS_PER_PAGE) || 1;
+
+  const paginatedFaculty = filteredFaculty.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   if (loading) {
     return (
@@ -278,19 +374,16 @@ function ManageFacultyContent() {
         onSubmit={handleSubmit}
         className="bg-white shadow-md rounded-xl border border-gray-200 p-6 space-y-5"
       >
-        <h2 className="text-lg font-semibold text-blue-700">
-          {editingFacultyId ? "Edit Faculty" : "Add Faculty"}
-        </h2>
+        <h2 className="text-lg font-semibold text-blue-700">Add Faculty</h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Faculty ID">
             <input
               name="faculty_id"
               value={form.faculty_id}
-              onChange={handleChange}
-              disabled={!!editingFacultyId}
+              disabled
               placeholder="Faculty ID"
-              className="w-full border rounded-lg px-4 py-3"
+              className="w-full border rounded-lg px-4 py-3 bg-gray-100 cursor-not-allowed"
             />
           </Field>
 
@@ -345,7 +438,7 @@ function ManageFacultyContent() {
               name="password"
               value={form.password}
               onChange={handleChange}
-              placeholder={editingFacultyId ? "New Password optional" : "Password"}
+              placeholder="Password"
               className="w-full border rounded-lg px-4 py-3"
             />
           </Field>
@@ -374,29 +467,13 @@ function ManageFacultyContent() {
           </Field>
         </div>
 
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
-          >
-            {saving
-              ? "Saving..."
-              : editingFacultyId
-              ? "Update Faculty"
-              : "Add Faculty"}
-          </button>
-
-          {editingFacultyId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
+        <button
+          type="submit"
+          disabled={saving}
+          className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
+        >
+          {saving ? "Saving..." : "Add Faculty"}
+        </button>
       </form>
 
       <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
@@ -429,14 +506,14 @@ function ManageFacultyContent() {
             </thead>
 
             <tbody>
-              {filteredFaculty.length === 0 ? (
+              {paginatedFaculty.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-4 text-center text-gray-500">
                     No faculty found
                   </td>
                 </tr>
               ) : (
-                filteredFaculty.map((faculty) => (
+                paginatedFaculty.map((faculty) => (
                   <tr
                     key={faculty.faculty_id}
                     className="border-b hover:bg-gray-50"
@@ -475,7 +552,167 @@ function ManageFacultyContent() {
             </tbody>
           </table>
         </div>
+
+        <div className="flex justify-between items-center mt-5">
+          <p className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </p>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 rounded-lg bg-gray-200 disabled:opacity-50"
+            >
+              Previous
+            </button>
+
+            <button
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+              }
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 rounded-lg bg-blue-700 text-white disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
+
+      {showEditPopup && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <form
+            onSubmit={handleUpdate}
+            className="bg-white rounded-xl shadow-xl border border-gray-200 p-6 w-full max-w-4xl space-y-5"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-blue-700">
+                Edit Faculty
+              </h2>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditPopup(false);
+                  setEditingFacultyId(null);
+                }}
+                className="text-gray-600 hover:text-red-600 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Faculty ID">
+                <input
+                  name="faculty_id"
+                  value={editForm.faculty_id}
+                  disabled
+                  className="w-full border rounded-lg px-4 py-3 bg-gray-100 cursor-not-allowed"
+                />
+              </Field>
+
+              <Field label="Faculty Name">
+                <input
+                  name="name"
+                  value={editForm.name}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+              </Field>
+
+              <Field label="Subject / Role">
+                <select
+                  name="subject_id"
+                  value={editForm.subject_id}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                >
+                  <option value="">Select Subject / Role</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.subject_id} value={subject.subject_id}>
+                      {subject.subject_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Phone Number">
+                <input
+                  name="phone"
+                  value={editForm.phone}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+              </Field>
+
+              <Field label="Email">
+                <input
+                  name="email"
+                  value={editForm.email}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+              </Field>
+
+              <Field label="New Password Optional">
+                <input
+                  name="password"
+                  value={editForm.password}
+                  onChange={(e) => handleChange(e, "edit")}
+                  placeholder="Leave empty to keep old password"
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+              </Field>
+
+              <Field label="Employment Type">
+                <select
+                  name="employment_type"
+                  value={editForm.employment_type}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                >
+                  <option value="">Select Employment Type</option>
+                  <option value="Part Time">Part Time</option>
+                  <option value="Full Time">Full Time</option>
+                </select>
+              </Field>
+
+              <Field label="Date of Joining">
+                <input
+                  type="date"
+                  name="date_of_joining"
+                  value={editForm.date_of_joining}
+                  onChange={(e) => handleChange(e, "edit")}
+                  className="w-full border rounded-lg px-4 py-3"
+                />
+              </Field>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditPopup(false);
+                  setEditingFacultyId(null);
+                }}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
+              >
+                {saving ? "Updating..." : "Update Faculty"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
