@@ -3632,7 +3632,63 @@ app.put('/reset-password', async (req, res) => {
 			res.status(500).json({ error: 'Failed to fetch registered students' });
 		}
 	});
+app.put("/posted-tests/:testCode", async (req, res) => {
+  const { testCode } = req.params;
 
+  const {
+    test_code,
+    subject_id,
+    test_date,
+    total_marks,
+    portion,
+    class_name,
+    board,
+    duration_minutes,
+    registration_end_date,
+    writing_allowed_till,
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `
+      UPDATE tests
+      SET
+        subject_id = $1,
+        test_date = $2,
+        total_marks = $3,
+        portion = $4,
+        class = $5,
+        board = $6,
+        duration_minutes = $7,
+        registration_end_date = $8,
+        writing_allowed_till = $9
+      WHERE test_code = $10
+      RETURNING *
+      `,
+      [
+        subject_id,
+        test_date,
+        total_marks,
+        portion,
+        class_name,
+        board,
+        duration_minutes,
+        registration_end_date,
+        writing_allowed_till,
+        testCode,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Test not found" });
+    }
+
+    res.json({ message: "Test updated successfully", test: result.rows[0] });
+  } catch (err) {
+    console.error("PUT /posted-tests/:testCode error:", err);
+    res.status(500).json({ error: "Failed to update test" });
+  }
+});
 	/* =========================================================
 	SERVER START
 	========================================================= */
