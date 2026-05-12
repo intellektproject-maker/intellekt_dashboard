@@ -16,14 +16,10 @@ export default function Login() {
 
 		try {
 			const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://responsible-wonder-production.up.railway.app';
-
 			const resp = await fetch(`${apiBase}/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					id: rollUpper,
-					password
-				})
+				body: JSON.stringify({ id: rollUpper, password })
 			});
 
 			const data = await resp.json().catch(() => ({}));
@@ -32,11 +28,6 @@ export default function Login() {
 				alert(data.error || 'Login failed');
 				return;
 			}
-
-			// ✅ SAVE SESSION DETAILS
-			localStorage.setItem('sessionToken', data.sessionToken);
-			localStorage.setItem('loginId', data.id);
-			localStorage.setItem('role', data.role);
 
 			// ✅ FIRST LOGIN PASSWORD RESET CHECK
 			if (data.mustResetPassword === true) {
@@ -77,15 +68,12 @@ export default function Login() {
 
 			{/* Content */}
 			<div className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 md:px-10 py-6">
-				<div
-					className="
+				<div className="
             w-full max-w-[1320px]
             flex justify-center md:justify-end
             items-center
-          "
-				>
-					<div
-						className="
+          ">
+					<div className="
               w-full max-w-[560px]
               rounded-[28px] sm:rounded-[34px] md:rounded-[40px]
               bg-[#f3f3f3]
@@ -94,18 +82,15 @@ export default function Login() {
               shadow-[0_25px_60px_rgba(0,0,0,0.35)]
               border border-white/20
               backdrop-blur-[1px]
-            "
-					>
+            ">
 						<div className="w-full">
-							<h1
-								className="
+							<h1 className="
                   text-[#08245c]
                   font-extrabold
                   leading-[0.95]
                   text-[42px] sm:text-[56px] md:text-[72px]
                   tracking-[-0.03em]
-                "
-							>
+                ">
 								Intellekt
 								<br />
 								Academy
@@ -120,7 +105,6 @@ export default function Login() {
 									<label className="block text-[#08245c] text-sm font-semibold mb-3">
 										Enter the ID *
 									</label>
-
 									<input
 										type="text"
 										value={roll}
@@ -142,10 +126,7 @@ export default function Login() {
 								</div>
 
 								<div>
-									<label className="block text-[#08245c] text-sm font-semibold mb-3">
-										Password*
-									</label>
-
+									<label className="block text-[#08245c] text-sm font-semibold mb-3">Password*</label>
 									<input
 										type="password"
 										value={password}
