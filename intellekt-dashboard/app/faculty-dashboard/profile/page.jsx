@@ -24,12 +24,12 @@ function FacultyProfileInner() {
   const [classOptions, setClassOptions] = useState([]);
   const [testCodes, setTestCodes] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
+  const [activeSection, setActiveSection] = useState('');
 
   const canAccessAllTasks =
     loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
 
   const profileTitle = canAccessAllTasks ? 'Admin Profile' : 'Faculty Profile';
-  const [activeSection, setActiveSection] = useState('');
 
   const priorityOptions = ['High', 'Medium', 'Low'];
   const taskTypeOptions = ['Weekly', 'Daily'];
@@ -78,6 +78,20 @@ function FacultyProfileInner() {
     setFacultyNotifications((prev) =>
       prev.filter((item) => item.module_name !== moduleName)
     );
+  }
+
+  async function markFacultyNotificationRead(moduleName) {
+    try {
+      await fetch(
+        `${API_BASE}/faculty-notifications/mark-read/${facultyId}/${moduleName}`,
+        { method: 'PUT' }
+      );
+
+      clearFacultyNotification(moduleName);
+    } catch (err) {
+      console.error(err);
+      clearFacultyNotification(moduleName);
+    }
   }
 
   function isOverdue(task) {
@@ -645,11 +659,11 @@ function FacultyProfileInner() {
             {canAccessAllTasks && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setActiveSection(
                     activeSection === 'allTasks' ? '' : 'allTasks'
                   );
-                  clearFacultyNotification('all-tasks');
+                  await markFacultyNotificationRead('all-tasks');
                 }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
                   activeSection === 'allTasks'
@@ -676,11 +690,11 @@ function FacultyProfileInner() {
             {canAccessAllTasks && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setActiveSection(
                     activeSection === 'dailyTasks' ? '' : 'dailyTasks'
                   );
-                  clearFacultyNotification('daily-tasks');
+                  await markFacultyNotificationRead('daily-tasks');
                 }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
                   activeSection === 'dailyTasks'
@@ -729,14 +743,14 @@ function FacultyProfileInner() {
 
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 const nextSection =
                   activeSection === 'myChecklist' ? '' : 'myChecklist';
 
                 setActiveSection(nextSection);
 
                 if (nextSection === 'myChecklist') {
-                  clearFacultyNotification('tasks');
+                  await markFacultyNotificationRead('tasks');
                 }
               }}
               className={`rounded-2xl border p-7 text-left shadow-md transition ${

@@ -774,6 +774,30 @@ app.get('/faculty-notifications/:facultyId', async (req, res) => {
 	}
 });
 
+app.put('/faculty-notifications/mark-read/:facultyId/:moduleName', async (req, res) => {
+	try {
+		const { facultyId, moduleName } = req.params;
+
+		await pool.query(
+			`
+			UPDATE faculty_notifications
+			SET is_read = TRUE
+			WHERE faculty_id = $1
+			  AND module_name = $2
+			`,
+			[facultyId, moduleName]
+		);
+
+		res.json({ message: 'Notifications marked as read' });
+	} catch (err) {
+		console.error('PUT /faculty-notifications/mark-read error:', err);
+
+		res.status(500).json({
+			error: 'Failed to mark notifications as read'
+		});
+	}
+});
+
 /* =========================================================
 	FEES
 	========================================================= */
