@@ -123,7 +123,7 @@ app.post('/login', async (req, res) => {
 
 		if (prefix === 'IG' || prefix === 'IP') {
 			const result = await pool.query(
-				`SELECT faculty_id, password, must_reset_password, active_session_token
+				`SELECT faculty_id, password, must_reset_password 
 				 FROM faculty 
 				 WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))`,
 				[idUpper]
@@ -137,12 +137,6 @@ app.post('/login', async (req, res) => {
 
 			if (String(user.password) !== String(password)) {
 				return res.status(401).json({ error: 'Invalid credentials' });
-			}
-
-			if (user.active_session_token) {
-				return res.status(409).json({
-					error: 'This account is already logged in on another device.'
-				});
 			}
 
 			await pool.query(
@@ -163,7 +157,7 @@ app.post('/login', async (req, res) => {
 
 		if (prefix === 'IA') {
 			const result = await pool.query(
-				`SELECT roll_no, password, must_reset_password, active_session_token
+				`SELECT roll_no, password, must_reset_password 
 				 FROM students 
 				 WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
 				[idUpper]
@@ -177,12 +171,6 @@ app.post('/login', async (req, res) => {
 
 			if (String(user.password) !== String(password)) {
 				return res.status(401).json({ error: 'Invalid credentials' });
-			}
-
-			if (user.active_session_token) {
-				return res.status(409).json({
-					error: 'This account is already logged in on another device.'
-				});
 			}
 
 			await pool.query(
@@ -207,6 +195,7 @@ app.post('/login', async (req, res) => {
 		res.status(500).json({ error: 'Server error' });
 	}
 });
+
 /* =========================================================
    RESET PASSWORD
 ========================================================= */
