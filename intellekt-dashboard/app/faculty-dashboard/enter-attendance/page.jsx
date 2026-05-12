@@ -7,14 +7,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
   'https://responsible-wonder-production.up.railway.app';
 
-const FALLBACK_CLASSES = [
-  'CBSE-12',
-  'CBSE-10',
-  'ISC-12',
-  'SB-12',
-  'SB-10',
-  'ICSE-10',
-];
+const FALLBACK_CLASSES = ['CBSE-12', 'CBSE-10', 'ISC-12', 'SB-12', 'SB-10', 'ICSE-10'];
 
 const subjectMap = {
   MATHS: 1,
@@ -66,7 +59,6 @@ function EnterAttendancePageInner() {
         .map((item) => {
           const board = item.board || '';
           const className = item.class || '';
-
           if (!board || !className) return null;
           return `${board}-${className}`;
         })
@@ -89,6 +81,7 @@ function EnterAttendancePageInner() {
     }
 
     const { board, className } = splitClassBoard(classBoard);
+    const subjectId = subjectMap[subject];
 
     try {
       setLoading(true);
@@ -98,6 +91,7 @@ function EnterAttendancePageInner() {
       const params = new URLSearchParams();
       params.append('class', className);
       params.append('board', board);
+      params.append('subject_id', subjectId);
 
       const res = await fetch(`${API_BASE}/students?${params.toString()}`, {
         cache: 'no-store',
@@ -305,11 +299,7 @@ function EnterAttendancePageInner() {
                           <input
                             type="radio"
                             name={`attendance-${student.roll_no}`}
-                            value="Present"
-                            checked={
-                              (attendance[student.roll_no] || 'Present') ===
-                              'Present'
-                            }
+                            checked={(attendance[student.roll_no] || 'Present') === 'Present'}
                             onChange={() =>
                               handleAttendanceChange(student.roll_no, 'Present')
                             }
@@ -321,7 +311,6 @@ function EnterAttendancePageInner() {
                           <input
                             type="radio"
                             name={`attendance-${student.roll_no}`}
-                            value="Absent"
                             checked={attendance[student.roll_no] === 'Absent'}
                             onChange={() =>
                               handleAttendanceChange(student.roll_no, 'Absent')
@@ -387,7 +376,7 @@ function EnterAttendancePageInner() {
               <button
                 onClick={() => submitAttendance(false)}
                 disabled={submitting}
-                className="px-5 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-5 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-50"
               >
                 {submitting ? 'Submitting...' : 'Submit Attendance'}
               </button>
