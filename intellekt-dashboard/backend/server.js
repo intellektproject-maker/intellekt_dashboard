@@ -2061,16 +2061,11 @@ async function generateNextStudentRollNo(client) {
 	return `IA${String(nextNumber).padStart(3, '0')}`;
 }
 app.get('/students', async (req, res) => {
-	const {
-		search = '',
-		class: className = '',
-		board = '',
-		subject_id = ''
-	} = req.query;
+	const { search = '', class: className = '', board = '' } = req.query;
 
 	try {
 		let query = `
-		SELECT DISTINCT
+		SELECT 
 			s.roll_no,
 			s.name,
 			s.class,
@@ -2082,10 +2077,7 @@ app.get('/students', async (req, res) => {
 			s.password,
 			COALESCE(f.total_fee, 0) AS total_fee
 		FROM students s
-		LEFT JOIN fees f
-			ON s.roll_no = f.roll_no
-		LEFT JOIN student_subjects ss
-			ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
+		LEFT JOIN fees f ON s.roll_no = f.roll_no
 		WHERE 1=1
 		`;
 
@@ -2095,54 +2087,114 @@ app.get('/students', async (req, res) => {
 		if (search.trim()) {
 			query += `
 			AND (
-				s.roll_no ILIKE $${index}
-				OR s.name ILIKE $${index}
-				OR s.phone ILIKE $${index}
-				OR s.email ILIKE $${index}
-				OR s.school_name ILIKE $${index}
-				OR s.password ILIKE $${index}
+			s.roll_no ILIKE $${index}
+			OR s.name ILIKE $${index}
+			OR s.phone ILIKE $${index}
+			OR s.email ILIKE $${index}
+			OR s.school_name ILIKE $${index}
+			OR s.password ILIKE $${index}
 			)
-			`;
-
+		`;
 			values.push(`%${search.trim()}%`);
 			index++;
 		}
 
 		if (className.trim()) {
-			query += ` AND TRIM(s.class) = TRIM($${index})`;
+			query += ` AND s.class = $${index}`;
 			values.push(className.trim());
 			index++;
 		}
 
 		if (board.trim()) {
-			query += ` AND TRIM(s.board) = TRIM($${index})`;
+			query += ` AND s.board = $${index}`;
 			values.push(board.trim());
 			index++;
 		}
 
-		// ✅ SUBJECT FILTER
-		if (subject_id) {
-			query += ` AND ss.subject_id = $${index}`;
-			values.push(Number(subject_id));
-			index++;
-		}
-
-		query += `
-		ORDER BY s.roll_no ASC
-		`;
+		query += ` ORDER BY s.roll_no ASC`;
 
 		const result = await pool.query(query, values);
-
 		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /students error:', err);
-
 		res.status(500).json({
 			error: 'Failed to fetch students',
 			details: err.message
 		});
 	}
 });
+
+app.get('/students-by-class/:class', async (req, res) => {
+	const studentClass = req.params.class;
+
+	try {
+		const result = await pool.query(
+			`
+		SELECT roll_no, name
+		FROM students
+		WHERE class = $1
+		ORDER BY roll_no ASC
+		`,
+			[ studentClass ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /students-by-class/:class error:', err);
+		res.status(500).json({ error: 'Database error' });
+	}
+});
+app.get('/enter-marks-students', async (req, res) => {
+	const { className, board, testCode } = req.query;
+
+	if (!className || !board || !testCode) {
+		return res.status(400).json({
+			error: 'className, board and testCode are required'
+		});
+	}
+
+	try {
+		const testResult = await pool.query(
+			`
+				SELECT subject_id
+				FROM tests
+				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+				`,
+			[ testCode ]
+		);
+
+		if (testResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		const subjectId = testResult.rows[0].subject_id;
+
+		const result = await pool.query(
+			`
+				SELECT DISTINCT
+					s.roll_no,
+					s.name
+				FROM students s
+				JOIN student_subjects ss
+				ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
+				WHERE TRIM(s.class) = TRIM($1)
+				AND TRIM(s.board) = TRIM($2)
+				AND ss.subject_id = $3
+				ORDER BY s.roll_no ASC
+				`,
+			[ className, board, subjectId ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enter-marks-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch students',
+			details: err.message
+		});
+	}
+});
+
 /*
 	Smart route:
 	- /students/IA001 gives one student's full details
