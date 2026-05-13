@@ -949,23 +949,25 @@ app.post('/marks', async (req, res) => {
 	}
 });
 app.get('/marks', async (req, res) => {
-	const { name, className, testCode } = req.query;
+	const { name, className, board, testCode } = req.query;
 
 	try {
 		let query = `
-		SELECT 
-			s.roll_no,
-			s.name,
-			s.class,
-			s.board,
-			m.test_code,
-			m.marks_obtained,
-			m.comments,
-			t.total_marks
-		FROM marks m
-		JOIN students s ON m.roll_no = s.roll_no
-		JOIN tests t ON m.test_code = t.test_code
-		WHERE 1=1
+			SELECT 
+				s.roll_no,
+				s.name,
+				TRIM(s.class) AS class,
+				TRIM(s.board) AS board,
+				m.test_code,
+				m.marks_obtained,
+				m.comments,
+				COALESCE(m.total_marks, t.total_marks) AS total_marks
+			FROM marks m
+			JOIN students s
+				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
+			JOIN tests t
+				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			WHERE 1=1
 		`;
 
 		const values = [];
@@ -976,25 +978,17 @@ app.get('/marks', async (req, res) => {
 		}
 
 		if (className) {
-			const lastDash = String(className).lastIndexOf('-');
+			values.push(String(className).trim());
+			query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+		}
 
-			if (lastDash !== -1) {
-				const board = String(className).slice(0, lastDash).trim();
-				const classOnly = String(className).slice(lastDash + 1).trim();
-
-				values.push(classOnly);
-				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
-
-				values.push(board);
-				query += ` AND TRIM(s.board) = TRIM($${values.length})`;
-			} else {
-				values.push(className);
-				query += ` AND TRIM(s.class) = TRIM($${values.length})`;
-			}
+		if (board) {
+			values.push(String(board).trim());
+			query += ` AND TRIM(s.board) = TRIM($${values.length})`;
 		}
 
 		if (testCode) {
-			values.push(testCode);
+			values.push(String(testCode).trim());
 			query += ` AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($${values.length}))`;
 		}
 
@@ -1004,7 +998,10 @@ app.get('/marks', async (req, res) => {
 		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /marks error:', err);
-		res.status(500).json({ error: 'Failed to fetch marks' });
+		res.status(500).json({
+			error: 'Failed to fetch marks',
+			details: err.message
+		});
 	}
 });
 app.put('/marks/:roll_no/:test_code', async (req, res) => {

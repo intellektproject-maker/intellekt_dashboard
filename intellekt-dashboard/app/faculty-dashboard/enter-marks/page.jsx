@@ -17,9 +17,11 @@ function MarksPageContent() {
   const [marks, setMarks] = useState({});
   const [comments, setComments] = useState({});
   const [errors, setErrors] = useState({});
+  const [savedMarks, setSavedMarks] = useState({});
 
   const [manualTotal, setManualTotal] = useState("");
   const [loadingTests, setLoadingTests] = useState(true);
+  const [loadingStudents, setLoadingStudents] = useState(false);
 
   const [testCodeError, setTestCodeError] = useState("");
   const [classError, setClassError] = useState("");
@@ -48,12 +50,17 @@ function MarksPageContent() {
     loadTests();
   }, []);
 
-  function handleTestCode(value) {
-    setTestCode(value);
+  function resetTable() {
     setStudents([]);
     setMarks({});
     setComments({});
     setErrors({});
+    setSavedMarks({});
+  }
+
+  function handleTestCode(value) {
+    setTestCode(value);
+    resetTable();
     setManualTotal("");
 
     const foundTest = tests.find(
@@ -72,19 +79,19 @@ function MarksPageContent() {
     setTotalError("");
   }
 
-function generateComment(mark) {
-  if (String(mark).toUpperCase() === "A") return "Absent";
+  function generateComment(mark) {
+    if (String(mark).toUpperCase() === "A") return "Absent";
 
-  if (!totalMarks) return "";
+    if (!totalMarks) return "";
 
-  const percentage = (Number(mark) / Number(totalMarks)) * 100;
+    const percentage = (Number(mark) / Number(totalMarks)) * 100;
 
-  if (percentage >= 90) return "Excellent";
-  if (percentage >= 75) return "Very Good";
-  if (percentage >= 60) return "Good";
-  if (percentage >= 40) return "Average";
-  return "Needs Improvement";
-}
+    if (percentage >= 90) return "Excellent";
+    if (percentage >= 75) return "Very Good";
+    if (percentage >= 60) return "Good";
+    if (percentage >= 40) return "Average";
+    return "Needs Improvement";
+  }
 
   async function loadStudents() {
     let hasError = false;
@@ -112,8 +119,10 @@ function generateComment(mark) {
 
     if (hasError) return;
 
+    setLoadingStudents(true);
+
     try {
-      const res = await fetch(
+      const studentsRes = await fetch(
         `${API_BASE}/enter-marks-students?className=${encodeURIComponent(
           selectedTest.class
         )}&board=${encodeURIComponent(
@@ -121,60 +130,91 @@ function generateComment(mark) {
         )}&testCode=${encodeURIComponent(testCode)}`
       );
 
-      const data = await res.json();
+      const studentsData = await studentsRes.json();
 
-      if (!res.ok) {
-        alert(data.error || "Students loading failed");
+      if (!studentsRes.ok) {
+        alert(studentsData.error || "Students loading failed");
         return;
       }
 
-      setStudents(Array.isArray(data) ? data : []);
-      setMarks({});
-      setComments({});
+      const studentList = Array.isArray(studentsData) ? studentsData : [];
+
+      const marksRes = await fetch(
+        `${API_BASE}/marks?testCode=${encodeURIComponent(
+          testCode
+        )}&className=${encodeURIComponent(
+          selectedTest.class
+        )}&board=${encodeURIComponent(selectedTest.board)}`
+      );
+
+      const marksData = await marksRes.json();
+      const existingMarks = Array.isArray(marksData) ? marksData : [];
+
+      const marksMap = {};
+      const commentsMap = {};
+      const savedMap = {};
+
+      existingMarks.forEach((m) => {
+        const roll = String(m.roll_no).trim();
+        marksMap[roll] =
+          m.marks_obtained === null || m.marks_obtained === undefined
+            ? ""
+            : String(m.marks_obtained);
+        commentsMap[roll] = m.comments || "";
+        savedMap[roll] = true;
+      });
+
+      setStudents(studentList);
+      setMarks(marksMap);
+      setComments(commentsMap);
+      setSavedMarks(savedMap);
       setErrors({});
 
-      if (!Array.isArray(data) || data.length === 0) {
+      if (studentList.length === 0) {
         alert("No students found for this test subject/class");
       }
     } catch (err) {
       console.error("Error loading students:", err);
       alert("Students loading failed");
+    } finally {
+      setLoadingStudents(false);
     }
   }
 
   function handleMarks(roll, value) {
-  const raw = value.trim();
+    const raw = value.trim();
 
-  if (raw === "") {
-    setMarks((p) => ({ ...p, [roll]: "" }));
-    setComments((p) => ({ ...p, [roll]: "" }));
-    setErrors((p) => ({ ...p, [roll]: "Required" }));
-    return;
-  }
+    if (raw === "") {
+      setMarks((p) => ({ ...p, [roll]: "" }));
+      setComments((p) => ({ ...p, [roll]: "" }));
+      setErrors((p) => ({ ...p, [roll]: "Required" }));
+      return;
+    }
 
-  if (raw.toUpperCase() === "A") {
-    setMarks((p) => ({ ...p, [roll]: "A" }));
+    if (raw.toUpperCase() === "A") {
+      setMarks((p) => ({ ...p, [roll]: "A" }));
+      setErrors((p) => ({ ...p, [roll]: "" }));
+      setComments((p) => ({ ...p, [roll]: "Absent" }));
+      return;
+    }
+
+    if (!/^\d+$/.test(raw)) {
+      setErrors((p) => ({ ...p, [roll]: "Only numbers or A" }));
+      return;
+    }
+
+    const num = Number(raw);
+
+    if (num > Number(totalMarks)) {
+      setErrors((p) => ({ ...p, [roll]: `Max ${totalMarks}` }));
+      return;
+    }
+
+    setMarks((p) => ({ ...p, [roll]: String(num) }));
     setErrors((p) => ({ ...p, [roll]: "" }));
-    setComments((p) => ({ ...p, [roll]: "Absent" }));
-    return;
+    setComments((p) => ({ ...p, [roll]: generateComment(num) }));
   }
 
-  if (!/^\d+$/.test(raw)) {
-    setErrors((p) => ({ ...p, [roll]: "Only numbers or A" }));
-    return;
-  }
-
-  const num = Number(raw);
-
-  if (num > totalMarks) {
-    setErrors((p) => ({ ...p, [roll]: `Max ${totalMarks}` }));
-    return;
-  }
-
-  setMarks((p) => ({ ...p, [roll]: num }));
-  setErrors((p) => ({ ...p, [roll]: "" }));
-  setComments((p) => ({ ...p, [roll]: generateComment(num) }));
-}
   async function submitMarks() {
     if (students.length === 0) {
       alert("Load students first");
@@ -221,12 +261,15 @@ function generateComment(mark) {
         return;
       }
 
-      alert("Marks saved successfully!");
+      alert("Marks saved/updated successfully!");
+      loadStudents();
     } catch (err) {
       console.error("Save marks error:", err);
       alert("Error saving marks");
     }
   }
+
+  const hasExistingMarks = Object.keys(savedMarks).length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 px-6 py-10">
@@ -312,9 +355,10 @@ function generateComment(mark) {
             <div className="flex items-end">
               <button
                 onClick={loadStudents}
-                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700"
+                disabled={loadingStudents}
+                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
               >
-                Load Students
+                {loadingStudents ? "Loading..." : "Load Students"}
               </button>
             </div>
           </div>
@@ -322,6 +366,12 @@ function generateComment(mark) {
 
         {students.length > 0 && (
           <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
+            {hasExistingMarks && (
+              <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-700 font-medium">
+                Existing marks found. You can edit and save again.
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full min-w-[700px] border-collapse">
                 <thead className="bg-blue-700 text-white">
@@ -330,6 +380,7 @@ function generateComment(mark) {
                     <th className="p-3 text-left">Student Name</th>
                     <th className="p-3 text-left">Marks</th>
                     <th className="p-3 text-left">Comment</th>
+                    <th className="p-3 text-left">Status</th>
                     <th className="p-3 text-left">Error</th>
                   </tr>
                 </thead>
@@ -353,6 +404,18 @@ function generateComment(mark) {
 
                       <td className="p-3">{comments[s.roll_no] || "-"}</td>
 
+                      <td className="p-3">
+                        {savedMarks[s.roll_no] ? (
+                          <span className="text-green-700 font-semibold">
+                            Edit
+                          </span>
+                        ) : (
+                          <span className="text-blue-700 font-semibold">
+                            New
+                          </span>
+                        )}
+                      </td>
+
                       <td className="p-3 text-red-500 text-sm">
                         {errors[s.roll_no] || ""}
                       </td>
@@ -366,7 +429,7 @@ function generateComment(mark) {
               onClick={submitMarks}
               className="mt-8 bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700"
             >
-              Save Marks
+              {hasExistingMarks ? "Update Marks" : "Save Marks"}
             </button>
           </div>
         )}
