@@ -16,6 +16,20 @@ const FALLBACK_CLASSES = [
   "ICSE-10",
 ];
 
+function splitClassBoard(value) {
+  if (!value) return { board: "", classNameOnly: "" };
+
+  const lastDash = value.lastIndexOf("-");
+  if (lastDash === -1) {
+    return { board: "", classNameOnly: value.trim() };
+  }
+
+  return {
+    board: value.slice(0, lastDash).trim(),
+    classNameOnly: value.slice(lastDash + 1).trim(),
+  };
+}
+
 export default function ManageMarks() {
   const [name, setName] = useState("");
   const [className, setClassName] = useState("");
@@ -59,7 +73,7 @@ export default function ManageMarks() {
             item.class || item.class_name || item.className || "";
 
           if (!board || !classValue) return null;
-          return `${board}-${classValue}`;
+          return `${String(board).trim()}-${String(classValue).trim()}`;
         })
         .filter(Boolean);
 
@@ -85,10 +99,7 @@ export default function ManageMarks() {
         return;
       }
 
-      const codes = data
-        .map((item) => item.test_code)
-        .filter(Boolean);
-
+      const codes = data.map((item) => item.test_code).filter(Boolean);
       setTestCodeOptions([...new Set(codes)]);
     } catch (err) {
       console.error("Fetch test codes error:", err);
@@ -105,7 +116,14 @@ export default function ManageMarks() {
       const params = new URLSearchParams();
 
       if (name.trim()) params.append("name", name.trim());
-      if (className) params.append("className", className);
+
+      if (className) {
+        const { board, classNameOnly } = splitClassBoard(className);
+
+        if (classNameOnly) params.append("className", classNameOnly);
+        if (board) params.append("board", board);
+      }
+
       if (testCode) params.append("testCode", testCode);
 
       const res = await fetch(`${API_BASE}/marks?${params.toString()}`, {
@@ -221,7 +239,7 @@ export default function ManageMarks() {
     const rows = marksData.map((m) => [
       m.name ?? "",
       m.roll_no ?? "",
-      m.class ?? "",
+      `${m.board || ""}-${m.class || ""}`,
       m.test_code ?? "",
       m.marks_obtained ?? "",
       m.total_marks ?? "",
@@ -229,9 +247,7 @@ export default function ManageMarks() {
 
     const csvContent = [headers, ...rows]
       .map((row) =>
-        row
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-          .join(",")
+        row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")
       )
       .join("\n");
 
@@ -359,7 +375,9 @@ export default function ManageMarks() {
                 >
                   <td className="p-3">{m.name}</td>
                   <td className="p-3">{m.roll_no}</td>
-                  <td className="p-3">{m.class}</td>
+                  <td className="p-3">
+                    {m.board ? `${m.board}-${m.class}` : m.class}
+                  </td>
                   <td className="p-3">{m.test_code}</td>
 
                   <td className="p-3">
@@ -469,7 +487,9 @@ export default function ManageMarks() {
                 <tr key={`${m.roll_no}-${m.test_code}-pdf-${i}`}>
                   <td className="p-2 border">{m.name}</td>
                   <td className="p-2 border">{m.roll_no}</td>
-                  <td className="p-2 border">{m.class}</td>
+                  <td className="p-2 border">
+                    {m.board ? `${m.board}-${m.class}` : m.class}
+                  </td>
                   <td className="p-2 border">{m.test_code}</td>
                   <td className="p-2 border">{m.marks_obtained}</td>
                   <td className="p-2 border">{m.total_marks ?? "-"}</td>

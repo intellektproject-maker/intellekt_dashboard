@@ -949,9 +949,17 @@ app.post('/marks', async (req, res) => {
 	}
 });
 app.get('/marks', async (req, res) => {
-	const { name, className, board, testCode } = req.query;
+	let { name, className, board, testCode } = req.query;
 
 	try {
+		if (className && String(className).includes('-') && !board) {
+			const value = String(className).trim();
+			const lastDash = value.lastIndexOf('-');
+
+			board = value.slice(0, lastDash).trim();
+			className = value.slice(lastDash + 1).trim();
+		}
+
 		let query = `
 			SELECT 
 				s.roll_no,
@@ -973,7 +981,7 @@ app.get('/marks', async (req, res) => {
 		const values = [];
 
 		if (name) {
-			values.push(`%${name}%`);
+			values.push(`%${String(name).trim()}%`);
 			query += ` AND s.name ILIKE $${values.length}`;
 		}
 
