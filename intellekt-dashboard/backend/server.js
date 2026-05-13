@@ -9,7 +9,7 @@ app.use(express.json());
 
 /* =========================================================
 	HELPERS
-	========================================================= */
+========================================================= */
 function formatTimeFromMinutes(totalMinutes) {
 	const hours24 = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
@@ -1880,6 +1880,26 @@ app.get('/faculty-roles', async (req, res) => {
 	} catch (err) {
 		console.error('GET /faculty-roles error:', err);
 		res.status(500).json({ error: 'Failed to fetch faculty roles' });
+	}
+});
+app.get('/subjects', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT
+				subject_id,
+				subject_name
+			FROM subjects
+			ORDER BY subject_id ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /subjects error:', err);
+
+		res.status(500).json({
+			error: 'Failed to fetch subjects',
+			details: err.message
+		});
 	}
 });
 
