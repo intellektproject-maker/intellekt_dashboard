@@ -60,11 +60,27 @@ function ManageStudentsPageInner() {
       const studentsData = await studentsRes.json();
       const subjectsData = await subjectsRes.json();
 
+      if (!studentsRes.ok) {
+        throw new Error(
+          studentsData.details ||
+            studentsData.error ||
+            "Failed to fetch students"
+        );
+      }
+
+      if (!subjectsRes.ok) {
+        throw new Error(
+          subjectsData.details ||
+            subjectsData.error ||
+            "Failed to fetch subjects"
+        );
+      }
+
       setStudents(Array.isArray(studentsData) ? studentsData : []);
       setSubjects(Array.isArray(subjectsData) ? subjectsData : []);
     } catch (err) {
       console.error("Load error:", err);
-      alert("Failed to load student data");
+      alert(err.message || "Failed to load student data");
     } finally {
       setLoading(false);
     }
@@ -89,40 +105,43 @@ function ManageStudentsPageInner() {
     setEditingRollNo(null);
     setPhoneError("");
   }
-function generateNextRollNo() {
-  const iaNumbers = students
-    .map((student) => String(student.roll_no || "").trim().toUpperCase())
-    .filter((roll) => /^IA\d+$/.test(roll))
-    .map((roll) => Number(roll.replace("IA", "")))
-    .filter((num) => !Number.isNaN(num));
 
-  const nextNumber = iaNumbers.length > 0 ? Math.max(...iaNumbers) + 1 : 1;
+  function generateNextRollNo() {
+    const iaNumbers = students
+      .map((student) => String(student.roll_no || "").trim().toUpperCase())
+      .filter((roll) => /^IA\d+$/.test(roll))
+      .map((roll) => Number(roll.replace("IA", "")))
+      .filter((num) => !Number.isNaN(num));
 
-  return `IA${String(nextNumber).padStart(3, "0")}`;
-}
- function openAddStudentPopup() {
-  const nextRollNo = generateNextRollNo();
+    const nextNumber = iaNumbers.length > 0 ? Math.max(...iaNumbers) + 1 : 1;
 
-  setForm({
-    roll_no: nextRollNo,
-    name: "",
-    class: "",
-    board: "",
-    mode_of_education: "",
-    phone: "",
-    email: "",
-    school_name: "",
-    password: nextRollNo,
-    subject_ids: [],
-    total_fee: "",
-    fee_paid: "",
-    next_due: "",
-  });
+    return `IA${String(nextNumber).padStart(3, "0")}`;
+  }
 
-  setEditingRollNo(null);
-  setPhoneError("");
-  setShowStudentPopup(true);
-}
+  function openAddStudentPopup() {
+    const nextRollNo = generateNextRollNo();
+
+    setForm({
+      roll_no: nextRollNo,
+      name: "",
+      class: "",
+      board: "",
+      mode_of_education: "",
+      phone: "",
+      email: "",
+      school_name: "",
+      password: nextRollNo,
+      subject_ids: [],
+      total_fee: "",
+      fee_paid: "",
+      next_due: "",
+    });
+
+    setEditingRollNo(null);
+    setPhoneError("");
+    setShowStudentPopup(true);
+  }
+
   function closeStudentPopup() {
     resetForm();
     setShowStudentPopup(false);
@@ -130,8 +149,10 @@ function generateNextRollNo() {
 
   function validatePhone(phoneValue) {
     if (!phoneValue.trim()) return "Phone number is required";
-    if (!/^\d+$/.test(phoneValue)) return "Phone number must contain only digits";
-    if (phoneValue.length !== 10) return "Phone number must be exactly 10 digits";
+    if (!/^\d+$/.test(phoneValue))
+      return "Phone number must contain only digits";
+    if (phoneValue.length !== 10)
+      return "Phone number must be exactly 10 digits";
     return "";
   }
 
@@ -165,10 +186,7 @@ function generateNextRollNo() {
 
   function getMathSubjectId() {
     const mathsSubject = subjects.find((subject) =>
-      String(subject.subject_name || "")
-        .trim()
-        .toLowerCase()
-        .includes("math")
+      String(subject.subject_name || "").trim().toLowerCase().includes("math")
     );
     return mathsSubject ? Number(mathsSubject.subject_id) : null;
   }
@@ -230,7 +248,9 @@ function generateNextRollNo() {
 
     if (option === "BOTH") {
       if (mathsId === null || physicsId === null) {
-        alert("Mathematics or Physics subject is not available in subjects table");
+        alert(
+          "Mathematics or Physics subject is not available in subjects table"
+        );
         return;
       }
 
@@ -265,7 +285,8 @@ function generateNextRollNo() {
     });
   }, [students, search, classFilter]);
 
-  const totalPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
+  const totalPages =
+    Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
 
   const paginatedStudents = useMemo(() => {
     const startIndex = (currentPage - 1) * STUDENTS_PER_PAGE;
@@ -466,9 +487,7 @@ function generateNextRollNo() {
         <h1 className="text-2xl md:text-3xl font-bold text-blue-700">
           Student Management
         </h1>
-        <p className="text-gray-600">
-          Add, edit and delete student details.
-        </p>
+        <p className="text-gray-600">Add, edit and delete student details.</p>
         {facultyId && (
           <p className="text-sm text-gray-500">
             Logged in faculty: {facultyId}
@@ -559,9 +578,15 @@ function generateNextRollNo() {
                     </td>
                     <td className="px-4 py-3 border-b">{student.phone}</td>
                     <td className="px-4 py-3 border-b">{student.email}</td>
-                    <td className="px-4 py-3 border-b">{student.school_name}</td>
-                    <td className="px-4 py-3 border-b">{student.password || "-"}</td>
-                    <td className="px-4 py-3 border-b">{student.total_fee}</td>
+                    <td className="px-4 py-3 border-b">
+                      {student.school_name}
+                    </td>
+                    <td className="px-4 py-3 border-b">
+                      {student.password || "-"}
+                    </td>
+                    <td className="px-4 py-3 border-b">
+                      {student.total_fee}
+                    </td>
                     <td className="px-4 py-3 border-b">
                       <div className="flex items-center justify-center gap-2">
                         <button
