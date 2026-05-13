@@ -5,15 +5,6 @@ import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
 
-const SUBJECT_OPTIONS = [
-  { subject_id: "1", subject_name: "Admin" },
-  { subject_id: "2", subject_name: "Mathematics correction" },
-  { subject_id: "3", subject_name: "Physics correction" },
-  { subject_id: "4", subject_name: "Software development" },
-  { subject_id: "5", subject_name: "Media" },
-  { subject_id: "6", subject_name: "Robotics" },
-];
-
 const ITEMS_PER_PAGE = 10;
 
 function Field({ label, children }) {
@@ -32,7 +23,7 @@ function ManageFacultyContent() {
   const loggedInFacultyId = searchParams.get("id");
 
   const [facultyList, setFacultyList] = useState([]);
-  const [subjects] = useState(SUBJECT_OPTIONS);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -42,7 +33,7 @@ function ManageFacultyContent() {
   const [form, setForm] = useState({
     faculty_id: "",
     name: "",
-    subject_id: "",
+    role_id: "",
     phone: "",
     email: "",
     password: "",
@@ -53,7 +44,7 @@ function ManageFacultyContent() {
   const [editForm, setEditForm] = useState({
     faculty_id: "",
     name: "",
-    subject_id: "",
+    role_id: "",
     phone: "",
     email: "",
     password: "",
@@ -93,12 +84,20 @@ function ManageFacultyContent() {
   async function loadInitialData() {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/faculty`, { cache: "no-store" });
 
-      if (!res.ok) throw new Error("Failed to fetch faculty");
+      const [facultyRes, rolesRes] = await Promise.all([
+        fetch(`${API_BASE}/faculty`, { cache: "no-store" }),
+        fetch(`${API_BASE}/faculty-roles`, { cache: "no-store" }),
+      ]);
 
-      const data = await res.json();
-      setFacultyList(Array.isArray(data) ? data : []);
+      if (!facultyRes.ok) throw new Error("Failed to fetch faculty");
+      if (!rolesRes.ok) throw new Error("Failed to fetch faculty roles");
+
+      const facultyData = await facultyRes.json();
+      const rolesData = await rolesRes.json();
+
+      setFacultyList(Array.isArray(facultyData) ? facultyData : []);
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
     } catch (err) {
       console.error("Load faculty error:", err);
       alert("Failed to load faculty data");
@@ -119,7 +118,7 @@ function ManageFacultyContent() {
     setForm({
       faculty_id: nextId,
       name: "",
-      subject_id: "",
+      role_id: "",
       phone: "",
       email: "",
       password: nextId,
@@ -150,7 +149,7 @@ function ManageFacultyContent() {
   function validateForm(data, isEdit = false) {
     if (!data.faculty_id.trim()) return "Faculty ID is required";
     if (!data.name.trim()) return "Faculty name is required";
-    if (!data.subject_id) return "Subject is required";
+    if (!data.role_id) return "Subject / Role is required";
     if (!data.phone.trim()) return "Phone number is required";
     if (data.phone.length !== 10) return "Phone number must be 10 digits";
     if (!data.email.trim()) return "Email is required";
@@ -184,7 +183,7 @@ function ManageFacultyContent() {
       const payload = {
         faculty_id: form.faculty_id.trim().toUpperCase(),
         name: form.name.trim(),
-        subject_id: Number(form.subject_id),
+        role_id: Number(form.role_id),
         phone: form.phone.trim(),
         email: form.email.trim(),
         password: form.password.trim(),
@@ -222,7 +221,7 @@ function ManageFacultyContent() {
     setEditForm({
       faculty_id: faculty.faculty_id || "",
       name: faculty.name || "",
-      subject_id: faculty.subject_id ? String(faculty.subject_id) : "",
+      role_id: faculty.role_id ? String(faculty.role_id) : "",
       phone: faculty.phone || "",
       email: faculty.email || "",
       password: "",
@@ -250,7 +249,7 @@ function ManageFacultyContent() {
       const payload = {
         faculty_id: editForm.faculty_id.trim().toUpperCase(),
         name: editForm.name.trim(),
-        subject_id: Number(editForm.subject_id),
+        role_id: Number(editForm.role_id),
         phone: editForm.phone.trim(),
         email: editForm.email.trim(),
         password: editForm.password.trim(),
@@ -307,18 +306,18 @@ function ManageFacultyContent() {
       }
 
       alert("Faculty deleted successfully");
-      loadInitialData();
+      await loadInitialData();
     } catch (err) {
       console.error("Delete faculty error:", err);
       alert("Something went wrong while deleting faculty");
     }
   }
 
-  function getSubjectName(subjectId) {
-    const subject = subjects.find(
-      (s) => String(s.subject_id) === String(subjectId)
-    );
-    return subject?.subject_name || "-";
+  function getRoleName(roleId, fallbackRoleName = "") {
+    if (fallbackRoleName) return fallbackRoleName;
+
+    const role = roles.find((r) => String(r.role_id) === String(roleId));
+    return role?.role_name || "-";
   }
 
   const filteredFaculty = useMemo(() => {
@@ -327,7 +326,7 @@ function ManageFacultyContent() {
     if (!q) return facultyList;
 
     return facultyList.filter((f) => {
-      const subjectName = getSubjectName(f.subject_id).toLowerCase();
+      const roleName = getRoleName(f.role_id, f.role_name).toLowerCase();
 
       return (
         f.faculty_id?.toLowerCase().includes(q) ||
@@ -335,10 +334,10 @@ function ManageFacultyContent() {
         f.phone?.toLowerCase().includes(q) ||
         f.email?.toLowerCase().includes(q) ||
         f.employment_type?.toLowerCase().includes(q) ||
-        subjectName.includes(q)
+        roleName.includes(q)
       );
     });
-  }, [facultyList, search]);
+  }, [facultyList, search, roles]);
 
   const totalPages = Math.ceil(filteredFaculty.length / ITEMS_PER_PAGE) || 1;
 
@@ -399,15 +398,15 @@ function ManageFacultyContent() {
 
           <Field label="Subject / Role">
             <select
-              name="subject_id"
-              value={form.subject_id}
+              name="role_id"
+              value={form.role_id}
               onChange={handleChange}
               className="w-full border rounded-lg px-4 py-3"
             >
               <option value="">Select Subject / Role</option>
-              {subjects.map((subject) => (
-                <option key={subject.subject_id} value={subject.subject_id}>
-                  {subject.subject_name}
+              {roles.map((role) => (
+                <option key={role.role_id} value={role.role_id}>
+                  {role.role_name}
                 </option>
               ))}
             </select>
@@ -520,7 +519,9 @@ function ManageFacultyContent() {
                   >
                     <td className="p-3 font-semibold">{faculty.faculty_id}</td>
                     <td className="p-3">{faculty.name}</td>
-                    <td className="p-3">{getSubjectName(faculty.subject_id)}</td>
+                    <td className="p-3">
+                      {getRoleName(faculty.role_id, faculty.role_name)}
+                    </td>
                     <td className="p-3">{faculty.employment_type || "-"}</td>
                     <td className="p-3">
                       {faculty.date_of_joining
@@ -624,15 +625,15 @@ function ManageFacultyContent() {
 
               <Field label="Subject / Role">
                 <select
-                  name="subject_id"
-                  value={editForm.subject_id}
+                  name="role_id"
+                  value={editForm.role_id}
                   onChange={(e) => handleChange(e, "edit")}
                   className="w-full border rounded-lg px-4 py-3"
                 >
                   <option value="">Select Subject / Role</option>
-                  {subjects.map((subject) => (
-                    <option key={subject.subject_id} value={subject.subject_id}>
-                      {subject.subject_name}
+                  {roles.map((role) => (
+                    <option key={role.role_id} value={role.role_id}>
+                      {role.role_name}
                     </option>
                   ))}
                 </select>

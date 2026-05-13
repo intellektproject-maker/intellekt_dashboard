@@ -1846,17 +1846,19 @@ app.post('/post-test', async (req, res) => {
 app.get('/faculty', async (req, res) => {
 	try {
 		const result = await pool.query(`
-		SELECT 
-			f.faculty_id,
-			f.name,
-			f.subject_id,
-			s.subject_name,
-			f.phone,
-			f.email,
-			f.password
-		FROM faculty f
-		LEFT JOIN subjects s ON f.subject_id = s.subject_id
-		ORDER BY f.faculty_id ASC
+			SELECT 
+				f.faculty_id,
+				f.name,
+				f.role_id,
+				fr.role_name,
+				f.phone,
+				f.email,
+				f.password,
+				f.employment_type,
+				f.date_of_joining
+			FROM faculty f
+			LEFT JOIN faculty_roles fr ON f.role_id = fr.role_id
+			ORDER BY f.faculty_id ASC
 		`);
 
 		res.json(result.rows);
@@ -1866,57 +1868,90 @@ app.get('/faculty', async (req, res) => {
 	}
 });
 
-app.get('/subjects', async (req, res) => {
+app.get('/faculty-roles', async (req, res) => {
 	try {
 		const result = await pool.query(`
-		SELECT subject_id, subject_name
-		FROM subjects
-		ORDER BY subject_id ASC
+			SELECT role_id, role_name
+			FROM faculty_roles
+			ORDER BY role_id ASC
 		`);
 
 		res.json(result.rows);
 	} catch (err) {
-		console.error('GET /subjects error:', err);
-		res.status(500).json({ error: 'Failed to fetch subjects' });
+		console.error('GET /faculty-roles error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty roles' });
 	}
 });
 
 app.post('/faculty', async (req, res) => {
-	const { faculty_id, name, subject_id, phone, email, password } = req.body;
+	const {
+		faculty_id,
+		name,
+		role_id,
+		phone,
+		email,
+		password,
+		employment_type,
+		date_of_joining
+	} = req.body;
 
-	if (!faculty_id || !name || !subject_id || !phone || !email || !password) {
+	if (
+		!faculty_id ||
+		!name ||
+		!role_id ||
+		!phone ||
+		!email ||
+		!password ||
+		!employment_type ||
+		!date_of_joining
+	) {
 		return res.status(400).json({ error: 'All fields are required' });
 	}
 
 	try {
-		const existingFaculty = await pool.query(`SELECT faculty_id FROM faculty WHERE faculty_id = $1`, [
-			faculty_id
-		]);
+		const existingFaculty = await pool.query(
+			`SELECT faculty_id FROM faculty WHERE faculty_id = $1`,
+			[faculty_id]
+		);
 
 		if (existingFaculty.rows.length > 0) {
 			return res.status(400).json({ error: 'Faculty ID already exists' });
 		}
 
-		const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
+		const roleCheck = await pool.query(
+			`SELECT role_id FROM faculty_roles WHERE role_id = $1`,
+			[role_id]
+		);
 
-		if (subjectCheck.rows.length === 0) {
-			return res.status(400).json({ error: 'Selected subject does not exist' });
+		if (roleCheck.rows.length === 0) {
+			return res.status(400).json({ error: 'Selected role does not exist' });
 		}
 
 		const result = await pool.query(
 			`
-		INSERT INTO faculty (
-			faculty_id,
-			name,
-			subject_id,
-			phone,
-			email,
-			password
-		)
-		VALUES ($1,$2,$3,$4,$5,$6)
-		RETURNING *
-		`,
-			[ faculty_id, name, subject_id, phone, email, password ]
+			INSERT INTO faculty (
+				faculty_id,
+				name,
+				role_id,
+				phone,
+				email,
+				password,
+				employment_type,
+				date_of_joining
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			RETURNING *
+			`,
+			[
+				faculty_id,
+				name,
+				role_id,
+				phone,
+				email,
+				password,
+				employment_type,
+				date_of_joining
+			]
 		);
 
 		res.status(201).json({
@@ -1936,25 +1971,40 @@ app.post('/faculty', async (req, res) => {
 
 app.put('/faculty/:faculty_id', async (req, res) => {
 	const { faculty_id } = req.params;
-	const { name, subject_id, phone, email, password } = req.body;
 
-	if (!name || !subject_id || !phone || !email) {
+	const {
+		name,
+		role_id,
+		phone,
+		email,
+		password,
+		employment_type,
+		date_of_joining
+	} = req.body;
+
+	if (!name || !role_id || !phone || !email || !employment_type || !date_of_joining) {
 		return res.status(400).json({
-			error: 'Name, subject, phone and email are required'
+			error: 'Name, role, phone, email, employment type and date of joining are required'
 		});
 	}
 
 	try {
-		const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+		const existingFaculty = await pool.query(
+			`SELECT * FROM faculty WHERE faculty_id = $1`,
+			[faculty_id]
+		);
 
 		if (existingFaculty.rows.length === 0) {
 			return res.status(404).json({ error: 'Faculty not found' });
 		}
 
-		const subjectCheck = await pool.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [ subject_id ]);
+		const roleCheck = await pool.query(
+			`SELECT role_id FROM faculty_roles WHERE role_id = $1`,
+			[role_id]
+		);
 
-		if (subjectCheck.rows.length === 0) {
-			return res.status(400).json({ error: 'Selected subject does not exist' });
+		if (roleCheck.rows.length === 0) {
+			return res.status(400).json({ error: 'Selected role does not exist' });
 		}
 
 		let result;
@@ -1962,29 +2012,50 @@ app.put('/faculty/:faculty_id', async (req, res) => {
 		if (password && password.trim() !== '') {
 			result = await pool.query(
 				`
-			UPDATE faculty
-			SET name = $1,
-				subject_id = $2,
-				phone = $3,
-				email = $4,
-				password = $5
-			WHERE faculty_id = $6
-			RETURNING *
-			`,
-				[ name, subject_id, phone, email, password, faculty_id ]
+				UPDATE faculty
+				SET name = $1,
+					role_id = $2,
+					phone = $3,
+					email = $4,
+					password = $5,
+					employment_type = $6,
+					date_of_joining = $7
+				WHERE faculty_id = $8
+				RETURNING *
+				`,
+				[
+					name,
+					role_id,
+					phone,
+					email,
+					password,
+					employment_type,
+					date_of_joining,
+					faculty_id
+				]
 			);
 		} else {
 			result = await pool.query(
 				`
-			UPDATE faculty
-			SET name = $1,
-				subject_id = $2,
-				phone = $3,
-				email = $4
-			WHERE faculty_id = $5
-			RETURNING *
-			`,
-				[ name, subject_id, phone, email, faculty_id ]
+				UPDATE faculty
+				SET name = $1,
+					role_id = $2,
+					phone = $3,
+					email = $4,
+					employment_type = $5,
+					date_of_joining = $6
+				WHERE faculty_id = $7
+				RETURNING *
+				`,
+				[
+					name,
+					role_id,
+					phone,
+					email,
+					employment_type,
+					date_of_joining,
+					faculty_id
+				]
 			);
 		}
 
@@ -2002,15 +2073,19 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 	const { faculty_id } = req.params;
 
 	try {
-		const existingFaculty = await pool.query(`SELECT * FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+		const existingFaculty = await pool.query(
+			`SELECT * FROM faculty WHERE faculty_id = $1`,
+			[faculty_id]
+		);
 
 		if (existingFaculty.rows.length === 0) {
 			return res.status(404).json({ error: 'Faculty not found' });
 		}
 
-		const linkedTests = await pool.query(`SELECT test_code FROM tests WHERE created_by = $1 LIMIT 1`, [
-			faculty_id
-		]);
+		const linkedTests = await pool.query(
+			`SELECT test_code FROM tests WHERE created_by = $1 LIMIT 1`,
+			[faculty_id]
+		);
 
 		if (linkedTests.rows.length > 0) {
 			return res.status(400).json({
@@ -2018,9 +2093,10 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 			});
 		}
 
-		const linkedAttendance = await pool.query(`SELECT roll_no FROM attendance WHERE updated_by = $1 LIMIT 1`, [
-			faculty_id
-		]);
+		const linkedAttendance = await pool.query(
+			`SELECT roll_no FROM attendance WHERE updated_by = $1 LIMIT 1`,
+			[faculty_id]
+		);
 
 		if (linkedAttendance.rows.length > 0) {
 			return res.status(400).json({
@@ -2028,7 +2104,7 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 			});
 		}
 
-		await pool.query(`DELETE FROM faculty WHERE faculty_id = $1`, [ faculty_id ]);
+		await pool.query(`DELETE FROM faculty WHERE faculty_id = $1`, [faculty_id]);
 
 		res.json({ message: 'Faculty deleted successfully' });
 	} catch (err) {
@@ -2036,30 +2112,6 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 		res.status(500).json({ error: 'Failed to delete faculty' });
 	}
 });
-
-/* =========================================================
-	STUDENT MANAGEMENT
-	========================================================= */
-async function generateNextStudentRollNo(client) {
-	const result = await client.query(`
-			SELECT roll_no
-			FROM students
-			WHERE UPPER(TRIM(roll_no)) LIKE 'IA%'
-			ORDER BY CAST(REGEXP_REPLACE(roll_no, '[^0-9]', '', 'g') AS INTEGER) DESC
-			LIMIT 1
-		`);
-
-	if (result.rows.length === 0) {
-		return 'IA001';
-	}
-
-	const lastRollNo = String(result.rows[0].roll_no || '').toUpperCase().trim();
-	const lastNumber = Number(lastRollNo.replace('IA', ''));
-
-	const nextNumber = Number.isNaN(lastNumber) ? 1 : lastNumber + 1;
-
-	return `IA${String(nextNumber).padStart(3, '0')}`;
-}
 app.get('/students', async (req, res) => {
 	const { search = '', class: className = '', board = '' } = req.query;
 
@@ -3718,6 +3770,20 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 	} catch (err) {
 		console.error('PUT /posted-tests/:testCode error:', err);
 		res.status(500).json({ error: 'Failed to update test' });
+	}
+});
+app.get('/faculty-roles', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT role_id, role_name
+			FROM faculty_roles
+			ORDER BY role_id ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-roles error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty roles' });
 	}
 });
 /* =========================================================
