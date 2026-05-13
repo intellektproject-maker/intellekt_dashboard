@@ -1467,14 +1467,16 @@ app.post('/attendance', async (req, res) => {
 				);
 			}
 		}
-		await client.query(
-			`
+		for (const record of records) {
+	await client.query(
+		`
 		INSERT INTO student_notifications
 		(roll_no, module_name, message)
 		VALUES ($1, $2, $3)
 		`,
-			[ record.roll_no, 'attendance', 'Attendance updated' ]
-		);
+		[record.roll_no, 'attendance', 'Attendance updated']
+	);
+}
 
 		if (duplicateFound && !overwrite) {
 			await client.query('ROLLBACK');
@@ -2133,67 +2135,51 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 	}
 });
 app.get('/students', async (req, res) => {
-	const { search = '', class: className = '', board = '' } = req.query;
+  const { class: className, board, subject_id } = req.query;
 
-	try {
-		let query = `
-		SELECT 
-			s.roll_no,
-			s.name,
-			s.class,
-			s.board,
-			s.mode_of_education,
-			s.phone,
-			s.email,
-			s.school_name,
-			s.password,
-			COALESCE(f.total_fee, 0) AS total_fee
-		FROM students s
-		LEFT JOIN fees f ON s.roll_no = f.roll_no
-		WHERE 1=1
-		`;
+  try {
+    let query = `
+      SELECT DISTINCT
+        s.roll_no,
+        s.name,
+        s.class,
+        s.board,
+        s.phone,
+        s.email,
+        s.school_name,
+        s.password,
+        s.mode_of_education
+      FROM students s
+      INNER JOIN student_subjects ss
+        ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      WHERE 1=1
+    `;
 
-		const values = [];
-		let index = 1;
+    const values = [];
 
-		if (search.trim()) {
-			query += `
-			AND (
-			s.roll_no ILIKE $${index}
-			OR s.name ILIKE $${index}
-			OR s.phone ILIKE $${index}
-			OR s.email ILIKE $${index}
-			OR s.school_name ILIKE $${index}
-			OR s.password ILIKE $${index}
-			)
-		`;
-			values.push(`%${search.trim()}%`);
-			index++;
-		}
+    if (className) {
+      values.push(className);
+      query += ` AND TRIM(s.class) = TRIM($${values.length})`;
+    }
 
-		if (className.trim()) {
-			query += ` AND s.class = $${index}`;
-			values.push(className.trim());
-			index++;
-		}
+    if (board) {
+      values.push(board);
+      query += ` AND UPPER(TRIM(s.board)) = UPPER(TRIM($${values.length}))`;
+    }
 
-		if (board.trim()) {
-			query += ` AND s.board = $${index}`;
-			values.push(board.trim());
-			index++;
-		}
+    if (subject_id) {
+      values.push(Number(subject_id));
+      query += ` AND ss.subject_id = $${values.length}`;
+    }
 
-		query += ` ORDER BY s.roll_no ASC`;
+    query += ` ORDER BY s.roll_no ASC`;
 
-		const result = await pool.query(query, values);
-		res.json(result.rows);
-	} catch (err) {
-		console.error('GET /students error:', err);
-		res.status(500).json({
-			error: 'Failed to fetch students',
-			details: err.message
-		});
-	}
+    const result = await pool.query(query, values);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /students error:', err);
+    res.status(500).json({ error: 'Failed to fetch students' });
+  }
 });
 
 app.get('/students-by-class/:class', async (req, res) => {
