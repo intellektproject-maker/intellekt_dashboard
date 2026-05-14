@@ -2333,6 +2333,24 @@ app.get('/students/:value', async (req, res) => {
 		});
 	}
 });
+async function generateNextStudentRollNo(client) {
+	const result = await client.query(`
+		SELECT roll_no
+		FROM students
+		WHERE UPPER(TRIM(roll_no)) LIKE 'IA%'
+		ORDER BY CAST(REGEXP_REPLACE(roll_no, '\\D', '', 'g') AS INTEGER) DESC
+		LIMIT 1
+	`);
+
+	if (result.rows.length === 0) {
+		return 'IA001';
+	}
+
+	const lastRoll = String(result.rows[0].roll_no || '').toUpperCase().trim();
+	const lastNumber = Number(lastRoll.replace('IA', ''));
+
+	return `IA${String(lastNumber + 1).padStart(3, '0')}`;
+}
 
 app.post('/students', async (req, res) => {
 	const client = await pool.connect();

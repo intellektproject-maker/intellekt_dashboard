@@ -748,14 +748,18 @@ function ManageStudentsPageInner() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Board
                 </label>
-                <input
-                  type="text"
+                <select
                   name="board"
                   value={form.board}
                   onChange={handleInputChange}
-                  placeholder="CBSE / State Board"
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-                />
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select board</option>
+                  <option value="State Board">State Board</option>
+                  <option value="CBSE">CBSE</option>
+                  <option value="ICSE">ICSE</option>
+                  <option value="ISC">ISC</option>
+                </select>
               </div>
 
               <div>
