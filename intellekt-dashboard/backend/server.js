@@ -275,22 +275,23 @@ app.get('/marks/:roll', async (req, res) => {
 	try {
 		const result = await pool.query(
 			`
-		SELECT 
-			m.test_code,
-			m.marks_obtained,
-			m.comments,
-			t.total_marks,
-			t.subject_id,
-			CASE
-				WHEN t.subject_id = 1 THEN 'Maths'
-				WHEN t.subject_id = 2 THEN 'Physics'
-				ELSE 'Unknown'
-			END AS subject_name
-		FROM marks m
-		JOIN tests t ON m.test_code = t.test_code
-		WHERE m.roll_no = $1
-		ORDER BY m.test_code
-		`,
+			SELECT 
+				m.test_code,
+				m.marks_obtained,
+				m.comments,
+				COALESCE(m.total_marks, t.total_marks) AS total_marks,
+				t.subject_id,
+				CASE
+					WHEN t.subject_id = 1 THEN 'Maths'
+					WHEN t.subject_id = 2 THEN 'Physics'
+					ELSE 'Archived Test'
+				END AS subject_name
+			FROM marks m
+			LEFT JOIN tests t
+				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
+			ORDER BY m.test_code
+			`,
 			[ roll ]
 		);
 
@@ -744,11 +745,6 @@ app.put('/student-notifications/read', async (req, res) => {
 		res.status(500).json({ error: 'Failed to update notifications' });
 	}
 });
-
-app.get('/student-notifications/:roll', async (req, res) => {
-	// existing code
-});
-
 app.get('/faculty-notifications/:facultyId', async (req, res) => {
 	const { facultyId } = req.params;
 
@@ -973,8 +969,8 @@ app.get('/marks', async (req, res) => {
 			FROM marks m
 			JOIN students s
 				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
-			JOIN tests t
-				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			LEFT JOIN tests t
+	            ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
 			WHERE 1=1
 		`;
 
@@ -1017,13 +1013,21 @@ app.put('/marks/:roll_no/:test_code', async (req, res) => {
 	const { marks, comments } = req.body;
 
 	try {
-		const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+		const markResult = await pool.query(
+			`
+			SELECT total_marks
+			FROM marks
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))
+			`,
+			[ roll_no, test_code ]
+		);
 
-		if (testResult.rows.length === 0) {
-			return res.status(404).json({ error: 'Test not found' });
+		if (markResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Mark record not found' });
 		}
 
-		const totalMarks = Number(testResult.rows[0].total_marks);
+		const totalMarks = Number(markResult.rows[0].total_marks);
 		const obtainedMarks = Number(marks);
 
 		if (obtainedMarks > totalMarks) {
@@ -1034,11 +1038,12 @@ app.put('/marks/:roll_no/:test_code', async (req, res) => {
 
 		await pool.query(
 			`
-		UPDATE marks
-		SET marks_obtained = $1,
-			comments = COALESCE($2, comments)
-		WHERE roll_no = $3 AND test_code = $4
-		`,
+			UPDATE marks
+			SET marks_obtained = $1,
+				comments = COALESCE($2, comments)
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+			AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))
+			`,
 			[ obtainedMarks, comments || null, roll_no, test_code ]
 		);
 
@@ -1048,18 +1053,27 @@ app.put('/marks/:roll_no/:test_code', async (req, res) => {
 		res.status(500).json({ error: 'Failed to update marks' });
 	}
 });
-
 app.put('/update-marks', async (req, res) => {
 	const { name, test_code, marks_obtained } = req.body;
 
 	try {
-		const testResult = await pool.query(`SELECT total_marks FROM tests WHERE test_code = $1`, [ test_code ]);
+		const markResult = await pool.query(
+			`
+			SELECT m.total_marks
+			FROM marks m
+			JOIN students s
+				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
+			WHERE s.name = $1
+			AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($2))
+			`,
+			[ name, test_code ]
+		);
 
-		if (testResult.rows.length === 0) {
-			return res.status(404).json({ error: 'Test not found' });
+		if (markResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Mark record not found' });
 		}
 
-		const totalMarks = Number(testResult.rows[0].total_marks);
+		const totalMarks = Number(markResult.rows[0].total_marks);
 		const obtainedMarks = Number(marks_obtained);
 
 		if (obtainedMarks > totalMarks) {
@@ -1070,13 +1084,13 @@ app.put('/update-marks', async (req, res) => {
 
 		await pool.query(
 			`
-		UPDATE marks
-		SET marks_obtained = $1
-		FROM students
-		WHERE marks.roll_no = students.roll_no
+			UPDATE marks
+			SET marks_obtained = $1
+			FROM students
+			WHERE marks.roll_no = students.roll_no
 			AND students.name = $2
-			AND marks.test_code = $3
-		`,
+			AND UPPER(TRIM(marks.test_code)) = UPPER(TRIM($3))
+			`,
 			[ obtainedMarks, name, test_code ]
 		);
 
@@ -1194,31 +1208,31 @@ app.get('/student-record-report/:rollNo', async (req, res) => {
 			return res.status(404).json({ error: 'Student not found' });
 		}
 
-		const marksResult = await pool.query(
-			`
-				SELECT
-					m.test_code,
-					m.marks_obtained,
-					t.total_marks,
-					t.test_date,
-					COALESCE(sub.subject_name, 
-						CASE 
-							WHEN t.subject_id = 1 THEN 'Maths'
-							WHEN t.subject_id = 2 THEN 'Physics'
-							ELSE 'Unknown'
-						END
-					) AS subject_name
-				FROM marks m
-				JOIN tests t
-				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
-				LEFT JOIN subjects sub
-				ON t.subject_id = sub.subject_id
-				WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
-				ORDER BY t.test_date DESC, m.test_code DESC
-				LIMIT 5
-				`,
-			[ rollNo ]
-		);
+	    const marksResult = await pool.query(
+	`
+		SELECT
+			m.test_code,
+			m.marks_obtained,
+			COALESCE(m.total_marks, t.total_marks) AS total_marks,
+			t.test_date,
+			COALESCE(sub.subject_name, 
+				CASE 
+					WHEN t.subject_id = 1 THEN 'Maths'
+					WHEN t.subject_id = 2 THEN 'Physics'
+					ELSE 'Archived Test'
+				END
+			) AS subject_name
+		FROM marks m
+		LEFT JOIN tests t
+			ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+		LEFT JOIN subjects sub
+			ON t.subject_id = sub.subject_id
+		WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
+		ORDER BY COALESCE(t.test_date, CURRENT_DATE) DESC, m.test_code DESC
+		LIMIT 5
+		`,
+	[ rollNo ]
+);
 
 		const attendanceResult = await pool.query(
 			`
@@ -1804,26 +1818,6 @@ app.post('/post-test', async (req, res) => {
 			);
 		}
 		await client.query('COMMIT');
-		const studentsResult = await client.query(
-			`
-		SELECT roll_no
-		FROM students
-		WHERE TRIM(class) = TRIM($1)
-		AND TRIM(board) = TRIM($2)
-		`,
-			[ cleanClassName, cleanBoard ]
-		);
-
-		for (const student of studentsResult.rows) {
-			await client.query(
-				`
-			INSERT INTO student_notifications
-			(roll_no, module_name, message)
-			VALUES ($1, $2, $3)
-			`,
-				[ student.roll_no, 'test-schedule', 'New test has been scheduled' ]
-			);
-		}
 		res.json({
 			message: 'Test posted successfully',
 			test: insertResult.rows[0],
@@ -2099,46 +2093,51 @@ app.put('/faculty/:faculty_id', async (req, res) => {
 app.delete('/faculty/:faculty_id', async (req, res) => {
 	const { faculty_id } = req.params;
 
+	const client = await pool.connect();
+
 	try {
-		const existingFaculty = await pool.query(
+		await client.query('BEGIN');
+
+		const existingFaculty = await client.query(
 			`SELECT * FROM faculty WHERE faculty_id = $1`,
-			[faculty_id]
+			[ faculty_id ]
 		);
 
 		if (existingFaculty.rows.length === 0) {
+			await client.query('ROLLBACK');
 			return res.status(404).json({ error: 'Faculty not found' });
 		}
 
-		const linkedTests = await pool.query(
-			`SELECT test_code FROM tests WHERE created_by = $1 LIMIT 1`,
-			[faculty_id]
+		await client.query(
+			`DELETE FROM faculty_notifications WHERE faculty_id = $1`,
+			[ faculty_id ]
 		);
 
-		if (linkedTests.rows.length > 0) {
-			return res.status(400).json({
-				error: 'Cannot delete this faculty because test records are linked to this faculty ID'
-			});
-		}
-
-		const linkedAttendance = await pool.query(
-			`SELECT roll_no FROM attendance WHERE updated_by = $1 LIMIT 1`,
-			[faculty_id]
+		await client.query(
+			`DELETE FROM faculty_tasks WHERE faculty_id = $1 OR assigned_by = $1`,
+			[ faculty_id ]
 		);
 
-		if (linkedAttendance.rows.length > 0) {
-			return res.status(400).json({
-				error: 'Cannot delete this faculty because attendance records are linked to this faculty ID'
-			});
-		}
+		await client.query(
+			`DELETE FROM faculty WHERE faculty_id = $1`,
+			[ faculty_id ]
+		);
 
-		await pool.query(`DELETE FROM faculty WHERE faculty_id = $1`, [faculty_id]);
+		await client.query('COMMIT');
 
 		res.json({ message: 'Faculty deleted successfully' });
 	} catch (err) {
+		await client.query('ROLLBACK');
 		console.error('DELETE /faculty/:faculty_id error:', err);
-		res.status(500).json({ error: 'Failed to delete faculty' });
+		res.status(500).json({
+			error: 'Failed to delete faculty',
+			details: err.message
+		});
+	} finally {
+		client.release();
 	}
 });
+	
 app.get('/students', async (req, res) => {
   const { class: className, board, subject_id } = req.query;
 
