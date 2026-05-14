@@ -22,6 +22,7 @@ function ManageStudentsPageInner() {
   const [editingRollNo, setEditingRollNo] = useState(null);
   const [phoneError, setPhoneError] = useState("");
   const [showStudentPopup, setShowStudentPopup] = useState(false);
+  const [showExportPopup, setShowExportPopup] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [form, setForm] = useState({
@@ -471,6 +472,208 @@ function ManageStudentsPageInner() {
     await loadInitialData();
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function getExportRows() {
+    return filteredStudents.map((student) => ({
+      roll_no: student.roll_no || "-",
+      name: student.name || "-",
+      class: student.class || "-",
+      board: student.board || "-",
+      mode_of_education: student.mode_of_education || "-",
+      phone: student.phone || "-",
+      email: student.email || "-",
+      school_name: student.school_name || "-",
+      password: student.password || "-",
+      total_fee: student.total_fee ?? 0,
+    }));
+  }
+
+  function exportAsExcel() {
+    const rows = getExportRows();
+
+    if (rows.length === 0) {
+      alert("No students available to export");
+      return;
+    }
+
+    const tableRows = rows
+      .map(
+        (student) => `
+          <tr>
+            <td>${escapeHtml(student.roll_no)}</td>
+            <td>${escapeHtml(student.name)}</td>
+            <td>${escapeHtml(student.class)}</td>
+            <td>${escapeHtml(student.board)}</td>
+            <td>${escapeHtml(student.mode_of_education)}</td>
+            <td>${escapeHtml(student.phone)}</td>
+            <td>${escapeHtml(student.email)}</td>
+            <td>${escapeHtml(student.school_name)}</td>
+            <td>${escapeHtml(student.password)}</td>
+            <td>${escapeHtml(student.total_fee)}</td>
+          </tr>`
+      )
+      .join("");
+
+    const excelContent = `
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body>
+          <table border="1">
+            <thead>
+              <tr>
+                <th>Roll No</th>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Board</th>
+                <th>Mode of Education</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>School</th>
+                <th>Password</th>
+                <th>Total Fee</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>`;
+
+    const blob = new Blob([excelContent], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "student-list.xls";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setShowExportPopup(false);
+  }
+
+  function exportAsPdf() {
+    const rows = getExportRows();
+
+    if (rows.length === 0) {
+      alert("No students available to export");
+      return;
+    }
+
+    const tableRows = rows
+      .map(
+        (student) => `
+          <tr>
+            <td>${escapeHtml(student.roll_no)}</td>
+            <td>${escapeHtml(student.name)}</td>
+            <td>${escapeHtml(student.class)}</td>
+            <td>${escapeHtml(student.board)}</td>
+            <td>${escapeHtml(student.mode_of_education)}</td>
+            <td>${escapeHtml(student.phone)}</td>
+            <td>${escapeHtml(student.email)}</td>
+            <td>${escapeHtml(student.school_name)}</td>
+            <td>${escapeHtml(student.password)}</td>
+            <td>${escapeHtml(student.total_fee)}</td>
+          </tr>`
+      )
+      .join("");
+
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      alert("Please allow popups to export PDF");
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Student List</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 24px;
+              color: #111827;
+            }
+            h1 {
+              color: #1d4ed8;
+              margin-bottom: 4px;
+            }
+            p {
+              margin-top: 0;
+              color: #4b5563;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 18px;
+              font-size: 11px;
+            }
+            th {
+              background: #1d4ed8;
+              color: white;
+              text-align: left;
+              padding: 8px;
+              border: 1px solid #1e40af;
+            }
+            td {
+              padding: 7px;
+              border: 1px solid #d1d5db;
+            }
+            tr:nth-child(even) {
+              background: #f9fafb;
+            }
+            @media print {
+              button {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Student List</h1>
+          <p>Total Students: ${rows.length}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Roll No</th>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Board</th>
+                <th>Mode</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>School</th>
+                <th>Password</th>
+                <th>Total Fee</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+          <script>
+            window.onload = function () {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setShowExportPopup(false);
+  }
+
   if (loading) {
     return (
       <div className="p-4 md:p-8">
@@ -540,6 +743,14 @@ function ManageStudentsPageInner() {
               className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium"
             >
               Clear Filters
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowExportPopup(true)}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium"
+            >
+              Export
             </button>
           </div>
         </div>
@@ -679,6 +890,48 @@ function ManageStudentsPageInner() {
           </button>
         </div>
       </div>
+
+      {showExportPopup && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <h2 className="text-xl font-semibold text-gray-800">
+                Export Student List
+              </h2>
+
+              <button
+                type="button"
+                onClick={() => setShowExportPopup(false)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-gray-600 mb-5">
+              Export currently filtered students. Total: {filteredStudents.length}
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={exportAsPdf}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-lg font-semibold"
+              >
+                Export as PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={exportAsExcel}
+                className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-semibold"
+              >
+                Export as Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showStudentPopup && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
