@@ -1075,13 +1075,24 @@ app.put('/marks/:roll_no/:test_code', async (req, res) => {
 		}
 
 		const totalMarks = Number(markResult.rows[0].total_marks);
-		const obtainedMarks = Number(marks);
 
-		if (obtainedMarks > totalMarks) {
-			return res.status(400).json({
-				error: `Marks cannot be greater than total marks (${totalMarks})`
-			});
-		}
+const cleanMarks = String(marks).trim().toUpperCase();
+
+if (cleanMarks !== 'A') {
+	const obtainedMarks = Number(cleanMarks);
+
+	if (!Number.isInteger(obtainedMarks) || obtainedMarks < 0) {
+		return res.status(400).json({
+			error: 'Invalid marks entered'
+		});
+	}
+
+	if (obtainedMarks > totalMarks) {
+		return res.status(400).json({
+			error: `Marks cannot be greater than total marks (${totalMarks})`
+		});
+	}
+}
 
 		await pool.query(
 			`
@@ -1091,7 +1102,12 @@ app.put('/marks/:roll_no/:test_code', async (req, res) => {
 			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 			AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))
 			`,
-			[ obtainedMarks, comments || null, roll_no, test_code ]
+			[
+	cleanMarks,
+	cleanMarks === 'A' ? 'Absent' : comments || null,
+	roll_no,
+	test_code
+]
 		);
 
 		res.json({ message: 'Marks updated successfully' });
@@ -1764,7 +1780,106 @@ app.delete('/posted-tests/:testCode', async (req, res) => {
 		res.status(500).json({ error: 'Failed to delete test' });
 	}
 });
+app.put('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
 
+	try {
+		const {
+			subject_id,
+			test_date,
+			total_marks,
+			portion,
+			class_name,
+			board,
+			duration_minutes,
+			registration_end_date,
+			writing_allowed_till
+		} = req.body;
+
+		if (
+			!subject_id ||
+			!test_date ||
+			!total_marks ||
+			!class_name ||
+			!board
+		) {
+			return res.status(400).json({
+				error: 'Required fields are missing'
+			});
+		}
+
+		const existingTest = await pool.query(
+			`
+			SELECT test_code
+			FROM tests
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+			`,
+			[testCode]
+		);
+
+		if (existingTest.rows.length === 0) {
+			return res.status(404).json({
+				error: 'Test not found'
+			});
+		}
+
+		if (registration_end_date) {
+			const testDateObj = new Date(test_date);
+			const regEndObj = new Date(registration_end_date);
+
+			testDateObj.setHours(0, 0, 0, 0);
+			regEndObj.setHours(0, 0, 0, 0);
+
+			if (regEndObj >= testDateObj) {
+				return res.status(400).json({
+					error: 'Registration must end BEFORE test date'
+				});
+			}
+		}
+
+		const result = await pool.query(
+			`
+			UPDATE tests
+			SET
+				subject_id = $1,
+				test_date = $2,
+				total_marks = $3,
+				portion = $4,
+				class = $5,
+				board = $6,
+				duration_minutes = $7,
+				registration_end_date = $8,
+				writing_allowed_till = $9
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($10))
+			RETURNING *
+			`,
+			[
+				subject_id,
+				test_date,
+				total_marks,
+				portion || '',
+				String(class_name).trim(),
+				String(board).trim(),
+				duration_minutes || null,
+				registration_end_date || null,
+				writing_allowed_till || null,
+				testCode
+			]
+		);
+
+		res.json({
+			message: 'Test updated successfully',
+			test: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /posted-tests/:testCode error:', err);
+
+		res.status(500).json({
+			error: 'Failed to update test',
+			details: err.message
+		});
+	}
+});
 app.post('/post-test', async (req, res) => {
 	const client = await pool.connect();
 
