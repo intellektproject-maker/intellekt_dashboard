@@ -3,35 +3,63 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+const API_BASE =
+	process.env.NEXT_PUBLIC_API_URL ||
+	process.env.NEXT_PUBLIC_API_BASE ||
+	'https://responsible-wonder-production.up.railway.app';
+
 export default function Login() {
 	const router = useRouter();
 
 	const [ roll, setRoll ] = useState('');
 	const [ password, setPassword ] = useState('');
+	const [ loading, setLoading ] = useState(false);
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 
+		if (loading) return;
+
 		const rollUpper = roll.toUpperCase().trim();
+		const cleanPassword = String(password);
+
+		if (!rollUpper || !cleanPassword) {
+			alert('Enter ID and Password');
+			return;
+		}
 
 		try {
-			const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://responsible-wonder-production.up.railway.app';
-			const resp = await fetch(`${apiBase}/login`, {
+			setLoading(true);
+
+			const resp = await fetch(`${API_BASE}/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ id: rollUpper, password })
+				body: JSON.stringify({
+					id: rollUpper,
+					password: cleanPassword
+				})
 			});
 
-			const data = await resp.json().catch(() => ({}));
+			let data = {};
+
+			try {
+				data = await resp.json();
+			} catch (jsonErr) {
+				console.error('Invalid JSON response:', jsonErr);
+				alert('Server returned invalid response');
+				return;
+			}
 
 			if (!resp.ok) {
 				alert(data.error || 'Login failed');
 				return;
 			}
 
-			// ✅ FIRST LOGIN PASSWORD RESET CHECK
+			// FIRST LOGIN RESET FLOW
 			if (data.mustResetPassword === true) {
-				router.push(`/reset-password?id=${rollUpper}&role=${data.role}&firstLogin=true`);
+				router.push(
+					`/reset-password?id=${rollUpper}&role=${data.role}&firstLogin=true`
+				);
 				return;
 			}
 
@@ -47,6 +75,8 @@ export default function Login() {
 		} catch (err) {
 			console.error('Login error:', err);
 			alert('Failed to reach authentication server');
+		} finally {
+			setLoading(false);
 		}
 	};
 
@@ -63,17 +93,20 @@ export default function Login() {
 				}}
 			/>
 
-			{/* Soft overlay for better readability */}
+			{/* Overlay */}
 			<div className="absolute inset-0 bg-[#72c2bb]/20" />
 
 			{/* Content */}
 			<div className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 md:px-10 py-6">
-				<div className="
+				<div
+					className="
             w-full max-w-[1320px]
             flex justify-center md:justify-end
             items-center
-          ">
-					<div className="
+          "
+				>
+					<div
+						className="
               w-full max-w-[560px]
               rounded-[28px] sm:rounded-[34px] md:rounded-[40px]
               bg-[#f3f3f3]
@@ -82,15 +115,18 @@ export default function Login() {
               shadow-[0_25px_60px_rgba(0,0,0,0.35)]
               border border-white/20
               backdrop-blur-[1px]
-            ">
+            "
+					>
 						<div className="w-full">
-							<h1 className="
+							<h1
+								className="
                   text-[#08245c]
                   font-extrabold
                   leading-[0.95]
                   text-[42px] sm:text-[56px] md:text-[72px]
                   tracking-[-0.03em]
-                ">
+                "
+							>
 								Intellekt
 								<br />
 								Academy
@@ -105,11 +141,11 @@ export default function Login() {
 									<label className="block text-[#08245c] text-sm font-semibold mb-3">
 										Enter the ID *
 									</label>
+
 									<input
 										type="text"
 										value={roll}
-										onChange={(e) => setRoll(e.target.value)}
-										placeholder=""
+										onChange={(e) => setRoll(e.target.value.toUpperCase())}
 										className="
                       w-full h-[48px] sm:h-[52px]
                       rounded-xl
@@ -122,16 +158,19 @@ export default function Login() {
                       focus:border-blue-500
                     "
 										required
+										autoComplete="username"
 									/>
 								</div>
 
 								<div>
-									<label className="block text-[#08245c] text-sm font-semibold mb-3">Password*</label>
+									<label className="block text-[#08245c] text-sm font-semibold mb-3">
+										Password*
+									</label>
+
 									<input
 										type="password"
 										value={password}
 										onChange={(e) => setPassword(e.target.value)}
-										placeholder=""
 										className="
                       w-full h-[48px] sm:h-[52px]
                       rounded-xl
@@ -144,11 +183,13 @@ export default function Login() {
                       focus:border-blue-500
                     "
 										required
+										autoComplete="current-password"
 									/>
 								</div>
 
 								<button
 									type="submit"
+									disabled={loading}
 									className="
                     w-full h-[46px] sm:h-[50px]
                     rounded-[10px]
@@ -160,9 +201,10 @@ export default function Login() {
                     hover:bg-[#0a4fbb]
                     active:scale-[0.99]
                     shadow-md
+                    disabled:bg-gray-400
                   "
 								>
-									Login
+									{loading ? 'Logging in...' : 'Login'}
 								</button>
 							</form>
 						</div>
