@@ -3,7 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "https://responsible-wonder-production.up.railway.app";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "https://responsible-wonder-production.up.railway.app";
 
 function RequestPdfContent() {
   const searchParams = useSearchParams();
@@ -40,6 +43,14 @@ function RequestPdfContent() {
 
         setStudent(data.student || null);
         setTests(Array.isArray(data.tests) ? data.tests : []);
+
+        if (data.student?.phone) {
+          const cleanPhone = String(data.student.phone)
+            .replace(/\D/g, "")
+            .slice(0, 10);
+
+          setPhone(cleanPhone);
+        }
       } catch (err) {
         console.error("Fetch error:", err);
         setError(err.message || "Unable to load data");
@@ -53,6 +64,9 @@ function RequestPdfContent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (submitting) return;
+
     setError("");
     setMessage("");
 
@@ -62,6 +76,7 @@ function RequestPdfContent() {
     }
 
     const cleanPhone = phone.replace(/\D/g, "");
+
     if (!/^\d{10}$/.test(cleanPhone)) {
       setError("Phone number must contain exactly 10 digits");
       return;
@@ -90,7 +105,6 @@ function RequestPdfContent() {
 
       setMessage("Request submitted successfully");
       setSelectedTest("");
-      setPhone("");
     } catch (err) {
       console.error("Submit error:", err);
       setError(err.message || "Something went wrong");
@@ -99,6 +113,14 @@ function RequestPdfContent() {
     }
   };
 
+  if (!roll) {
+    return (
+      <div className="p-6 text-red-600 font-semibold">
+        Roll number missing. Please login again.
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 p-4 md:p-6">
@@ -106,6 +128,7 @@ function RequestPdfContent() {
           <h1 className="text-2xl md:text-3xl font-bold text-blue-800 mb-8">
             Request Answer Sheet PDF
           </h1>
+
           <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
             <p className="text-gray-600">Loading...</p>
           </div>
@@ -126,6 +149,7 @@ function RequestPdfContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
               <div>
                 <p className="text-sm text-gray-500">Student Name</p>
+
                 <p className="text-base font-semibold text-gray-800">
                   {student.name}
                 </p>
@@ -133,6 +157,7 @@ function RequestPdfContent() {
 
               <div>
                 <p className="text-sm text-gray-500">Roll No</p>
+
                 <p className="text-base font-semibold text-gray-800">
                   {student.roll_no}
                 </p>
@@ -140,6 +165,7 @@ function RequestPdfContent() {
 
               <div>
                 <p className="text-sm text-gray-500">Class</p>
+
                 <p className="text-base font-semibold text-gray-800">
                   {student.class}
                 </p>
@@ -147,6 +173,7 @@ function RequestPdfContent() {
 
               <div>
                 <p className="text-sm text-gray-500">Board</p>
+
                 <p className="text-base font-semibold text-gray-800">
                   {student.board}
                 </p>
@@ -159,12 +186,14 @@ function RequestPdfContent() {
               <label className="block text-gray-700 font-medium mb-2">
                 Select Test Code
               </label>
+
               <select
                 value={selectedTest}
                 onChange={(e) => setSelectedTest(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">-- Select Test Code --</option>
+
                 {tests.map((test) => (
                   <option key={test.test_code} value={test.test_code}>
                     {test.test_code}
@@ -183,11 +212,13 @@ function RequestPdfContent() {
               <label className="block text-gray-700 font-medium mb-2">
                 Phone Number to Receive PDF
               </label>
+
               <input
                 type="text"
                 value={phone}
                 onChange={(e) => {
                   const onlyDigits = e.target.value.replace(/\D/g, "");
+
                   if (onlyDigits.length <= 10) {
                     setPhone(onlyDigits);
                   }
