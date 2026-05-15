@@ -8,8 +8,9 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const API_BASE =
+	process.env.NEXT_PUBLIC_API_URL ||
 	process.env.NEXT_PUBLIC_API_BASE ||
-	'https://responsible-wonder-production.up.railway.app';
+	'https://responsible-wonder-production.up.railway.app';	
 
 function AttendancePageInner() {
 	const searchParams = useSearchParams();
@@ -76,7 +77,12 @@ function AttendancePageInner() {
 	const daysInMonth =
 		selYear && selMonth ? new Date(selYear, selMonth, 0).getDate() : 30;
 
-	const total = attendance.length;
+	const sortedAttendance = [...attendance].sort(
+  (a, b) =>
+    new Date(b.attendance_date) - new Date(a.attendance_date)
+);
+
+const total = attendance.length;
 	const notEntered = Math.max(0, daysInMonth - total);
 
 	const subjectMap = {
@@ -135,7 +141,21 @@ function AttendancePageInner() {
 				<input
 					type="month"
 					value={selectedMonth}
-					onChange={(e) => setSelectedMonth(e.target.value)}
+					onChange={(e) => {
+	const value = e.target.value;
+
+	const today = new Date();
+	const currentMonth = `${today.getFullYear()}-${String(
+		today.getMonth() + 1
+	).padStart(2, '0')}`;
+
+	if (value > currentMonth) {
+		alert('Future months are not allowed');
+		return;
+	}
+
+	setSelectedMonth(value);
+}}
 					className="border rounded-lg px-3 py-2"
 				/>
 			</div>
@@ -174,8 +194,8 @@ function AttendancePageInner() {
 
 				<p className="mt-6 text-gray-600">
 					Last Attendance Updated Date:{' '}
-					{attendance.length > 0
-						? formatDate(attendance[0].attendance_date)
+					{sortedAttendance.length > 0
+	? formatDate(sortedAttendance[0].attendance_date)
 						: 'No Data'}
 				</p>
 			</div>
