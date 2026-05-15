@@ -626,7 +626,17 @@ const [classesLoading, setClassesLoading] = useState(false);
               <input
                 type="date"
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+               onChange={(e) => {
+  const value = e.target.value;
+  const today = new Date().toISOString().split("T")[0];
+
+  if (value > today) {
+    alert("Future dates are not allowed");
+    return;
+  }
+
+  setFromDate(value);
+}}
                 className="w-full border rounded-lg px-4 py-3"
               />
             </div>
@@ -644,7 +654,17 @@ const [classesLoading, setClassesLoading] = useState(false);
               <input
                 type="date"
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                onChange={(e) => {
+  const value = e.target.value;
+  const today = new Date().toISOString().split("T")[0];
+
+  if (value > today) {
+    alert("Future dates are not allowed");
+    return;
+  }
+
+  setToDate(value);
+}}
                 className="w-full border rounded-lg px-4 py-3"
               />
             </div>
@@ -690,7 +710,14 @@ const [classesLoading, setClassesLoading] = useState(false);
                 </select>
 
                 <button
-                  onClick={() => setShowExportPopup(true)}
+                 onClick={() => {
+  if (filteredRows.length === 0) {
+    alert("No records to export");
+    return;
+  }
+
+  setShowExportPopup(true);
+}}
                   className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800"
                 >
                   Export
@@ -878,7 +905,10 @@ function AttendanceTable({
                 {row.isEditing ? (
                   <div className="flex gap-2">
                     <button
-                      onClick={() => saveSingleRow(rowKey, type)}
+                      onClick={() => {
+  if (row.isSaving) return;
+  saveSingleRow(rowKey, type);
+}}
                       className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
                     >
                       Save
