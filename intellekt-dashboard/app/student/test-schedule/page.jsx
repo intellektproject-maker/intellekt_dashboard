@@ -3,7 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "https://responsible-wonder-production.up.railway.app";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "https://responsible-wonder-production.up.railway.app";
 
 function TestScheduleContent() {
   const searchParams = useSearchParams();
@@ -115,10 +118,18 @@ function TestScheduleContent() {
 
     const current = new Date(start);
 
-    while (current <= end) {
-      dates.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
+   const today = getTodayOnly();
+
+while (current <= end) {
+  const compareDate = new Date(current);
+  compareDate.setHours(0, 0, 0, 0);
+
+  if (compareDate >= today) {
+    dates.push(new Date(current));
+  }
+
+  current.setDate(current.getDate() + 1);
+}
 
     return dates;
   };
@@ -174,6 +185,15 @@ function TestScheduleContent() {
       else if (status === "registered") alert("You have already registered for this test");
       return;
     }
+const writingDates = buildWritingDates(
+  test.test_date,
+  test.writing_allowed_till
+);
+
+if (writingDates.length === 0) {
+  alert("No valid writing dates available");
+  return;
+}
 
     setSelectedTest(test);
     setSelectedSlot("");
@@ -505,7 +525,10 @@ function TestScheduleContent() {
               </button>
 
               <button
-                onClick={handleRegister}
+                onClick={() => {
+  if (submitting) return;
+  handleRegister();
+}}
                 disabled={submitting}
                 className="px-4 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-60"
               >
