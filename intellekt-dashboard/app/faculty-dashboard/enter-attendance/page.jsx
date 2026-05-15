@@ -251,7 +251,18 @@ function EnterAttendancePageInner() {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+  const value = e.target.value;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  if (value > today) {
+    alert('Future attendance dates are not allowed');
+    return;
+  }
+
+  setSelectedDate(value);
+}}
             className="border rounded-lg px-4 py-3"
           />
 
@@ -374,7 +385,10 @@ function EnterAttendancePageInner() {
               </button>
 
               <button
-                onClick={() => submitAttendance(false)}
+                onClick={() => {
+  if (submitting) return;
+  submitAttendance(false);
+}}
                 disabled={submitting}
                 className="px-5 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-50"
               >
