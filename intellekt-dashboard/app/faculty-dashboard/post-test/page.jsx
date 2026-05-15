@@ -3,7 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const API_BASE = "https://responsible-wonder-production.up.railway.app";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "https://responsible-wonder-production.up.railway.app";
 
 function PostTestInner() {
   const searchParams = useSearchParams();
@@ -23,12 +26,21 @@ function PostTestInner() {
   const [classes, setClasses] = useState([]);
   const [postedTests, setPostedTests] = useState([]);
   const [editingTestCode, setEditingTestCode] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/classes`)
-      .then((res) => res.json())
-      .then((data) => setClasses(data || []))
-      .catch(() => setClasses([]));
+    async function loadClasses() {
+      try {
+        const res = await fetch(`${API_BASE}/classes`, { cache: "no-store" });
+        const data = await res.json();
+        setClasses(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Classes fetch failed:", err);
+        setClasses([]);
+      }
+    }
+
+    loadClasses();
   }, []);
 
   async function loadPostedTests() {
@@ -37,7 +49,8 @@ function PostTestInner() {
       const data = await res.json();
       setPostedTests(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error(err);
+      console.error("Posted tests fetch failed:", err);
+      setPostedTests([]);
     }
   }
 
@@ -47,6 +60,7 @@ function PostTestInner() {
 
   function handleClassChange(e) {
     const val = e.target.value;
+
     if (!val) {
       setClassName("");
       setBoard("");
@@ -54,18 +68,28 @@ function PostTestInner() {
     }
 
     const [cls, brd] = val.split("||");
-    setClassName(cls);
-    setBoard(brd);
+    setClassName(cls || "");
+    setBoard(brd || "");
   }
 
   function formatDate(dateValue) {
     if (!dateValue) return "-";
-    return new Date(dateValue).toLocaleDateString("en-IN");
+
+    const d = new Date(dateValue);
+
+    if (Number.isNaN(d.getTime())) return "-";
+
+    return d.toLocaleDateString("en-IN");
   }
 
   function toInputDate(dateValue) {
     if (!dateValue) return "";
-    return new Date(dateValue).toISOString().split("T")[0];
+
+    const d = new Date(dateValue);
+
+    if (Number.isNaN(d.getTime())) return "";
+
+    return d.toISOString().split("T")[0];
   }
 
   function resetForm() {
@@ -98,10 +122,81 @@ function PostTestInner() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function validateForm() {
+    const today = new Date().toISOString().split("T")[0];
+
+    if (!facultyId) {
+      alert("Faculty ID missing. Please login again.");
+      return false;
+    }
+
+    if (!testCode.trim()) {
+      alert("Enter test code");
+      return false;
+    }
+
+    if (!subject) {
+      alert("Select subject");
+      return false;
+    }
+
+    if (!date) {
+      alert("Select test date");
+      return false;
+    }
+
+    if (date < today) {
+      alert("Past test dates are not allowed");
+      return false;
+    }
+
+    if (!marks || Number(marks) <= 0) {
+      alert("Enter valid total marks");
+      return false;
+    }
+
+    if (!className || !board) {
+      alert("Select class");
+      return false;
+    }
+
+    if (!duration) {
+      alert("Select duration");
+      return false;
+    }
+
+    if (!registrationEndDate) {
+      alert("Select link active till date");
+      return false;
+    }
+
+    if (!writingAllowedTill) {
+      alert("Select test writing allowed till date");
+      return false;
+    }
+
+    if (registrationEndDate >= date) {
+      alert("Link active till date must be before test date");
+      return false;
+    }
+
+    if (writingAllowedTill < date) {
+      alert("Writing allowed till date cannot be before test date");
+      return false;
+    }
+
+    return true;
+  }
+
   async function saveTest() {
+    if (saving) return;
+    if (!validateForm()) return;
+
     try {
+      setSaving(true);
+
       const url = editingTestCode
-        ? `${API_BASE}/posted-tests/${editingTestCode}`
+        ? `${API_BASE}/posted-tests/${encodeURIComponent(editingTestCode)}`
         : `${API_BASE}/post-test`;
 
       const method = editingTestCode ? "PUT" : "POST";
@@ -110,11 +205,11 @@ function PostTestInner() {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          test_code: testCode,
+          test_code: testCode.trim().toUpperCase(),
           subject_id: Number(subject),
           test_date: date,
           total_marks: Number(marks),
-          portion,
+          portion: portion.trim(),
           created_by: facultyId,
           class_name: className,
           board,
@@ -127,24 +222,26 @@ function PostTestInner() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed");
+        alert(data.error || data.details || "Failed to save test");
         return;
       }
 
       alert(editingTestCode ? "Test updated successfully" : "Test posted successfully");
       resetForm();
-      loadPostedTests();
+      await loadPostedTests();
     } catch (err) {
-      console.error(err);
+      console.error("Save test error:", err);
       alert("Something went wrong");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function deleteTest(testCode) {
-    if (!window.confirm(`Delete test ${testCode}?`)) return;
+  async function deleteTest(code) {
+    if (!window.confirm(`Delete test ${code}?`)) return;
 
     try {
-      const res = await fetch(`${API_BASE}/posted-tests/${testCode}`, {
+      const res = await fetch(`${API_BASE}/posted-tests/${encodeURIComponent(code)}`, {
         method: "DELETE",
       });
 
@@ -156,11 +253,12 @@ function PostTestInner() {
       }
 
       alert("Deleted successfully");
-      loadPostedTests();
+      await loadPostedTests();
 
-      if (editingTestCode === testCode) resetForm();
+      if (editingTestCode === code) resetForm();
     } catch (err) {
-      console.error(err);
+      console.error("Delete test error:", err);
+      alert("Delete failed");
     }
   }
 
@@ -175,7 +273,7 @@ function PostTestInner() {
           <input
             placeholder="Test Code (Example: C12P35)"
             value={testCode}
-            onChange={(e) => setTestCode(e.target.value)}
+            onChange={(e) => setTestCode(e.target.value.toUpperCase())}
             className="border rounded-lg px-4 py-3 text-gray-700"
             readOnly={!!editingTestCode}
           />
@@ -201,7 +299,10 @@ function PostTestInner() {
             type="number"
             placeholder="Total Marks"
             value={marks}
-            onChange={(e) => setMarks(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === "" || /^\d+$/.test(value)) setMarks(value);
+            }}
             className="border rounded-lg px-4 py-3 text-gray-700"
           />
 
@@ -219,7 +320,7 @@ function PostTestInner() {
           >
             <option value="">Select Class</option>
             {classes.map((c, i) => (
-              <option key={i} value={`${c.class}||${c.board}`}>
+              <option key={`${c.class}-${c.board}-${i}`} value={`${c.class}||${c.board}`}>
                 {c.class} — {c.board}
               </option>
             ))}
@@ -270,15 +371,21 @@ function PostTestInner() {
         <div className="mt-6 flex gap-3">
           <button
             onClick={saveTest}
-            className="w-full bg-blue-700 text-white py-3 rounded-lg hover:bg-blue-800"
+            disabled={saving}
+            className="w-full bg-blue-700 text-white py-3 rounded-lg hover:bg-blue-800 disabled:bg-gray-400"
           >
-            {editingTestCode ? "Update Test" : "Create Test"}
+            {saving
+              ? "Saving..."
+              : editingTestCode
+              ? "Update Test"
+              : "Create Test"}
           </button>
 
           {editingTestCode && (
             <button
               onClick={resetForm}
-              className="px-6 bg-gray-500 text-white py-3 rounded-lg hover:bg-gray-600"
+              disabled={saving}
+              className="px-6 bg-gray-500 text-white py-3 rounded-lg hover:bg-gray-600 disabled:bg-gray-400"
             >
               Cancel
             </button>
@@ -312,14 +419,16 @@ function PostTestInner() {
                   <td className="p-3 text-blue-700 font-semibold">
                     {t.test_code}
                   </td>
-                  <td className="p-3">{t.subject_name}</td>
+                  <td className="p-3">{t.subject_name || "-"}</td>
                   <td className="p-3">{formatDate(t.test_date)}</td>
-                  <td className="p-3">{t.total_marks}</td>
-                  <td className="p-3">{t.class}</td>
-                  <td className="p-3">{t.board}</td>
-                  <td className="p-3">{t.duration_minutes} mins</td>
-                  <td className="p-3">{t.created_by}</td>
-                  <td className="p-3">{t.portion}</td>
+                  <td className="p-3">{t.total_marks ?? "-"}</td>
+                  <td className="p-3">{t.class || "-"}</td>
+                  <td className="p-3">{t.board || "-"}</td>
+                  <td className="p-3">
+                    {t.duration_minutes ? `${t.duration_minutes} mins` : "-"}
+                  </td>
+                  <td className="p-3">{t.created_by || "-"}</td>
+                  <td className="p-3">{t.portion || "-"}</td>
 
                   <td className="p-3">
                     <div className="flex gap-2">
