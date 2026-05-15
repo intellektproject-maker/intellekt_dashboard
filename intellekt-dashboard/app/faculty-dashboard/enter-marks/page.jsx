@@ -110,7 +110,7 @@ function MarksPageContent() {
       setClassError("");
     }
 
-    if (!totalMarks) {
+    if (!totalMarks || Number(totalMarks) <= 0) {
       setTotalError("Enter total marks");
       hasError = true;
     } else {
@@ -223,6 +223,10 @@ function MarksPageContent() {
 
     const newErrors = {};
     let hasError = false;
+    if (Object.values(errors).some((e) => e)) {
+  alert("Fix validation errors before saving");
+  return;
+}
 
     students.forEach((s) => {
       if (marks[s.roll_no] === "" || marks[s.roll_no] === undefined) {
@@ -344,7 +348,18 @@ function MarksPageContent() {
                   totalError ? "border-red-500" : "border-gray-300"
                 }`}
                 value={manualTotal || totalMarks || ""}
-                onChange={(e) => setManualTotal(e.target.value)}
+                onChange={(e) => {
+  const value = e.target.value;
+
+  if (value === "") {
+    setManualTotal("");
+    return;
+  }
+
+  if (!/^\d+$/.test(value)) return;
+
+  setManualTotal(value);
+}}
               />
 
               {totalError && (
