@@ -11,7 +11,10 @@ import {
   FileText,
 } from "lucide-react";
 
-const API_BASE = "https://responsible-wonder-production.up.railway.app";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "https://responsible-wonder-production.up.railway.app";
 
 function StudentPageContent() {
   const searchParams = useSearchParams();
@@ -95,6 +98,7 @@ function StudentPageContent() {
   }
 
   async function openCard(card) {
+    if (!roll) return;
     try {
       await fetch(`${API_BASE}/student-notifications/read`, {
         method: "PUT",
@@ -135,51 +139,52 @@ function StudentPageContent() {
     return `${Math.round((presentCount / totalCount) * 100)}%`;
   }, [attendance]);
 
-  const subjectWiseAverage = useMemo(() => {
-    if (!marks.length) {
-      return {
-        maths: "0",
-        physics: "0",
-      };
-    }
-
-    const mathsMarks = marks.filter(
-      (item) =>
-        item.subject_name?.toLowerCase() === "maths" ||
-        item.test_code?.toUpperCase().includes("M")
-    );
-
-    const physicsMarks = marks.filter(
-      (item) =>
-        item.subject_name?.toLowerCase() === "physics" ||
-        item.test_code?.toUpperCase().includes("P")
-    );
-
-    const mathsAverage =
-      mathsMarks.length > 0
-        ? (
-            mathsMarks.reduce(
-              (sum, item) => sum + Number(item.marks_obtained || 0),
-              0
-            ) / mathsMarks.length
-          ).toFixed(1)
-        : "0";
-
-    const physicsAverage =
-      physicsMarks.length > 0
-        ? (
-            physicsMarks.reduce(
-              (sum, item) => sum + Number(item.marks_obtained || 0),
-              0
-            ) / physicsMarks.length
-          ).toFixed(1)
-        : "0";
-
+const subjectWiseAverage = useMemo(() => {
+  if (!marks.length) {
     return {
-      maths: mathsAverage,
-      physics: physicsAverage,
+      maths: "0",
+      physics: "0",
     };
-  }, [marks]);
+  }
+
+  const mathsMarks = marks.filter(
+    (item) =>
+      Number(item.subject_id) === 1 ||
+      item.subject_name?.toLowerCase() === "maths"
+  );
+
+  const physicsMarks = marks.filter(
+    (item) =>
+      Number(item.subject_id) === 2 ||
+      item.subject_name?.toLowerCase() === "physics"
+  );
+
+  function calculateAverage(items) {
+    const validMarks = items
+      .map((item) => {
+        const value = String(item.marks_obtained || "").trim().toUpperCase();
+
+        if (value === "A") return null;
+
+        const num = Number(value);
+
+        return Number.isFinite(num) ? num : null;
+      })
+      .filter((v) => v !== null);
+
+    if (validMarks.length === 0) return "0";
+
+    return (
+      validMarks.reduce((sum, value) => sum + value, 0) /
+      validMarks.length
+    ).toFixed(1);
+  }
+
+  return {
+    maths: calculateAverage(mathsMarks),
+    physics: calculateAverage(physicsMarks),
+  };
+}, [marks]);
 
   const upcomingTestsCount = useMemo(() => {
     if (!tests.length) return 0;
@@ -187,11 +192,17 @@ function StudentPageContent() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return tests.filter((test) => {
-      if (!test.test_date) return false;
-      const testDate = new Date(test.test_date);
-      return testDate >= today;
-    }).length;
+  return tests.filter((test) => {
+  if (!test.writing_allowed_till) return false;
+
+  const allowedTill = new Date(test.writing_allowed_till);
+
+  if (Number.isNaN(allowedTill.getTime())) return false;
+
+  allowedTill.setHours(0, 0, 0, 0);
+
+return allowedTill >= today;
+}).length;
   }, [tests]);
 
   const studentName = student?.name || "Student";
