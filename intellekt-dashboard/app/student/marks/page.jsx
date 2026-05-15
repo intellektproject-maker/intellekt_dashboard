@@ -3,6 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  "https://responsible-wonder-production.up.railway.app";
+
 function MarksPageContent() {
   const searchParams = useSearchParams();
   const roll = searchParams.get("roll");
@@ -14,11 +19,15 @@ function MarksPageContent() {
 
     async function fetchMarks() {
       try {
-        const res = await fetch(`https://responsible-wonder-production.up.railway.app/marks/${roll}`);
+        const res = await fetch(`${API_BASE}/marks/${roll}`, {
+          cache: "no-store",
+        });
+
         const data = await res.json();
-        setMarks(data);
+        setMarks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
+        setMarks([]);
       }
     }
 
@@ -31,15 +40,20 @@ function MarksPageContent() {
 
   const mathsMarks = marks.filter(
     (m) =>
-      (m.subject && String(m.subject).toUpperCase() === "MATHS") ||
-      (m.test_code && String(m.test_code).toUpperCase().includes("M"))
+      Number(m.subject_id) === 1 ||
+      String(m.subject_name || "").toUpperCase() === "MATHS"
   );
 
   const physicsMarks = marks.filter(
     (m) =>
-      (m.subject && String(m.subject).toUpperCase() === "PHYSICS") ||
-      (m.test_code && String(m.test_code).toUpperCase().includes("P"))
+      Number(m.subject_id) === 2 ||
+      String(m.subject_name || "").toUpperCase() === "PHYSICS"
   );
+
+  const renderMark = (mark) => {
+    if (String(mark).toUpperCase() === "A") return "Absent";
+    return mark ?? "-";
+  };
 
   const renderTable = (title, data) => (
     <div className="mb-8">
@@ -53,9 +67,8 @@ function MarksPageContent() {
             <thead className="bg-gray-200">
               <tr>
                 <th className="p-2 border whitespace-nowrap">Test Code</th>
-                <th className="p-2 border whitespace-nowrap">
-                  Marks Obtained
-                </th>
+                <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
+                <th className="p-2 border whitespace-nowrap">Total Marks</th>
                 <th className="p-2 border whitespace-nowrap">Comments</th>
               </tr>
             </thead>
@@ -63,20 +76,25 @@ function MarksPageContent() {
             <tbody>
               {data.length > 0 ? (
                 data.map((m, index) => (
-                  <tr key={index}>
+                  <tr key={`${m.test_code}-${index}`}>
                     <td className="p-2 border whitespace-nowrap">
-                      {m.test_code}
+                      {m.test_code || "-"}
                     </td>
                     <td className="p-2 border whitespace-nowrap">
-                      {m.marks_obtained}
+                      {renderMark(m.marks_obtained)}
                     </td>
-                    <td className="p-2 border break-words">{m.comments}</td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.total_marks ?? "-"}
+                    </td>
+                    <td className="p-2 border break-words">
+                      {m.comments || "-"}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan="3"
+                    colSpan="4"
                     className="p-4 border text-center text-gray-500"
                   >
                     No records found
