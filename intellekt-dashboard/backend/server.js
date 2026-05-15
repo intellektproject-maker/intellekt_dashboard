@@ -309,50 +309,41 @@ app.get('/test-schedule/:roll', async (req, res) => {
 	const { roll } = req.params;
 
 	try {
-		const studentRes = await pool.query(
+		const result = await pool.query(
 			`
-				SELECT 
-					TRIM(class) AS class,
-					TRIM(board) AS board
-				FROM students
-				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-				`,
-			[ roll ]
+			SELECT 
+				t.test_code,
+				t.subject_id,
+				COALESCE(sub.subject_name, 'Unknown') AS subject_name,
+				t.test_date,
+				t.total_marks,
+				t.portion,
+				t.duration_minutes,
+				t.registration_end_date,
+				t.writing_allowed_till,
+				t.test_slot_link,
+				r.slot_start,
+				r.slot_end,
+				r.writing_date
+			FROM students s
+			JOIN student_subjects ss
+				ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+			JOIN tests t
+				ON TRIM(t.class) = TRIM(s.class)
+				AND UPPER(TRIM(t.board)) = UPPER(TRIM(s.board))
+				AND t.subject_id = ss.subject_id
+			LEFT JOIN subjects sub
+				ON sub.subject_id = t.subject_id
+			LEFT JOIN test_registrations r
+				ON UPPER(TRIM(r.test_code)) = UPPER(TRIM(t.test_code))
+				AND UPPER(TRIM(r.roll_no)) = UPPER(TRIM(s.roll_no))
+			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+			ORDER BY t.test_date ASC, t.test_code ASC
+			`,
+			[roll]
 		);
 
-		if (studentRes.rows.length === 0) {
-			return res.status(404).json({ error: 'Student not found' });
-		}
-
-		const { class: className, board } = studentRes.rows[0];
-
-		const testsRes = await pool.query(
-			`
-		SELECT 
-			t.test_code,
-			t.subject_id,
-			t.test_date,
-			t.total_marks,
-			t.portion,
-			t.duration_minutes,
-			t.registration_end_date,
-			t.writing_allowed_till,
-			t.test_slot_link,
-			r.slot_start,
-			r.slot_end,
-			r.writing_date
-		FROM tests t
-		LEFT JOIN test_registrations r
-			ON r.test_code = t.test_code
-			AND r.roll_no = $1
-		WHERE t.class = $2
-			AND t.board = $3
-		ORDER BY t.test_date ASC
-		`,
-			[ roll, className, board ]
-		);
-
-		const formatted = testsRes.rows.map((row) => ({
+		const formatted = result.rows.map((row) => ({
 			test_code: row.test_code,
 			subject_id: row.subject_id,
 			subject_name: row.subject_name,
@@ -411,11 +402,31 @@ app.get('/test-slots/:testCode/:rollNo', async (req, res) => {
 
 		const student = studentResult.rows[0];
 
-		if (student.class !== test.class || student.board !== test.board) {
-			return res.status(403).json({
-				error: "This test does not belong to the student's class/board"
-			});
-		}
+		if (
+	String(student.class).trim() !== String(test.class).trim() ||
+	String(student.board).trim().toUpperCase() !== String(test.board).trim().toUpperCase()
+) {
+	return res.status(403).json({
+		error: "This test does not belong to the student's class/board"
+	});
+}
+
+const subjectCheck = await pool.query(
+	`
+	SELECT 1
+	FROM student_subjects
+	WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+	AND subject_id = $2
+	LIMIT 1
+	`,
+	[rollNo, test.subject_id]
+);
+
+if (subjectCheck.rows.length === 0) {
+	return res.status(403).json({
+		error: 'This student is not enrolled for this test subject'
+	});
+}
 
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
@@ -555,12 +566,33 @@ app.post('/register-test-slot', async (req, res) => {
 
 		const student = studentResult.rows[0];
 
-		if (student.class !== test.class || student.board !== test.board) {
-			await client.query('ROLLBACK');
-			return res.status(403).json({
-				error: "This test does not belong to the student's class/board"
-			});
-		}
+		if (
+	String(student.class).trim() !== String(test.class).trim() ||
+	String(student.board).trim().toUpperCase() !== String(test.board).trim().toUpperCase()
+) {
+	await client.query('ROLLBACK');
+	return res.status(403).json({
+		error: "This test does not belong to the student's class/board"
+	});
+}
+
+const subjectCheck = await client.query(
+	`
+	SELECT 1
+	FROM student_subjects
+	WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+	AND subject_id = $2
+	LIMIT 1
+	`,
+	[roll_no, test.subject_id]
+);
+
+if (subjectCheck.rows.length === 0) {
+	await client.query('ROLLBACK');
+	return res.status(403).json({
+		error: 'This student is not enrolled for this test subject'
+	});
+}
 
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
@@ -869,11 +901,11 @@ app.post('/marks', async (req, res) => {
 
 			const testResult = await pool.query(
 				`
-					SELECT test_code, total_marks
-					FROM tests
-					WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
-					`,
-				[ record.test_code ]
+				SELECT test_code, subject_id, total_marks
+				FROM tests
+				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+				`,
+				[record.test_code]
 			);
 
 			if (testResult.rows.length === 0) {
@@ -882,54 +914,69 @@ app.post('/marks', async (req, res) => {
 				});
 			}
 
+			const test = testResult.rows[0];
+
 			const studentResult = await pool.query(
 				`
-					SELECT roll_no, name
-					FROM students
-					WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-					`,
-				[ record.roll_no ]
+				SELECT s.roll_no, s.name
+				FROM students s
+				JOIN student_subjects ss
+					ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+				WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+				AND ss.subject_id = $2
+				`,
+				[record.roll_no, test.subject_id]
 			);
 
 			if (studentResult.rows.length === 0) {
 				return res.status(400).json({
-					error: `Invalid student: ${record.roll_no}`
+					error: `${record.roll_no} is not eligible for this test subject`
 				});
 			}
 
-			const totalMarks = Number(testResult.rows[0].total_marks);
-			const obtainedMarks = Number(record.marks);
+			const cleanMarks = String(record.marks).trim().toUpperCase();
+			const totalMarks = Number(test.total_marks);
 
-			if (obtainedMarks > totalMarks) {
-				return res.status(400).json({
-					error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
-				});
+			if (cleanMarks !== 'A') {
+				const obtainedMarks = Number(cleanMarks);
+
+				if (!Number.isInteger(obtainedMarks) || obtainedMarks < 0) {
+					return res.status(400).json({
+						error: `Invalid marks for ${record.roll_no}`
+					});
+				}
+
+				if (obtainedMarks > totalMarks) {
+					return res.status(400).json({
+						error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
+					});
+				}
 			}
 
 			await pool.query(
 				`
-					INSERT INTO marks (
-						roll_no,
-						student_name,
-						test_code,
-						marks_obtained,
-						comments,
-						total_marks
-					)
-					VALUES ($1, $2, $3, $4, $5, $6)
-					ON CONFLICT (roll_no, test_code)
-					DO UPDATE SET
-						student_name = EXCLUDED.student_name,
-						marks_obtained = EXCLUDED.marks_obtained,
-						comments = EXCLUDED.comments,
-						total_marks = EXCLUDED.total_marks
-					`,
+				INSERT INTO marks (
+					roll_no,
+					student_name,
+					test_code,
+					marks_obtained,
+					comments,
+					total_marks
+				)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (roll_no, test_code)
+				DO UPDATE SET
+					student_name = EXCLUDED.student_name,
+					marks_obtained = EXCLUDED.marks_obtained,
+					comments = EXCLUDED.comments,
+					total_marks = EXCLUDED.total_marks
+				`,
 				[
 					studentResult.rows[0].roll_no,
 					studentResult.rows[0].name,
-					String(record.test_code).toUpperCase().trim(),
-					obtainedMarks,
-					record.comments || null,
+					String(test.test_code).toUpperCase().trim(),
+					cleanMarks,
+					cleanMarks === 'A' ? 'Absent' : record.comments || null,
 					totalMarks
 				]
 			);
@@ -1443,15 +1490,33 @@ app.post('/attendance', async (req, res) => {
 		const existingStudents = [];
 
 		for (const record of records) {
+			const enrolledCheck = await client.query(
+				`
+				SELECT 1
+				FROM student_subjects
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+				AND subject_id = $2
+				LIMIT 1
+				`,
+				[record.roll_no, subject]
+			);
+
+			if (enrolledCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `${record.roll_no} is not enrolled for selected subject`
+				});
+			}
+
 			const exists = await client.query(
 				`
-					SELECT 1
-					FROM attendance
-					WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-					AND subject_id = $2
-					AND attendance_date = $3
-					`,
-				[ record.roll_no, subject, selectedDate ]
+				SELECT 1
+				FROM attendance
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+				AND subject_id = $2
+				AND attendance_date = $3
+				`,
+				[record.roll_no, subject, selectedDate]
 			);
 
 			if (exists.rows.length > 0) {
@@ -1461,41 +1526,31 @@ app.post('/attendance', async (req, res) => {
 				if (overwrite) {
 					await client.query(
 						`
-							UPDATE attendance
-							SET status = $1,
-								updated_by = $2,
-								attendance_time = CURRENT_TIME,
-								marked_at = COALESCE(marked_at, CURRENT_TIMESTAMP),
-								edited_by = $2,
-								edited_at = CURRENT_TIMESTAMP
-							WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
-							AND subject_id = $4
-							AND attendance_date = $5
-							`,
-						[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+						UPDATE attendance
+						SET status = $1,
+							updated_by = $2,
+							attendance_time = CURRENT_TIME,
+							marked_at = COALESCE(marked_at, CURRENT_TIMESTAMP),
+							edited_by = $2,
+							edited_at = CURRENT_TIMESTAMP
+						WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+						AND subject_id = $4
+						AND attendance_date = $5
+						`,
+						[record.status, facultyId, record.roll_no, subject, selectedDate]
 					);
 				}
 			} else {
 				await client.query(
 					`
-						INSERT INTO attendance
-							(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, marked_at)
-						VALUES ($1, $2, $3, CURRENT_TIME, $4, $5, CURRENT_TIMESTAMP)
-						`,
-					[ record.roll_no, subject, selectedDate, record.status, facultyId ]
+					INSERT INTO attendance
+						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, marked_at)
+					VALUES ($1, $2, $3, CURRENT_TIME, $4, $5, CURRENT_TIMESTAMP)
+					`,
+					[record.roll_no, subject, selectedDate, record.status, facultyId]
 				);
 			}
 		}
-		for (const record of records) {
-	await client.query(
-		`
-		INSERT INTO student_notifications
-		(roll_no, module_name, message)
-		VALUES ($1, $2, $3)
-		`,
-		[record.roll_no, 'attendance', 'Attendance updated']
-	);
-}
 
 		if (duplicateFound && !overwrite) {
 			await client.query('ROLLBACK');
@@ -1505,6 +1560,17 @@ app.post('/attendance', async (req, res) => {
 				duplicateFound: true,
 				existingStudents
 			});
+		}
+
+		for (const record of records) {
+			await client.query(
+				`
+				INSERT INTO student_notifications
+				(roll_no, module_name, message)
+				VALUES ($1, $2, $3)
+				`,
+				[record.roll_no, 'attendance', 'Attendance updated']
+			);
 		}
 
 		await client.query('COMMIT');
@@ -1523,7 +1589,6 @@ app.post('/attendance', async (req, res) => {
 		client.release();
 	}
 });
-
 app.put('/attendance', async (req, res) => {
 	const { records, subject, facultyId } = req.body;
 	const selectedDate = req.body.date || req.body.attendanceDate;
@@ -1544,18 +1609,37 @@ app.put('/attendance', async (req, res) => {
 		await client.query('BEGIN');
 
 		for (const record of records) {
+			const enrolledCheck = await client.query(
+				`
+				SELECT 1
+				FROM student_subjects
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+				AND subject_id = $2
+				LIMIT 1
+				`,
+				[record.roll_no, subject]
+			);
+
+			if (enrolledCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+
+				return res.status(400).json({
+					error: `${record.roll_no} is not enrolled for selected subject`
+				});
+			}
+
 			const result = await client.query(
 				`
-					UPDATE attendance
-					SET status = $1,
-						edited_by = $2,
-						edited_at = CURRENT_TIMESTAMP
-					WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
-					AND subject_id = $4
-					AND attendance_date = $5
-					RETURNING *
-					`,
-				[ record.status, facultyId, record.roll_no, subject, selectedDate ]
+				UPDATE attendance
+				SET status = $1,
+					edited_by = $2,
+					edited_at = CURRENT_TIMESTAMP
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+				AND subject_id = $4
+				AND attendance_date = $5
+				RETURNING *
+				`,
+				[record.status, facultyId, record.roll_no, subject, selectedDate]
 			);
 
 			if (result.rows.length === 0) {
@@ -1566,14 +1650,15 @@ app.put('/attendance', async (req, res) => {
 				});
 			}
 		}
+
 		for (const record of records) {
 			await client.query(
 				`
-			INSERT INTO student_notifications
-			(roll_no, module_name, message)
-			VALUES ($1, $2, $3)
-			`,
-				[ record.roll_no, 'attendance', 'Attendance updated' ]
+				INSERT INTO student_notifications
+				(roll_no, module_name, message)
+				VALUES ($1, $2, $3)
+				`,
+				[record.roll_no, 'attendance', 'Attendance updated']
 			);
 		}
 
@@ -1798,14 +1883,17 @@ app.post('/post-test', async (req, res) => {
 			]
 		);
 		const studentsForNotification = await client.query(
-			`
-		SELECT roll_no
-		FROM students
-		WHERE TRIM(class) = TRIM($1)
-		AND TRIM(board) = TRIM($2)
-		`,
-			[ cleanClassName, cleanBoard ]
-		);
+	`
+	SELECT DISTINCT s.roll_no
+	FROM students s
+	JOIN student_subjects ss
+		ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+	WHERE TRIM(s.class) = TRIM($1)
+	AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+	AND ss.subject_id = $3
+	`,
+	[cleanClassName, cleanBoard, Number(subject_id)]
+);
 
 		for (const student of studentsForNotification.rows) {
 			await client.query(
@@ -2218,33 +2306,50 @@ app.get('/enter-marks-students', async (req, res) => {
 	try {
 		const testResult = await pool.query(
 			`
-				SELECT subject_id
-				FROM tests
-				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
-				`,
-			[ testCode ]
+			SELECT subject_id, TRIM(class) AS class, TRIM(board) AS board
+			FROM tests
+			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
+			`,
+			[testCode]
 		);
 
 		if (testResult.rows.length === 0) {
 			return res.status(404).json({ error: 'Test not found' });
 		}
 
-		const subjectId = testResult.rows[0].subject_id;
+		const test = testResult.rows[0];
+
+		if (
+			String(test.class).trim() !== String(className).trim() ||
+			String(test.board).trim().toUpperCase() !== String(board).trim().toUpperCase()
+		) {
+			return res.status(400).json({
+				error: 'Selected test does not match selected class/board'
+			});
+		}
 
 		const result = await pool.query(
 			`
-				SELECT DISTINCT
-					s.roll_no,
-					s.name
-				FROM students s
-				JOIN student_subjects ss
+			SELECT DISTINCT
+				s.roll_no,
+				s.name,
+				m.marks_obtained,
+				m.comments,
+				COALESCE(m.total_marks, t.total_marks) AS total_marks
+			FROM students s
+			JOIN student_subjects ss
 				ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
-				WHERE TRIM(s.class) = TRIM($1)
-				AND TRIM(s.board) = TRIM($2)
-				AND ss.subject_id = $3
-				ORDER BY s.roll_no ASC
-				`,
-			[ className, board, subjectId ]
+			JOIN tests t
+				ON UPPER(TRIM(t.test_code)) = UPPER(TRIM($3))
+			LEFT JOIN marks m
+				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
+				AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			WHERE TRIM(s.class) = TRIM($1)
+			AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+			AND ss.subject_id = t.subject_id
+			ORDER BY s.roll_no ASC
+			`,
+			[className, board, testCode]
 		);
 
 		res.json(result.rows);
@@ -2257,11 +2362,11 @@ app.get('/enter-marks-students', async (req, res) => {
 	}
 });
 
-/*
-	Smart route:
-	- /students/IA001 gives one student's full details
-	- /students/CBSE-11 gives student list for class
-	*/
+
+/* =========================================================
+	STUDENT FETCH ROUTES
+========================================================= */
+
 app.get('/students/:value', async (req, res) => {
 	const { value } = req.params;
 	const upperValue = String(value).toUpperCase();
