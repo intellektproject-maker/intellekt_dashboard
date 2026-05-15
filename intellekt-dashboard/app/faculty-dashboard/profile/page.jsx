@@ -1,8 +1,12 @@
 'use client';
+
 import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-const API_BASE = 'https://responsible-wonder-production.up.railway.app';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  'https://responsible-wonder-production.up.railway.app';
 
 function FacultyProfileInner() {
   const searchParams = useSearchParams();
@@ -43,7 +47,7 @@ function FacultyProfileInner() {
     other_tasks: '',
     due_date: '',
     priority: 'Medium',
-    task_type: 'Weekly'
+    task_type: 'Weekly',
   });
 
   async function safeFetchJson(url, options = {}) {
@@ -51,6 +55,7 @@ function FacultyProfileInner() {
     const text = await res.text();
 
     let data;
+
     try {
       data = text ? JSON.parse(text) : {};
     } catch (err) {
@@ -82,6 +87,8 @@ function FacultyProfileInner() {
 
   async function markFacultyNotificationRead(moduleName) {
     try {
+      if (!facultyId) return;
+
       await fetch(
         `${API_BASE}/faculty-notifications/mark-read/${facultyId}/${moduleName}`,
         { method: 'PUT' }
@@ -165,7 +172,7 @@ function FacultyProfileInner() {
         setForm((prev) => ({
           ...prev,
           faculty_id: data.faculty_id || '',
-          faculty_name: data.name || ''
+          faculty_name: data.name || '',
         }));
       } catch (err) {
         console.error(err);
@@ -204,6 +211,7 @@ function FacultyProfileInner() {
         setFacultyList(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
+        setFacultyList([]);
       }
     }
 
@@ -219,7 +227,10 @@ function FacultyProfileInner() {
           ? data.map((item) => {
               const board = item.board || '';
               const className = item.class || item.class_name || '';
-              return `${board}${className}`.replace(/\s+/g, '');
+
+              if (!board || !className) return null;
+
+              return `${board}-${className}`;
             })
           : [];
 
@@ -253,9 +264,11 @@ function FacultyProfileInner() {
     async function fetchMyTasks() {
       try {
         setTaskLoading(true);
+
         const data = await safeFetchJson(
           `${API_BASE}/faculty-tasks/${facultyId}`
         );
+
         setTasks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
@@ -276,9 +289,11 @@ function FacultyProfileInner() {
 
       try {
         setAllTaskLoading(true);
+
         const data = await safeFetchJson(
           `${API_BASE}/faculty-tasks-all?loginFacultyId=${loginFacultyId}`
         );
+
         setAllTasks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
@@ -297,9 +312,11 @@ function FacultyProfileInner() {
 
       try {
         setDailyTaskLoading(true);
+
         const data = await safeFetchJson(
           `${API_BASE}/faculty-daily-tasks-all?loginFacultyId=${loginFacultyId}`
         );
+
         setDailyTasks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
@@ -314,6 +331,8 @@ function FacultyProfileInner() {
 
   async function refreshMyTasks() {
     try {
+      if (!facultyId) return;
+
       const data = await safeFetchJson(`${API_BASE}/faculty-tasks/${facultyId}`);
       setTasks(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -329,6 +348,7 @@ function FacultyProfileInner() {
       const data = await safeFetchJson(
         `${API_BASE}/faculty-tasks-all?loginFacultyId=${loginFacultyId}`
       );
+
       setAllTasks(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
@@ -343,6 +363,7 @@ function FacultyProfileInner() {
       const data = await safeFetchJson(
         `${API_BASE}/faculty-daily-tasks-all?loginFacultyId=${loginFacultyId}`
       );
+
       setDailyTasks(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
@@ -359,7 +380,7 @@ function FacultyProfileInner() {
     setForm((prev) => ({
       ...prev,
       faculty_id: selectedId,
-      faculty_name: selectedFaculty ? selectedFaculty.name : ''
+      faculty_name: selectedFaculty ? selectedFaculty.name : '',
     }));
   }
 
@@ -374,12 +395,14 @@ function FacultyProfileInner() {
         : {}),
       ...(name === 'task_type' && value === 'Weekly'
         ? { priority: 'Medium' }
-        : {})
+        : {}),
     }));
   }
 
   async function handleAssignTask(e) {
     e.preventDefault();
+
+    if (taskLoading) return;
 
     if (!form.faculty_id || !form.faculty_name || !form.class_name) {
       alert('Please fill Faculty Name and Class');
@@ -396,11 +419,22 @@ function FacultyProfileInner() {
       return;
     }
 
+    if (form.task_type === 'Weekly') {
+      const today = new Date().toISOString().split('T')[0];
+
+      if (form.due_date < today) {
+        alert('Past due dates are not allowed');
+        return;
+      }
+    }
+
     try {
+      setTaskLoading(true);
+
       const data = await safeFetchJson(`${API_BASE}/faculty-tasks`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           loginFacultyId,
@@ -412,8 +446,8 @@ function FacultyProfileInner() {
           other_tasks: form.other_tasks,
           due_date: form.task_type === 'Daily' ? null : form.due_date,
           priority: form.task_type === 'Daily' ? 'High' : form.priority,
-          task_type: form.task_type
-        })
+          task_type: form.task_type,
+        }),
       });
 
       alert(data.message || 'Task assigned successfully');
@@ -426,7 +460,7 @@ function FacultyProfileInner() {
         other_tasks: '',
         due_date: '',
         priority: 'Medium',
-        task_type: 'Weekly'
+        task_type: 'Weekly',
       }));
 
       await refreshMyTasks();
@@ -435,6 +469,8 @@ function FacultyProfileInner() {
     } catch (err) {
       console.error(err);
       alert(err.message || 'Failed to assign task');
+    } finally {
+      setTaskLoading(false);
     }
   }
 
@@ -443,11 +479,11 @@ function FacultyProfileInner() {
       await safeFetchJson(`${API_BASE}/faculty-tasks/${taskId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          is_completed: !currentStatus
-        })
+          is_completed: !currentStatus,
+        }),
       });
 
       await refreshMyTasks();
@@ -461,13 +497,14 @@ function FacultyProfileInner() {
 
   async function handleDeleteTask(taskId) {
     const ok = confirm('Are you sure you want to delete this task?');
+
     if (!ok) return;
 
     try {
       await safeFetchJson(
         `${API_BASE}/faculty-tasks/${taskId}?loginFacultyId=${loginFacultyId}`,
         {
-          method: 'DELETE'
+          method: 'DELETE',
         }
       );
 
@@ -483,12 +520,14 @@ function FacultyProfileInner() {
   }
 
   async function handleReassignTask(task) {
-    const newFacultyId = prompt('Enter new Faculty ID (e.g. IG002):');
+    const newFacultyId = prompt('Enter new Faculty ID (e.g. IG002):')
+      ?.trim()
+      .toUpperCase();
 
     if (!newFacultyId) return;
 
     const selectedFaculty = facultyList.find(
-      (f) => f.faculty_id === newFacultyId
+      (f) => String(f.faculty_id).toUpperCase() === newFacultyId
     );
 
     if (!selectedFaculty) {
@@ -496,16 +535,21 @@ function FacultyProfileInner() {
       return;
     }
 
+    if (newFacultyId === String(task.faculty_id).toUpperCase()) {
+      alert('Task already assigned to this faculty');
+      return;
+    }
+
     try {
       await safeFetchJson(`${API_BASE}/faculty-tasks/${task.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           faculty_id: newFacultyId,
-          faculty_name: selectedFaculty.name
-        })
+          faculty_name: selectedFaculty.name,
+        }),
       });
 
       alert('Task reassigned successfully');
@@ -524,7 +568,7 @@ function FacultyProfileInner() {
       pending: tasks.filter((task) => !task.is_completed).length,
       completed: tasks.filter((task) => task.is_completed).length,
       overdue: tasks.filter((task) => isOverdue(task)).length,
-      dueToday: tasks.filter((task) => isDueToday(task)).length
+      dueToday: tasks.filter((task) => isDueToday(task)).length,
     };
   }, [tasks]);
 
@@ -533,7 +577,7 @@ function FacultyProfileInner() {
       pending: allTasks.filter((task) => !task.is_completed).length,
       completed: allTasks.filter((task) => task.is_completed).length,
       overdue: allTasks.filter((task) => isOverdue(task)).length,
-      dueToday: allTasks.filter((task) => isDueToday(task)).length
+      dueToday: allTasks.filter((task) => isDueToday(task)).length,
     };
   }, [allTasks]);
 
@@ -542,7 +586,7 @@ function FacultyProfileInner() {
       pending: dailyTasks.filter((task) => !task.is_completed).length,
       completed: dailyTasks.filter((task) => task.is_completed).length,
       overdue: dailyTasks.filter((task) => isOverdue(task)).length,
-      dueToday: dailyTasks.filter((task) => isDueToday(task)).length
+      dueToday: dailyTasks.filter((task) => isDueToday(task)).length,
     };
   }, [dailyTasks]);
 
@@ -639,12 +683,15 @@ function FacultyProfileInner() {
           <p className="text-gray-700 text-base md:text-lg">
             <b>Faculty ID:</b> {faculty.faculty_id}
           </p>
+
           <p className="text-gray-700 text-base md:text-lg">
             <b>Name:</b> {faculty.name}
           </p>
+
           <p className="text-gray-700 text-base md:text-lg">
             <b>Email:</b> {faculty.email}
           </p>
+
           <p className="text-gray-700 text-base md:text-lg">
             <b>Phone:</b> {faculty.phone}
           </p>
@@ -663,6 +710,7 @@ function FacultyProfileInner() {
                   setActiveSection(
                     activeSection === 'allTasks' ? '' : 'allTasks'
                   );
+
                   await markFacultyNotificationRead('all-tasks');
                 }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
@@ -694,6 +742,7 @@ function FacultyProfileInner() {
                   setActiveSection(
                     activeSection === 'dailyTasks' ? '' : 'dailyTasks'
                   );
+
                   await markFacultyNotificationRead('daily-tasks');
                 }}
                 className={`rounded-2xl border p-7 text-left shadow-md transition ${
@@ -735,6 +784,7 @@ function FacultyProfileInner() {
                 <h4 className="mb-3 text-xl font-bold text-blue-700">
                   Task Assignment
                 </h4>
+
                 <p className="text-gray-600 text-base">
                   Assign weekly or daily tasks.
                 </p>
@@ -787,12 +837,14 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   1. Faculty Name
                 </label>
+
                 <select
                   value={form.faculty_id}
                   onChange={handleFacultyChange}
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                 >
                   <option value="">Select Faculty</option>
+
                   {facultyList.map((f) => (
                     <option key={f.faculty_id} value={f.faculty_id}>
                       {f.name} ({f.faculty_id})
@@ -805,6 +857,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   2. Class
                 </label>
+
                 <select
                   name="class_name"
                   value={form.class_name}
@@ -812,6 +865,7 @@ function FacultyProfileInner() {
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                 >
                   <option value="">Select Class</option>
+
                   {classOptions.map((cls) => (
                     <option key={cls} value={cls}>
                       {cls}
@@ -824,6 +878,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   3. Task Type
                 </label>
+
                 <select
                   name="task_type"
                   value={form.task_type}
@@ -842,6 +897,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   4. Test Code
                 </label>
+
                 <select
                   name="subject_name"
                   value={form.subject_name}
@@ -849,6 +905,7 @@ function FacultyProfileInner() {
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                 >
                   <option value="">Select Test Code</option>
+
                   {testCodes.map((test) => (
                     <option key={test.test_code} value={test.test_code}>
                       {test.test_code}
@@ -861,6 +918,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   5. Total Test Note
                 </label>
+
                 <input
                   type="text"
                   name="total_test_note"
@@ -876,11 +934,21 @@ function FacultyProfileInner() {
                   <label className="mb-2 block font-medium text-gray-700">
                     Due Date
                   </label>
+
                   <input
                     type="date"
                     name="due_date"
                     value={form.due_date}
-                    onChange={handleInputChange}
+                    onChange={(e) => {
+                      const today = new Date().toISOString().split('T')[0];
+
+                      if (e.target.value < today) {
+                        alert('Past due dates are not allowed');
+                        return;
+                      }
+
+                      handleInputChange(e);
+                    }}
                     className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                   />
                 </div>
@@ -890,6 +958,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   Priority
                 </label>
+
                 <select
                   name="priority"
                   value={form.priority}
@@ -909,6 +978,7 @@ function FacultyProfileInner() {
                 <label className="mb-2 block font-medium text-gray-700">
                   Other Tasks
                 </label>
+
                 <textarea
                   name="other_tasks"
                   value={form.other_tasks}
@@ -921,9 +991,10 @@ function FacultyProfileInner() {
 
               <button
                 type="submit"
-                className="rounded-lg bg-blue-700 px-6 py-3 text-white transition hover:bg-blue-800"
+                disabled={taskLoading}
+                className="rounded-lg bg-blue-700 px-6 py-3 text-white transition hover:bg-blue-800 disabled:bg-gray-400"
               >
-                Assign Task
+                {taskLoading ? 'Assigning...' : 'Assign Task'}
               </button>
             </form>
           </div>
@@ -973,6 +1044,7 @@ function FacultyProfileInner() {
               <label className="mb-2 block font-medium text-gray-700">
                 Filter All Faculty Tasks
               </label>
+
               <select
                 value={allTaskFilter}
                 onChange={(e) => setAllTaskFilter(e.target.value)}
@@ -997,9 +1069,7 @@ function FacultyProfileInner() {
                 {filteredAllTasks.map((task) => (
                   <div key={task.id} className={getTaskCardClass(task)}>
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        {renderTaskDetails(task, true)}
-                      </div>
+                      <div className="flex-1">{renderTaskDetails(task, true)}</div>
 
                       <div className="flex gap-3">
                         <button
@@ -1037,6 +1107,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-blue-700">
                   Daily Pending
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-blue-900">
                   {dailyStats.pending}
                 </p>
@@ -1046,6 +1117,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-green-700">
                   Daily Completed
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-green-900">
                   {dailyStats.completed}
                 </p>
@@ -1055,6 +1127,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-red-700">
                   Daily Overdue
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-red-900">
                   {dailyStats.overdue}
                 </p>
@@ -1064,6 +1137,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-yellow-700">
                   Daily Due Today
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-yellow-900">
                   {dailyStats.dueToday}
                 </p>
@@ -1074,6 +1148,7 @@ function FacultyProfileInner() {
               <label className="mb-2 block font-medium text-gray-700">
                 Filter Daily Tasks
               </label>
+
               <select
                 value={dailyTaskFilter}
                 onChange={(e) => setDailyTaskFilter(e.target.value)}
@@ -1101,9 +1176,7 @@ function FacultyProfileInner() {
                     className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        {renderTaskDetails(task, true)}
-                      </div>
+                      <div className="flex-1">{renderTaskDetails(task, true)}</div>
 
                       <div className="flex gap-3">
                         <button
@@ -1141,6 +1214,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-blue-700">
                   My Pending Tasks
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-blue-900">
                   {myStats.pending}
                 </p>
@@ -1150,6 +1224,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-green-700">
                   My Completed Tasks
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-green-900">
                   {myStats.completed}
                 </p>
@@ -1159,6 +1234,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-red-700">
                   My Overdue Tasks
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-red-900">
                   {myStats.overdue}
                 </p>
@@ -1168,6 +1244,7 @@ function FacultyProfileInner() {
                 <p className="text-sm font-medium text-yellow-700">
                   My Due Today
                 </p>
+
                 <p className="mt-2 text-3xl font-bold text-yellow-900">
                   {myStats.dueToday}
                 </p>
@@ -1178,6 +1255,7 @@ function FacultyProfileInner() {
               <label className="mb-2 block font-medium text-gray-700">
                 Filter My Tasks
               </label>
+
               <select
                 value={myTaskFilter}
                 onChange={(e) => setMyTaskFilter(e.target.value)}
