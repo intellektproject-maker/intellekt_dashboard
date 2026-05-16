@@ -238,11 +238,11 @@ export default function StudentRecordPage() {
             ).toFixed(2)
           : "0.00";
 
-      doc.setFillColor(7, 48, 120);
-      doc.rect(0, 0, pageW, 28, "F");
+     doc.setFillColor(255, 255, 255);
+doc.rect(0, 0, pageW, 28, "F");
 
-      doc.setTextColor(0, 3, 81); // #000351
-doc.setFont("times", "bold"); // closest built-in style to Roboto
+doc.setTextColor(0, 3, 81); // #000351
+doc.setFont("times", "bold");
 doc.setFontSize(24);
 
 doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
@@ -398,8 +398,7 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
       doc.setTextColor(0, 0, 0);
       doc.text("Signature", 174, 267, { align: "center" });
       doc.text("INTELLEKT ACADEMY", 174, 272, { align: "center" });
-doc.setFillColor(255, 255, 255);
-doc.rect(0, 0, pageW, 28, "F");
+
       doc.save(`${student.roll_no}_report.pdf`);
     } catch (err) {
       console.error("Failed to download report", err);
