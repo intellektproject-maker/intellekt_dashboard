@@ -1094,20 +1094,20 @@ if (cleanMarks !== 'A') {
 	}
 }
 
-		await pool.query(
+await pool.query(
 			`
 			UPDATE marks
 			SET marks_obtained = $1,
-				comments = COALESCE($2, comments)
+				comments = $2
 			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 			AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))
 			`,
 			[
-	cleanMarks,
-	cleanMarks === 'A' ? 'Absent' : comments || null,
-	roll_no,
-	test_code
-]
+				cleanMarks,
+				cleanMarks === 'A' ? 'Absent' : (comments ?? null),
+				roll_no,
+				test_code
+			]
 		);
 
 		res.json({ message: 'Marks updated successfully' });
