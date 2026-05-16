@@ -1119,7 +1119,6 @@ const newComment = (() => {
 			]
 		);
 
-
 		res.json({ message: 'Marks updated successfully' });
 	} catch (err) {
 		console.error('PUT /marks/:roll_no/:test_code error:', err);
