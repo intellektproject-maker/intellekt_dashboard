@@ -981,17 +981,22 @@ app.post('/marks', async (req, res) => {
 				]
 			);
 		}
-		await pool.query(
-  `
-  INSERT INTO student_notifications
-  (roll_no, module_name, message, is_read)
-  VALUES ($1, $2, $3, FALSE)
-  `,
-  [
-    studentResult.rows[0].roll_no,
-    'marks',
-    'New marks have been uploaded'
-  ]
+	await pool.query(
+	`
+	DELETE FROM student_notifications
+	WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+	  AND module_name = 'marks'
+	`,
+	[studentResult.rows[0].roll_no]
+);
+
+await pool.query(
+	`
+	INSERT INTO student_notifications
+	(roll_no, module_name, message, is_read)
+	VALUES ($1, 'marks', 'New marks have been uploaded', FALSE)
+	`,
+	[studentResult.rows[0].roll_no]
 );
 
 		res.json({ message: 'Marks saved successfully' });
