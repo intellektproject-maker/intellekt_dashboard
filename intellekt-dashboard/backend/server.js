@@ -3890,86 +3890,74 @@ app.delete('/answer-sheet-requests/:id', async (req, res) => {
 /* =========================================================
 	REGISTERED STUDENTS REPORT
 	========================================================= */
-app.get('/registered-students', async (req, res) => {
+
+	app.get('/registered-students', async (req, res) => {
 	const { className, board, date } = req.query;
 
 	try {
+		await pool.query(`
+			DELETE FROM test_registrations
+			WHERE test_date < CURRENT_DATE
+		`);
+
 		let query = `
-		SELECT
-			tr.id,
-			tr.roll_no,
-			tr.student_name,
-			tr.class,
-			tr.board,
-			tr.test_code,
-			tr.test_date,
-			TO_CHAR(tr.writing_date, 'DD-MM-YYYY') AS writing_date,
-			tr.slot_start,
-			tr.slot_end,
-			tr.duration_minutes,
-			s.subject_name,
-			TO_CHAR(tr.slot_start, 'HH24:MI') || ' - ' || TO_CHAR(tr.slot_end, 'HH24:MI') AS slot_raw
-		FROM test_registrations tr
-		LEFT JOIN subjects s
-			ON tr.subject_id = s.subject_id
-		WHERE 1=1
+			SELECT
+				tr.id,
+				tr.roll_no,
+				tr.student_name,
+				TRIM(tr.class) AS class,
+				TRIM(tr.board) AS board,
+				tr.test_code,
+				TO_CHAR(tr.test_date, 'YYYY-MM-DD') AS test_date,
+				TO_CHAR(tr.writing_date, 'YYYY-MM-DD') AS writing_date,
+				tr.slot_start,
+				tr.slot_end,
+				tr.duration_minutes,
+				COALESCE(s.subject_name, 'Unknown') AS subject_name
+			FROM test_registrations tr
+			LEFT JOIN subjects s
+				ON tr.subject_id = s.subject_id
+			WHERE 1=1
 		`;
 
 		const values = [];
 		let index = 1;
 
 		if (className) {
-			query += ` AND tr.class = $${index}`;
+			query += ` AND TRIM(tr.class) = TRIM($${index})`;
 			values.push(className);
 			index++;
 		}
 
 		if (board) {
-			query += ` AND tr.board = $${index}`;
+			query += ` AND UPPER(TRIM(tr.board)) = UPPER(TRIM($${index}))`;
 			values.push(board);
 			index++;
 		}
 
 		if (date) {
-			query += ` AND tr.writing_date = $${index}`;
+			query += ` AND tr.test_date = $${index}`;
 			values.push(date);
 			index++;
 		}
 
 		query += `
-		ORDER BY
-			tr.writing_date ASC NULLS LAST,
-			tr.test_date ASC,
-			tr.class ASC,
-			tr.roll_no ASC
+			ORDER BY
+				tr.test_date ASC,
+				tr.writing_date ASC NULLS LAST,
+				tr.class ASC,
+				tr.roll_no ASC
 		`;
 
 		const result = await pool.query(query, values);
 
-		const rows = result.rows.map((row) => {
-			let slotLabel = row.slot_raw || '';
-
-			if (row.slot_raw && row.slot_raw !== ' - ') {
-				const [ startRaw, endRaw ] = row.slot_raw.split(' - ');
-
-				if (startRaw && endRaw) {
-					const startMinutes = timeStringToMinutes(startRaw);
-					const endMinutes = timeStringToMinutes(endRaw);
-
-					slotLabel = `${formatTimeFromMinutes(startMinutes)} - ${formatTimeFromMinutes(endMinutes)}`;
-				}
-			}
-
-			return {
-				...row,
-				slot_label: slotLabel
-			};
-		});
-
-		res.json(rows);
+		res.json(result.rows);
 	} catch (err) {
 		console.error('GET /registered-students error:', err);
-		res.status(500).json({ error: 'Failed to fetch registered students' });
+		res.status(500).json({
+			error: 'Failed to fetch registered students',
+			details: err.message
+		});
 	}
 });
 app.put('/posted-tests/:testCode', async (req, res) => {

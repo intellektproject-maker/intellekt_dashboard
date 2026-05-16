@@ -21,6 +21,7 @@ function RegisteredStudentsInner() {
   const [selectedDate, setSelectedDate] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [showExportOptions, setShowExportOptions] = useState(false);
 
   useEffect(() => {
     async function loadClasses() {
@@ -30,7 +31,6 @@ function RegisteredStudentsInner() {
         });
 
         const data = await res.json();
-
         setClasses(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
@@ -59,7 +59,6 @@ function RegisteredStudentsInner() {
       );
 
       const data = await res.json();
-
       setStudents(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
@@ -73,35 +72,63 @@ function RegisteredStudentsInner() {
     fetchRegisteredStudents();
   }, [selectedClass, selectedBoard, selectedDate]);
 
+  function normalizeDate(dateValue) {
+    if (!dateValue) return "";
+
+    const value = String(dateValue).trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return value;
+    }
+
+    if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
+      const [dd, mm, yyyy] = value.split("-");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    const d = new Date(value);
+
+    if (Number.isNaN(d.getTime())) return "";
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function formatDate(dateValue) {
+    const value = normalizeDate(dateValue);
+
+    if (!value) return "-";
+
+    const [yyyy, mm, dd] = value.split("-");
+    return `${Number(dd)}/${Number(mm)}/${yyyy}`;
+  }
+
+  function formatTime(timeValue) {
+    if (!timeValue) return "-";
+
+    return String(timeValue).slice(0, 5);
+  }
+
   useEffect(() => {
     let data = [...students];
 
     if (selectedClass) {
       data = data.filter(
-        (s) =>
-          String(s.class || "").trim() ===
-          String(selectedClass).trim()
+        (s) => String(s.class || "").trim() === String(selectedClass).trim()
       );
     }
 
     if (selectedBoard) {
       data = data.filter(
-        (s) =>
-          String(s.board || "").trim() ===
-          String(selectedBoard).trim()
+        (s) => String(s.board || "").trim() === String(selectedBoard).trim()
       );
     }
 
     if (selectedDate) {
-      data = data.filter((s) => {
-        if (!s.test_date) return false;
-
-        const dbDate = new Date(s.test_date)
-          .toISOString()
-          .split("T")[0];
-
-        return dbDate === selectedDate;
-      });
+      data = data.filter((s) => normalizeDate(s.test_date) === selectedDate);
     }
 
     setFilteredStudents(data);
@@ -111,9 +138,7 @@ function RegisteredStudentsInner() {
     const groups = {};
 
     filteredStudents.forEach((student) => {
-      const key = student.test_date
-        ? new Date(student.test_date).toISOString().split("T")[0]
-        : "Unknown";
+      const key = normalizeDate(student.test_date) || "Unknown";
 
       if (!groups[key]) groups[key] = [];
 
@@ -123,72 +148,6 @@ function RegisteredStudentsInner() {
     return groups;
   }, [filteredStudents]);
 
-  function formatDate(dateValue) {
-    if (!dateValue) return "-";
-
-    const d = new Date(dateValue);
-
-    if (Number.isNaN(d.getTime())) return "-";
-
-    return d.toLocaleDateString("en-IN");
-  }
-
-  function exportCSV() {
-    if (filteredStudents.length === 0) {
-      alert("No records to export");
-      return;
-    }
-
-    const headers = [
-      "Roll No",
-      "Student Name",
-      "Class",
-      "Board",
-      "Test Code",
-      "Subject",
-      "Test Date",
-      "Writing Date",
-      "Slot Start",
-      "Slot End",
-      "Duration",
-    ];
-
-    const rows = filteredStudents.map((s) => [
-      s.roll_no || "",
-      s.student_name || "",
-      s.class || "",
-      s.board || "",
-      s.test_code || "",
-      s.subject_name || "",
-      formatDate(s.test_date),
-      formatDate(s.writing_date),
-      s.slot_start || "",
-      s.slot_end || "",
-      s.duration_minutes || "",
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-      )
-      .join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "registered_students.csv";
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
   const uniqueBoards = useMemo(() => {
     return [...new Set(classes.map((c) => c.board).filter(Boolean))];
   }, [classes]);
@@ -196,6 +155,233 @@ function RegisteredStudentsInner() {
   const uniqueClasses = useMemo(() => {
     return [...new Set(classes.map((c) => c.class).filter(Boolean))];
   }, [classes]);
+
+  function getExportRows() {
+    return filteredStudents.map((s) => ({
+      roll_no: s.roll_no || "",
+      student_name: s.student_name || "",
+      class: s.class || "",
+      board: s.board || "",
+      test_code: s.test_code || "",
+      subject_name: s.subject_name || "",
+      test_date: formatDate(s.test_date),
+      writing_date: formatDate(s.writing_date),
+      slot_start: formatTime(s.slot_start),
+      slot_end: formatTime(s.slot_end),
+      duration_minutes: s.duration_minutes ? `${s.duration_minutes} mins` : "",
+    }));
+  }
+
+  function exportExcel() {
+    if (filteredStudents.length === 0) {
+      alert("No records to export");
+      return;
+    }
+
+    const rows = getExportRows();
+
+    const html = `
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body>
+          <table border="1">
+            <thead>
+              <tr>
+                <th>Roll No</th>
+                <th>Student Name</th>
+                <th>Class</th>
+                <th>Board</th>
+                <th>Test Code</th>
+                <th>Subject</th>
+                <th>Test Date</th>
+                <th>Writing Date</th>
+                <th>Slot Start</th>
+                <th>Slot End</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (r) => `
+                    <tr>
+                      <td>${r.roll_no}</td>
+                      <td>${r.student_name}</td>
+                      <td>${r.class}</td>
+                      <td>${r.board}</td>
+                      <td>${r.test_code}</td>
+                      <td>${r.subject_name}</td>
+                      <td>${r.test_date}</td>
+                      <td>${r.writing_date}</td>
+                      <td>${r.slot_start}</td>
+                      <td>${r.slot_end}</td>
+                      <td>${r.duration_minutes}</td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([html], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "registered_students.xls";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+    setShowExportOptions(false);
+  }
+
+  function exportPDF() {
+    if (filteredStudents.length === 0) {
+      alert("No records to export");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+
+    if (!printWindow) {
+      alert("Please allow popups to export PDF");
+      return;
+    }
+
+    const groupedHtml = Object.entries(groupedByDate)
+      .map(([date, students]) => {
+        return `
+          <h2>Test Date: ${formatDate(date)}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Roll No</th>
+                <th>Student Name</th>
+                <th>Class</th>
+                <th>Board</th>
+                <th>Test Code</th>
+                <th>Subject</th>
+                <th>Writing Date</th>
+                <th>Slot Start</th>
+                <th>Slot End</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students
+                .map(
+                  (s) => `
+                    <tr>
+                      <td>${s.roll_no || "-"}</td>
+                      <td>${s.student_name || "-"}</td>
+                      <td>${s.class || "-"}</td>
+                      <td>${s.board || "-"}</td>
+                      <td>${s.test_code || "-"}</td>
+                      <td>${s.subject_name || "-"}</td>
+                      <td>${formatDate(s.writing_date)}</td>
+                      <td>${formatTime(s.slot_start)}</td>
+                      <td>${formatTime(s.slot_end)}</td>
+                      <td>${
+                        s.duration_minutes ? `${s.duration_minutes} mins` : "-"
+                      }</td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        `;
+      })
+      .join("");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Registered Students</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 24px;
+              color: #111827;
+            }
+
+            h1 {
+              color: #1e40af;
+              text-align: center;
+              margin-bottom: 8px;
+            }
+
+            .subtitle {
+              text-align: center;
+              margin-bottom: 28px;
+              color: #4b5563;
+            }
+
+            h2 {
+              color: #1d4ed8;
+              margin-top: 28px;
+              margin-bottom: 12px;
+              font-size: 18px;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 24px;
+              font-size: 12px;
+            }
+
+            th {
+              background: #1d4ed8;
+              color: white;
+              padding: 8px;
+              border: 1px solid #1d4ed8;
+              text-align: left;
+            }
+
+            td {
+              padding: 8px;
+              border: 1px solid #d1d5db;
+            }
+
+            tr:nth-child(even) {
+              background: #f9fafb;
+            }
+
+            @media print {
+              button {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Intellekt Academy</h1>
+          <div class="subtitle">Registered Students Report</div>
+          ${groupedHtml}
+          <script>
+            window.onload = function () {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setShowExportOptions(false);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 md:p-10">
@@ -236,29 +422,36 @@ function RegisteredStudentsInner() {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => {
-              const value = e.target.value;
-
-              const today = new Date()
-                .toISOString()
-                .split("T")[0];
-
-              if (value > today) {
-                alert("Future dates are not allowed");
-                return;
-              }
-
-              setSelectedDate(value);
-            }}
+            onChange={(e) => setSelectedDate(e.target.value)}
             className="border rounded-lg px-4 py-3 text-gray-700"
           />
 
-          <button
-            onClick={exportCSV}
-            className="bg-blue-700 text-white rounded-lg px-4 py-3 hover:bg-blue-800 transition"
-          >
-            Export CSV
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportOptions((prev) => !prev)}
+              className="w-full bg-blue-700 text-white rounded-lg px-4 py-3 hover:bg-blue-800 transition"
+            >
+              Export
+            </button>
+
+            {showExportOptions && (
+              <div className="absolute right-0 mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={exportPDF}
+                  className="w-full text-left px-4 py-3 text-gray-700 hover:bg-gray-100"
+                >
+                  Export as PDF
+                </button>
+
+                <button
+                  onClick={exportExcel}
+                  className="w-full text-left px-4 py-3 text-gray-700 hover:bg-gray-100"
+                >
+                  Export as Excel
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -310,15 +503,11 @@ function RegisteredStudentsInner() {
                         {s.test_code || "-"}
                       </td>
                       <td className="p-3">{s.subject_name || "-"}</td>
+                      <td className="p-3">{formatDate(s.writing_date)}</td>
+                      <td className="p-3">{formatTime(s.slot_start)}</td>
+                      <td className="p-3">{formatTime(s.slot_end)}</td>
                       <td className="p-3">
-                        {formatDate(s.writing_date)}
-                      </td>
-                      <td className="p-3">{s.slot_start || "-"}</td>
-                      <td className="p-3">{s.slot_end || "-"}</td>
-                      <td className="p-3">
-                        {s.duration_minutes
-                          ? `${s.duration_minutes} mins`
-                          : "-"}
+                        {s.duration_minutes ? `${s.duration_minutes} mins` : "-"}
                       </td>
                     </tr>
                   ))}
