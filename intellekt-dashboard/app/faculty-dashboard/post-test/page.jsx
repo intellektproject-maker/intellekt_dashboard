@@ -92,6 +92,16 @@ function PostTestInner() {
     return d.toISOString().split("T")[0];
   }
 
+    function extractMarksFromTestCode(code) {
+    if (!code) return "";
+
+    const upperCode = code.toUpperCase();
+
+    const match = upperCode.match(/[MP](\d+)/);
+
+    return match ? match[1] : "";
+  }
+
   function resetForm() {
     setTestCode("");
     setSubject("");
@@ -271,12 +281,22 @@ function PostTestInner() {
       <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <input
-            placeholder="Test Code (Example: C12P35)"
-            value={testCode}
-            onChange={(e) => setTestCode(e.target.value.toUpperCase())}
-            className="border rounded-lg px-4 py-3 text-gray-700"
-            readOnly={!!editingTestCode}
-          />
+  placeholder="Test Code (Example: S12M50C12)"
+  value={testCode}
+  onChange={(e) => {
+    const value = e.target.value.toUpperCase();
+
+    setTestCode(value);
+
+    const extractedMarks = extractMarksFromTestCode(value);
+
+    if (extractedMarks) {
+      setMarks(extractedMarks);
+    }
+  }}
+  className="border rounded-lg px-4 py-3 text-gray-700"
+  readOnly={!!editingTestCode}
+/>
 
           <select
             value={subject}
