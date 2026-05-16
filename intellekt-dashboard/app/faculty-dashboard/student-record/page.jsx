@@ -142,7 +142,7 @@ export default function StudentRecordPage() {
 
   function drawAttendanceBarChart(doc, x, y, present, absent) {
     const maxVal = Math.max(present, absent, 1);
-    const barMaxHeight = 32;
+    const barMaxHeight = 26;
 
     const presentH = (present / maxVal) * barMaxHeight;
     const absentH = (absent / maxVal) * barMaxHeight;
@@ -368,14 +368,18 @@ export default function StudentRecordPage() {
       doc.setTextColor(12, 61, 145);
       doc.text("Attendance Trend", 150, 187, { align: "center" });
 
-   drawAttendanceBarChart(doc, 128, 192, presentDays, absentDays);
+ drawAttendanceBarChart(doc, 128, 195, presentDays, absentDays);
 
 doc.setFont("helvetica", "bold");
 doc.setFontSize(6);
 doc.setTextColor(0, 0, 0);
 
-doc.text(`Total Working Days : ${totalDays}`, 128, 246);
-doc.text(`Attendance % : ${attendancePercent}%`, 128, 251);
+doc.text(`Total Working Days : ${totalDays}`, 150, 235, {
+  align: "center",
+});
+doc.text(`Attendance % : ${attendancePercent}%`, 150, 240, {
+  align: "center",
+});
 
       drawCard(doc, 10, 248, 190, 28, "REMARKS");
 
