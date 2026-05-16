@@ -18,6 +18,7 @@ function ManageStudentsPageInner() {
 
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("");
+const [boardFilter, setBoardFilter] = useState("");
 
   const [editingRollNo, setEditingRollNo] = useState(null);
   const [phoneError, setPhoneError] = useState("");
@@ -47,7 +48,7 @@ function ManageStudentsPageInner() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, classFilter]);
+}, [search, classFilter, boardFilter]);
 
   async function loadInitialData() {
     try {
@@ -266,6 +267,10 @@ function ManageStudentsPageInner() {
     const vals = [...new Set(students.map((s) => s.class).filter(Boolean))];
     return vals.sort();
   }, [students]);
+  const boardOptions = useMemo(() => {
+  const vals = [...new Set(students.map((s) => s.board).filter(Boolean))];
+  return vals.sort();
+}, [students]);
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -280,11 +285,12 @@ function ManageStudentsPageInner() {
         student.school_name?.toLowerCase().includes(q) ||
         student.password?.toLowerCase().includes(q);
 
-      const classMatch = !classFilter || student.class === classFilter;
+    const classMatch = !classFilter || student.class === classFilter;
+const boardMatch = !boardFilter || student.board === boardFilter;
 
-      return searchMatch && classMatch;
+return searchMatch && classMatch && boardMatch;
     });
-  }, [students, search, classFilter]);
+ }, [students, search, classFilter, boardFilter]);
 
   const totalPages =
     Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
@@ -702,7 +708,7 @@ function ManageStudentsPageInner() {
         <div className="flex flex-col gap-4">
           <h2 className="text-xl font-semibold text-gray-800">Student List</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input
               type="text"
               placeholder="Search by roll no, name, phone, email, school"
@@ -723,6 +729,19 @@ function ManageStudentsPageInner() {
                 </option>
               ))}
             </select>
+            <select
+  value={boardFilter}
+  onChange={(e) => setBoardFilter(e.target.value)}
+  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+>
+  <option value="">All Boards</option>
+
+  {boardOptions.map((board) => (
+    <option key={board} value={board}>
+      {board}
+    </option>
+  ))}
+</select>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -737,8 +756,9 @@ function ManageStudentsPageInner() {
             <button
               type="button"
               onClick={() => {
-                setSearch("");
-                setClassFilter("");
+              setSearch("");
+setClassFilter("");
+setBoardFilter("");
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium"
             >
