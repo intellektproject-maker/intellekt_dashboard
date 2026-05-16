@@ -53,13 +53,43 @@ export default function StudentRecordPage() {
     }
   }
 
+  function getSubjectName(mark) {
+    const subject = String(mark.subject_name || "").toLowerCase();
+    const code = String(mark.test_code || "").toUpperCase();
+
+    if (subject.includes("math") || code.includes("M")) return "Maths";
+    if (subject.includes("physics") || code.includes("P")) return "Physics";
+
+    return mark.subject_name || "-";
+  }
+
+  function getPercent(mark) {
+    const obtained = Number(mark.marks_obtained);
+    const total = Number(mark.total_marks);
+
+    if (!Number.isFinite(obtained) || !Number.isFinite(total) || total <= 0) {
+      return 0;
+    }
+
+    return (obtained / total) * 100;
+  }
+
+  function calculateSubjectAverage(marks, subjectName) {
+    const filtered = marks.filter((m) => getSubjectName(m) === subjectName);
+
+    if (filtered.length === 0) return "0.00";
+
+    const total = filtered.reduce((sum, m) => sum + getPercent(m), 0);
+    return (total / filtered.length).toFixed(2);
+  }
+
   function drawCard(doc, x, y, w, h, title) {
     doc.setDrawColor(28, 77, 150);
     doc.setLineWidth(0.3);
     doc.roundedRect(x, y, w, h, 2, 2);
 
     doc.setFillColor(12, 61, 145);
-    doc.roundedRect(x, y, 48, 7, 2, 2, "F");
+    doc.roundedRect(x, y, 58, 7, 2, 2, "F");
 
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
@@ -67,7 +97,7 @@ export default function StudentRecordPage() {
     doc.text(title, x + 3, y + 5);
 
     doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "normal");
+    doc.setFont("helvetica", "bold");
   }
 
   function drawPieChart(doc, centerX, centerY, radius, present, absent) {
@@ -106,12 +136,13 @@ export default function StudentRecordPage() {
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(6);
-    doc.setFont("helvetica", "normal");
+    doc.setFont("helvetica", "bold");
     doc.text("Attendance", centerX, centerY + 5, { align: "center" });
   }
 
-  function drawMarksGraph(doc, x, y, w, h, marks) {
+  function drawSubjectMarksGraph(doc, x, y, w, h, marks) {
     if (!marks || marks.length === 0) {
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.setTextColor(0, 0, 0);
       doc.text("No marks available", x + w / 2, y + 20, {
@@ -131,47 +162,78 @@ export default function StudentRecordPage() {
       doc.line(x, gy, x + w, gy);
     }
 
-    doc.setDrawColor(60, 120, 190);
-    doc.setLineWidth(0.6);
+    const mathsPoints = [];
+    const physicsPoints = [];
 
-    const points = graphMarks.map((m, index) => {
-      const percent =
-        m.total_marks && Number(m.total_marks) > 0
-          ? (Number(m.marks_obtained) / Number(m.total_marks)) * 100
-          : 0;
-
+    graphMarks.forEach((m, index) => {
       const px =
         graphMarks.length === 1
           ? x + w / 2
           : x + (w / (graphMarks.length - 1)) * index;
 
+      const percent = getPercent(m);
       const py = y + h - (percent / maxY) * h;
+      const subject = getSubjectName(m);
 
-      return { x: px, y: py, percent, code: m.test_code };
-    });
+      const point = {
+        x: px,
+        y: py,
+        percent,
+        code: m.test_code,
+      };
 
-    points.forEach((p, i) => {
-      if (i > 0) {
-        doc.line(points[i - 1].x, points[i - 1].y, p.x, p.y);
-      }
-    });
+      if (subject === "Maths") mathsPoints.push(point);
+      if (subject === "Physics") physicsPoints.push(point);
 
-    points.forEach((p) => {
-      doc.setFillColor(12, 61, 145);
-      doc.circle(p.x, p.y, 1.5, "F");
-
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(5);
       doc.setTextColor(0, 0, 0);
-      doc.text(`${p.percent.toFixed(0)}%`, p.x, p.y - 3, {
+      doc.text(String(m.test_code || "-"), px, y + h + 6, {
         align: "center",
       });
-
-      doc.text(String(p.code || "-"), p.x, y + h + 6, { align: "center" });
     });
 
-    doc.setFontSize(6);
+    function drawLine(points, color) {
+      if (points.length === 0) return;
+
+      doc.setDrawColor(...color);
+      doc.setLineWidth(0.7);
+
+      points.forEach((p, i) => {
+        if (i > 0) {
+          doc.line(points[i - 1].x, points[i - 1].y, p.x, p.y);
+        }
+      });
+
+      points.forEach((p) => {
+        doc.setFillColor(...color);
+        doc.circle(p.x, p.y, 1.6, "F");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`${p.percent.toFixed(0)}%`, p.x, p.y - 3, {
+          align: "center",
+        });
+      });
+    }
+
+    drawLine(mathsPoints, [12, 61, 145]);
+    drawLine(physicsPoints, [231, 76, 60]);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5);
     doc.setTextColor(0, 0, 0);
-    doc.text("Test Code", x + w / 2, y + h + 13, { align: "center" });
+
+    doc.setFillColor(12, 61, 145);
+    doc.circle(x + 8, y + h + 14, 1.3, "F");
+    doc.text("Maths", x + 12, y + h + 15);
+
+    doc.setFillColor(231, 76, 60);
+    doc.circle(x + 32, y + h + 14, 1.3, "F");
+    doc.text("Physics", x + 36, y + h + 15);
+
+    doc.text("Test Code", x + w / 2, y + h + 22, { align: "center" });
 
     doc.saveGraphicsState();
     doc.text("Marks %", x - 8, y + h / 2, { angle: 90 });
@@ -185,6 +247,7 @@ export default function StudentRecordPage() {
     const presentH = (present / maxVal) * barMaxHeight;
     const absentH = (absent / maxVal) * barMaxHeight;
 
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(6);
     doc.setTextColor(0, 0, 0);
 
@@ -214,6 +277,8 @@ export default function StudentRecordPage() {
       const doc = new jsPDF("p", "mm", "a4");
       const pageW = doc.internal.pageSize.getWidth();
 
+      doc.setFont("helvetica", "bold");
+
       const today = new Date().toLocaleDateString("en-GB", {
         day: "2-digit",
         month: "short",
@@ -224,36 +289,35 @@ export default function StudentRecordPage() {
       const presentDays = Number(data.attendance?.present_days || 0);
       const absentDays = Number(data.attendance?.absent_days || 0);
       const totalDays = presentDays + absentDays;
+
       const attendancePercent =
         totalDays > 0 ? ((presentDays / totalDays) * 100).toFixed(2) : "0.00";
 
       const avgMark =
         marks.length > 0
           ? (
-              marks.reduce((sum, m) => {
-                const total = Number(m.total_marks || 0);
-                const obtained = Number(m.marks_obtained || 0);
-                return sum + (total > 0 ? (obtained / total) * 100 : 0);
-              }, 0) / marks.length
+              marks.reduce((sum, m) => sum + getPercent(m), 0) / marks.length
             ).toFixed(2)
           : "0.00";
 
-     doc.setFillColor(255, 255, 255);
-doc.rect(0, 0, pageW, 28, "F");
+      const mathsAvg = calculateSubjectAverage(marks, "Maths");
+      const physicsAvg = calculateSubjectAverage(marks, "Physics");
 
-doc.setTextColor(0, 3, 81); // #000351
-doc.setFont("times", "bold");
-doc.setFontSize(24);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, pageW, 28, "F");
 
-doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
-  align: "center",
-});
+      doc.setTextColor(0, 3, 81);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(24);
+      doc.text("Intellekt Academy", pageW / 2, 16, {
+        align: "center",
+      });
 
       doc.setFontSize(9);
-      doc.text("STUDENT REPORT", pageW / 2, 23, { align: "center" });
+      doc.text("STUDENT REPORT", pageW / 2, 24, { align: "center" });
 
       doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(6);
       doc.text(`Report Date : ${today}`, pageW / 2, 35, { align: "center" });
 
@@ -271,8 +335,6 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
       doc.text("Email", 112, 62);
       doc.text("Report Date", 112, 70);
 
-      doc.setFont("helvetica", "normal");
-
       doc.text(":", 40, 54);
       doc.text(String(data.student.roll_no || "-"), 44, 54);
 
@@ -280,7 +342,11 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
       doc.text(String(data.student.name || "-"), 44, 62);
 
       doc.text(":", 40, 70);
-      doc.text(`${data.student.board || "-"}-${data.student.class || "-"}`, 44, 70);
+      doc.text(
+        `${data.student.board || "-"}-${data.student.class || "-"}`,
+        44,
+        70
+      );
 
       doc.text(":", 137, 54);
       doc.text(String(data.student.phone || "-"), 141, 54);
@@ -302,17 +368,11 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
         tableWidth: 93,
         head: [["Test Code", "Subject", "Marks", "Total", "%"]],
         body: marks.slice(0, 5).map((m) => {
-          const percent =
-            m.total_marks && Number(m.total_marks) > 0
-              ? (
-                  (Number(m.marks_obtained) / Number(m.total_marks)) *
-                  100
-                ).toFixed(1)
-              : "0.0";
+          const percent = getPercent(m).toFixed(1);
 
           return [
             m.test_code,
-            m.subject_name,
+            getSubjectName(m),
             m.marks_obtained,
             m.total_marks,
             `${percent}%`,
@@ -323,35 +383,50 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
           cellPadding: 2,
           halign: "center",
           valign: "middle",
+          fontStyle: "bold",
         },
         headStyles: {
           fillColor: [12, 61, 145],
           textColor: [255, 255, 255],
           halign: "center",
+          fontStyle: "bold",
+        },
+        bodyStyles: {
+          fontStyle: "bold",
         },
       });
 
       doc.setFontSize(7);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(12, 61, 145);
-      doc.text("Mark Trend (%)", 145, 99, { align: "center" });
+      doc.text("Maths & Physics Mark Trend (%)", 145, 99, {
+        align: "center",
+      });
 
-      drawMarksGraph(doc, 118, 106, 65, 38, marks);
+      drawSubjectMarksGraph(doc, 118, 106, 65, 35, marks);
 
       doc.setFillColor(240, 247, 255);
-      doc.roundedRect(18, 147, 78, 10, 2, 2, "F");
+      doc.roundedRect(18, 147, 175, 10, 2, 2, "F");
 
       doc.setTextColor(12, 61, 145);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7);
-      doc.text("Average Score", 30, 153);
 
-      doc.setFontSize(10);
-      doc.text(`${avgMark}%`, 78, 154, { align: "center" });
+      doc.text("Overall Avg", 28, 153);
+      doc.setFontSize(9);
+      doc.text(`${avgMark}%`, 67, 154, { align: "center" });
+
+      doc.setFontSize(7);
+      doc.text("Maths Avg", 92, 153);
+      doc.setFontSize(9);
+      doc.text(`${mathsAvg}%`, 128, 154, { align: "center" });
+
+      doc.setFontSize(7);
+      doc.text("Physics Avg", 145, 153);
+      doc.setFontSize(9);
+      doc.text(`${physicsAvg}%`, 182, 154, { align: "center" });
 
       drawCard(doc, 10, 170, 190, 72, "ATTENDANCE SUMMARY");
-
-      doc.setTextColor(0, 0, 0);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7);
@@ -381,7 +456,7 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
 
       drawAttendanceBarChart(doc, 128, 197, presentDays, absentDays);
 
-      doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(6);
       doc.setTextColor(0, 0, 0);
 
@@ -394,7 +469,7 @@ doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
       doc.line(158, 262, 190, 262);
 
       doc.setFontSize(6);
-      doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold");
       doc.setTextColor(0, 0, 0);
       doc.text("Signature", 174, 267, { align: "center" });
       doc.text("INTELLEKT ACADEMY", 174, 272, { align: "center" });
