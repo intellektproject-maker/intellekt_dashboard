@@ -59,7 +59,7 @@ export default function StudentRecordPage() {
     doc.roundedRect(x, y, w, h, 2, 2);
 
     doc.setFillColor(12, 61, 145);
-    doc.roundedRect(x, y, 42, 7, 2, 2, "F");
+    doc.roundedRect(x, y, 48, 7, 2, 2, "F");
 
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
@@ -106,13 +106,17 @@ export default function StudentRecordPage() {
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(6);
+    doc.setFont("helvetica", "normal");
     doc.text("Attendance", centerX, centerY + 5, { align: "center" });
   }
 
   function drawMarksGraph(doc, x, y, w, h, marks) {
     if (!marks || marks.length === 0) {
       doc.setFontSize(8);
-      doc.text("No marks available", x + 10, y + 20);
+      doc.setTextColor(0, 0, 0);
+      doc.text("No marks available", x + w / 2, y + 20, {
+        align: "center",
+      });
       return;
     }
 
@@ -162,10 +166,11 @@ export default function StudentRecordPage() {
         align: "center",
       });
 
-      doc.text(p.code, p.x, y + h + 6, { align: "center" });
+      doc.text(String(p.code || "-"), p.x, y + h + 6, { align: "center" });
     });
 
     doc.setFontSize(6);
+    doc.setTextColor(0, 0, 0);
     doc.text("Test Code", x + w / 2, y + h + 13, { align: "center" });
 
     doc.saveGraphicsState();
@@ -175,7 +180,7 @@ export default function StudentRecordPage() {
 
   function drawAttendanceBarChart(doc, x, y, present, absent) {
     const maxVal = Math.max(present, absent, 1);
-    const barMaxHeight = 28;
+    const barMaxHeight = 32;
 
     const presentH = (present / maxVal) * barMaxHeight;
     const absentH = (absent / maxVal) * barMaxHeight;
@@ -184,18 +189,18 @@ export default function StudentRecordPage() {
     doc.setTextColor(0, 0, 0);
 
     doc.setFillColor(39, 174, 96);
-    doc.rect(x, y + barMaxHeight - presentH, 10, presentH, "F");
-    doc.text(String(present), x + 5, y + barMaxHeight - presentH - 2, {
+    doc.rect(x, y + barMaxHeight - presentH, 12, presentH, "F");
+    doc.text(String(present), x + 6, y + barMaxHeight - presentH - 2, {
       align: "center",
     });
-    doc.text("Present", x + 5, y + barMaxHeight + 6, { align: "center" });
+    doc.text("Present", x + 6, y + barMaxHeight + 6, { align: "center" });
 
     doc.setFillColor(231, 76, 60);
-    doc.rect(x + 24, y + barMaxHeight - absentH, 10, absentH, "F");
-    doc.text(String(absent), x + 29, y + barMaxHeight - absentH - 2, {
+    doc.rect(x + 30, y + barMaxHeight - absentH, 12, absentH, "F");
+    doc.text(String(absent), x + 36, y + barMaxHeight - absentH - 2, {
       align: "center",
     });
-    doc.text("Absent", x + 29, y + barMaxHeight + 6, { align: "center" });
+    doc.text("Absent", x + 36, y + barMaxHeight + 6, { align: "center" });
   }
 
   async function downloadReport(student) {
@@ -236,15 +241,19 @@ export default function StudentRecordPage() {
       doc.setFillColor(7, 48, 120);
       doc.rect(0, 0, pageW, 28, "F");
 
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(17);
-      doc.text("INTELLEKT ACADEMY", 42, 14);
+      doc.setTextColor(0, 3, 81); // #000351
+doc.setFont("times", "bold"); // closest built-in style to Roboto
+doc.setFontSize(24);
+
+doc.text("INTELLEKT ACADEMY", pageW / 2, 16, {
+  align: "center",
+});
 
       doc.setFontSize(9);
-      doc.text("STUDENT REPORT", pageW / 2, 28, { align: "center" });
+      doc.text("STUDENT REPORT", pageW / 2, 23, { align: "center" });
 
       doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(6);
       doc.text(`Report Date : ${today}`, pageW / 2, 35, { align: "center" });
 
@@ -252,20 +261,35 @@ export default function StudentRecordPage() {
 
       doc.setFontSize(7);
       doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+
       doc.text("Roll No", 18, 54);
       doc.text("Name", 18, 62);
       doc.text("Class", 18, 70);
+
       doc.text("Phone", 112, 54);
       doc.text("Email", 112, 62);
       doc.text("Report Date", 112, 70);
 
       doc.setFont("helvetica", "normal");
-      doc.text(`: ${data.student.roll_no}`, 43, 54);
-      doc.text(`: ${data.student.name}`, 43, 62);
-      doc.text(`: ${data.student.board}-${data.student.class}`, 43, 70);
-      doc.text(`: ${data.student.phone || "-"}`, 140, 54);
-      doc.text(`: ${data.student.email || "-"}`, 140, 62);
-      doc.text(`: ${today}`, 140, 70);
+
+      doc.text(":", 40, 54);
+      doc.text(String(data.student.roll_no || "-"), 44, 54);
+
+      doc.text(":", 40, 62);
+      doc.text(String(data.student.name || "-"), 44, 62);
+
+      doc.text(":", 40, 70);
+      doc.text(`${data.student.board || "-"}-${data.student.class || "-"}`, 44, 70);
+
+      doc.text(":", 137, 54);
+      doc.text(String(data.student.phone || "-"), 141, 54);
+
+      doc.text(":", 137, 62);
+      doc.text(String(data.student.email || "-"), 141, 62);
+
+      doc.text(":", 137, 70);
+      doc.text(today, 141, 70);
 
       doc.setDrawColor(210, 220, 235);
       doc.line(105, 50, 105, 76);
@@ -297,10 +321,13 @@ export default function StudentRecordPage() {
         styles: {
           fontSize: 6,
           cellPadding: 2,
+          halign: "center",
+          valign: "middle",
         },
         headStyles: {
           fillColor: [12, 61, 145],
           textColor: [255, 255, 255],
+          halign: "center",
         },
       });
 
@@ -313,85 +340,66 @@ export default function StudentRecordPage() {
 
       doc.setFillColor(240, 247, 255);
       doc.roundedRect(18, 147, 78, 10, 2, 2, "F");
+
       doc.setTextColor(12, 61, 145);
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(7);
       doc.text("Average Score", 30, 153);
+
       doc.setFontSize(10);
-      doc.text(`${avgMark}%`, 78, 154);
+      doc.text(`${avgMark}%`, 78, 154, { align: "center" });
 
       drawCard(doc, 10, 170, 190, 72, "ATTENDANCE SUMMARY");
 
       doc.setTextColor(0, 0, 0);
-      drawPieChart(doc, 52, 205, 20, presentDays, absentDays);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(12, 61, 145);
+      doc.text("Attendance Percentage", 55, 187, { align: "center" });
+
+      drawPieChart(doc, 55, 210, 20, presentDays, absentDays);
 
       doc.setFontSize(7);
       doc.setTextColor(231, 76, 60);
-      doc.text(`${absentDays}`, 23, 203, { align: "center" });
+      doc.text(`${absentDays}`, 24, 207, { align: "center" });
+
       doc.setFontSize(5);
-      doc.text("Absent Days", 23, 208, { align: "center" });
+      doc.text("Absent Days", 24, 212, { align: "center" });
 
       doc.setTextColor(39, 174, 96);
       doc.setFontSize(7);
-      doc.text(`${presentDays}`, 82, 203, { align: "center" });
+      doc.text(`${presentDays}`, 86, 207, { align: "center" });
+
       doc.setFontSize(5);
-      doc.text("Present Days", 82, 208, { align: "center" });
+      doc.text("Present Days", 86, 212, { align: "center" });
 
-      autoTable(doc, {
-        startY: 186,
-        margin: { left: 105 },
-        tableWidth: 45,
-        head: [["Attendance Overview"]],
-        body: [
-          ["Total Working Days", totalDays],
-          ["Present Days", presentDays],
-          ["Absent Days", absentDays],
-          ["Attendance %", `${attendancePercent}%`],
-        ],
-        styles: {
-          fontSize: 6,
-          cellPadding: 2,
-        },
-        headStyles: {
-          fillColor: [12, 61, 145],
-          textColor: [255, 255, 255],
-        },
-      });
-
-      doc.setFontSize(7);
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
       doc.setTextColor(12, 61, 145);
-      doc.text("Attendance Trend", 174, 187, { align: "center" });
+      doc.text("Attendance Trend", 150, 187, { align: "center" });
 
-      drawAttendanceBarChart(doc, 160, 197, presentDays, absentDays);
+      drawAttendanceBarChart(doc, 128, 197, presentDays, absentDays);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6);
+      doc.setTextColor(0, 0, 0);
+
+      doc.text(`Total Working Days : ${totalDays}`, 128, 235);
+      doc.text(`Attendance % : ${attendancePercent}%`, 128, 239);
 
       drawCard(doc, 10, 248, 190, 28, "REMARKS");
+
+      doc.setDrawColor(0, 0, 0);
+      doc.line(158, 262, 190, 262);
 
       doc.setFontSize(6);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(0, 0, 0);
-      doc.text(
-        "Keep up the good work and continue your consistent performance.",
-        16,
-        260
-      );
-
-      doc.setDrawColor(0, 0, 0);
-      doc.line(160, 260, 188, 260);
-      doc.setFontSize(6);
-      doc.text("Principal", 174, 265, { align: "center" });
-      doc.text("INTELLEKT ACADEMY", 174, 270, { align: "center" });
-
-      doc.setFillColor(7, 48, 120);
-      doc.rect(0, 286, pageW, 11, "F");
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(6);
-      doc.text("Reality Higher. Future.", 12, 293);
-      doc.text("www.intellektacademy.com", pageW / 2, 293, {
-        align: "center",
-      });
-      doc.text("+91 1234567890", 185, 293, { align: "right" });
-
+      doc.text("Signature", 174, 267, { align: "center" });
+      doc.text("INTELLEKT ACADEMY", 174, 272, { align: "center" });
+doc.setFillColor(255, 255, 255);
+doc.rect(0, 0, pageW, 28, "F");
       doc.save(`${student.roll_no}_report.pdf`);
     } catch (err) {
       console.error("Failed to download report", err);
