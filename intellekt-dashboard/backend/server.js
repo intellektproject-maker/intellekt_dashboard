@@ -1093,8 +1093,17 @@ if (cleanMarks !== 'A') {
 		});
 	}
 }
+const newComment = (() => {
+			if (cleanMarks === 'A') return 'Absent';
+			const percentage = (Number(cleanMarks) / totalMarks) * 100;
+			if (percentage >= 90) return 'Excellent';
+			if (percentage >= 75) return 'Very Good';
+			if (percentage >= 60) return 'Good';
+			if (percentage >= 40) return 'Average';
+			return 'Needs Improvement';
+		})();
 
-await pool.query(
+		await pool.query(
 			`
 			UPDATE marks
 			SET marks_obtained = $1,
@@ -1104,11 +1113,12 @@ await pool.query(
 			`,
 			[
 				cleanMarks,
-				cleanMarks === 'A' ? 'Absent' : (comments ?? null),
+				newComment,
 				roll_no,
 				test_code
 			]
 		);
+
 
 		res.json({ message: 'Marks updated successfully' });
 	} catch (err) {
