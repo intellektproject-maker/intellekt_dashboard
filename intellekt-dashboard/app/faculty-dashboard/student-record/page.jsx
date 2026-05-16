@@ -368,14 +368,14 @@ export default function StudentRecordPage() {
       doc.setTextColor(12, 61, 145);
       doc.text("Attendance Trend", 150, 187, { align: "center" });
 
-      drawAttendanceBarChart(doc, 128, 197, presentDays, absentDays);
+   drawAttendanceBarChart(doc, 128, 192, presentDays, absentDays);
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6);
-      doc.setTextColor(0, 0, 0);
+doc.setFont("helvetica", "bold");
+doc.setFontSize(6);
+doc.setTextColor(0, 0, 0);
 
-      doc.text(`Total Working Days : ${totalDays}`, 128, 235);
-      doc.text(`Attendance % : ${attendancePercent}%`, 128, 239);
+doc.text(`Total Working Days : ${totalDays}`, 128, 246);
+doc.text(`Attendance % : ${attendancePercent}%`, 128, 251);
 
       drawCard(doc, 10, 248, 190, 28, "REMARKS");
 
