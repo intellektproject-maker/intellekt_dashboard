@@ -33,7 +33,7 @@ const cards = [
   {
     title: <>About Us</>,
     description:
-      "Intellekt Academy is a modern student management platform designed to simplify workflows and enhance performance tracking.",
+      "Intellekt Academy is a premium coaching center specializing in Mathematics and Physics for higher secondary students.We provide concept-oriented coaching for students across all major boards.Our teaching focuses on clarity, analytical thinking, and academic excellence.We aim to build strong foundations for engineering, science, and future technical careers.At Intellekt Academy, we nurture confident learners prepared for tomorrow’s challenges.",
     image: "/slide2.png",
     alt: "About Intellekt Academy",
   },
@@ -363,8 +363,7 @@ export default function Home() {
               Intellekt Academy
             </h1>
             <p className="mt-2 text-gray-600 text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
-              Elevating academic excellence through innovative learning
-              experiences, personalized growth, and modern student management.
+             Science Bless You
             </p>
           </div>
 
