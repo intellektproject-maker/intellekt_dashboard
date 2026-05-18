@@ -363,7 +363,7 @@ export default function Home() {
               Intellekt Academy
             </h1>
             <p className="mt-2 text-gray-600 text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
-             Science Bless You
+             Science Bless You!
             </p>
           </div>
 
