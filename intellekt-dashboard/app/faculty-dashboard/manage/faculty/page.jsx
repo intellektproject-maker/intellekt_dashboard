@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
 const ITEMS_PER_PAGE = 10;
+const PROTECTED_ADMIN_IDS = ["IG001", "IG002"];
 
 function Field({ label, children }) {
   return (
@@ -65,6 +66,10 @@ function ManageFacultyContent() {
       generateNextFacultyId(facultyList);
     }
   }, [facultyList, loading, editingFacultyId]);
+
+  function isProtectedAdmin(facultyId) {
+    return PROTECTED_ADMIN_IDS.includes(String(facultyId || "").toUpperCase().trim());
+  }
 
   function generateNextFacultyId(list) {
     const maxNumber = list.reduce((max, faculty) => {
@@ -217,6 +222,11 @@ function ManageFacultyContent() {
   }
 
   function handleEdit(faculty) {
+    if (isProtectedAdmin(faculty.faculty_id)) {
+      alert("Admin faculty cannot be edited from this page");
+      return;
+    }
+
     setEditingFacultyId(faculty.faculty_id);
 
     setEditForm({
@@ -285,6 +295,11 @@ function ManageFacultyContent() {
 
   async function handleDelete(facultyId) {
     if (!facultyId) return;
+
+    if (isProtectedAdmin(facultyId)) {
+      alert("Admin faculty cannot be deleted from this page");
+      return;
+    }
 
     if (facultyId === loggedInFacultyId) {
       alert("You cannot delete the currently logged-in faculty");
@@ -504,165 +519,6 @@ function ManageFacultyContent() {
     setShowExportPopup(false);
   }
 
-function AddFacultyPopup() {
-  if (!showAddPopup) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white rounded-xl shadow-xl border border-gray-200 p-6 w-full max-w-4xl space-y-5 max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-blue-700">
-            Add Faculty
-          </h2>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowAddPopup(false);
-              resetForm();
-            }}
-            className="text-gray-600 hover:text-red-600 text-xl font-bold"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Faculty ID">
-            <input
-              type="text"
-              name="faculty_id"
-              value={form.faculty_id}
-              disabled
-              placeholder="Faculty ID"
-              className="w-full border rounded-lg px-4 py-3 bg-gray-100 cursor-not-allowed"
-            />
-          </Field>
-
-          <Field label="Faculty Name">
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              placeholder="Enter faculty name"
-              required
-              autoComplete="off"
-              className="w-full border rounded-lg px-4 py-3"
-            />
-          </Field>
-
-          <Field label="Subject / Role">
-            <select
-              name="role_id"
-              value={form.role_id}
-              onChange={handleChange}
-              required
-              className="w-full border rounded-lg px-4 py-3"
-            >
-              <option value="">Select Subject / Role</option>
-              {roles.map((role) => (
-                <option key={role.role_id} value={role.role_id}>
-                  {role.role_name}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Phone Number">
-            <input
-              type="tel"
-              name="phone"
-              value={form.phone}
-              onChange={handleChange}
-              placeholder="Enter 10 digit phone number"
-              inputMode="numeric"
-              required
-              autoComplete="off"
-              className="w-full border rounded-lg px-4 py-3"
-            />
-          </Field>
-
-          <Field label="Email">
-            <input
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={handleChange}
-              placeholder="Enter email address"
-              required
-              autoComplete="off"
-              className="w-full border rounded-lg px-4 py-3"
-            />
-          </Field>
-
-          <Field label="Password">
-            <input
-              type="text"
-              name="password"
-              value={form.password}
-              onChange={handleChange}
-              placeholder="Enter password"
-              required
-              autoComplete="new-password"
-              className="w-full border rounded-lg px-4 py-3"
-            />
-          </Field>
-
-          <Field label="Employment Type">
-            <select
-              name="employment_type"
-              value={form.employment_type}
-              onChange={handleChange}
-              required
-              className="w-full border rounded-lg px-4 py-3"
-            >
-              <option value="">Select Employment Type</option>
-              <option value="Part Time">Part Time</option>
-              <option value="Full Time">Full Time</option>
-            </select>
-          </Field>
-
-          <Field label="Date of Joining">
-            <input
-              type="date"
-              name="date_of_joining"
-              value={form.date_of_joining}
-              onChange={handleChange}
-              required
-              className="w-full border rounded-lg px-4 py-3"
-            />
-          </Field>
-        </div>
-
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setShowAddPopup(false);
-              resetForm();
-            }}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold"
-          >
-            {saving ? "Saving..." : "Add Faculty"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
   if (loading) {
     return (
       <div className="p-6">
@@ -738,43 +594,55 @@ function AddFacultyPopup() {
                   </td>
                 </tr>
               ) : (
-                paginatedFaculty.map((faculty) => (
-                  <tr
-                    key={faculty.faculty_id}
-                    className="border-b hover:bg-gray-50"
-                  >
-                    <td className="p-3 font-semibold">{faculty.faculty_id}</td>
-                    <td className="p-3">{faculty.name}</td>
-                    <td className="p-3">
-                      {getRoleName(faculty.role_id, faculty.role_name)}
-                    </td>
-                    <td className="p-3">{faculty.employment_type || "-"}</td>
-                    <td className="p-3">
-                      {faculty.date_of_joining
-                        ? String(faculty.date_of_joining).slice(0, 10)
-                        : "-"}
-                    </td>
-                    <td className="p-3">{faculty.phone}</td>
-                    <td className="p-3">{faculty.email}</td>
-                    <td className="p-3">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() => handleEdit(faculty)}
-                          className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg"
-                        >
-                          Edit
-                        </button>
+                paginatedFaculty.map((faculty) => {
+                  const protectedAdmin = isProtectedAdmin(faculty.faculty_id);
 
-                        <button
-                          onClick={() => handleDelete(faculty.faculty_id)}
-                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                  return (
+                    <tr
+                      key={faculty.faculty_id}
+                      className="border-b hover:bg-gray-50"
+                    >
+                      <td className="p-3 font-semibold">{faculty.faculty_id}</td>
+                      <td className="p-3">{faculty.name}</td>
+                      <td className="p-3">
+                        {getRoleName(faculty.role_id, faculty.role_name)}
+                      </td>
+                      <td className="p-3">{faculty.employment_type || "-"}</td>
+                      <td className="p-3">
+                        {faculty.date_of_joining
+                          ? String(faculty.date_of_joining).slice(0, 10)
+                          : "-"}
+                      </td>
+                      <td className="p-3">{faculty.phone}</td>
+                      <td className="p-3">{faculty.email}</td>
+                      <td className="p-3">
+                        {protectedAdmin ? (
+                          <div className="flex justify-center">
+                            <span className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 font-semibold text-xs">
+                              Protected Admin
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => handleEdit(faculty)}
+                              className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => handleDelete(faculty.faculty_id)}
+                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -808,7 +676,7 @@ function AddFacultyPopup() {
         </div>
       </div>
 
-            {showAddPopup && (
+      {showAddPopup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleSubmit}
