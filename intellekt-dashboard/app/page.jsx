@@ -360,7 +360,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="bg-white rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-5 sm:py-6 text-center">
             <h1 className="text-[#0b1f5f] text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight">
-              Intellekt Academy
+              GenieCampus
             </h1>
             <p className="mt-2 text-gray-600 text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
              Science Bless You!
