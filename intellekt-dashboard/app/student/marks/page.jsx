@@ -165,49 +165,153 @@ function MarksPageContent() {
     (chapter) => chapter.chapterNo === selectedChapter
   );
 
-  function MiniGraph({ tests }) {
+  function ProgressGraph({ tests }) {
     if (!tests || tests.length === 0) {
       return (
-        <p className="text-gray-500 text-sm text-center py-6">
+        <p className="text-gray-500 text-sm text-center py-8">
           No graph data available for this chapter.
         </p>
       );
     }
 
-    const points = tests.map((test, index) => {
-      const x = tests.length === 1 ? 50 : (index / (tests.length - 1)) * 100;
-      const y = 100 - getPercentage(test.marks_obtained, test.total_marks);
-      return { x, y, percent: 100 - y };
+    const graphTests = tests.map((test) => ({
+      ...test,
+      percent: getPercentage(test.marks_obtained, test.total_marks),
+    }));
+
+    const width = Math.max(760, graphTests.length * 150);
+    const height = 360;
+    const paddingLeft = 70;
+    const paddingRight = 40;
+    const paddingTop = 35;
+    const paddingBottom = 85;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+
+    const points = graphTests.map((test, index) => {
+      const x =
+        graphTests.length === 1
+          ? paddingLeft + chartWidth / 2
+          : paddingLeft + (index / (graphTests.length - 1)) * chartWidth;
+
+      const y = paddingTop + ((100 - test.percent) / 100) * chartHeight;
+
+      return {
+        x,
+        y,
+        percent: test.percent,
+        testCode: test.test_code || "-",
+      };
     });
 
     const polyline = points.map((p) => `${p.x},${p.y}`).join(" ");
 
     return (
-      <div className="w-full overflow-x-auto">
-        <svg viewBox="0 0 100 110" className="w-full h-64 bg-gray-50 rounded-xl">
-          <line x1="0" y1="100" x2="100" y2="100" stroke="#d1d5db" />
-          <line x1="0" y1="75" x2="100" y2="75" stroke="#e5e7eb" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="#e5e7eb" />
-          <line x1="0" y1="25" x2="100" y2="25" stroke="#e5e7eb" />
+      <div className="w-full overflow-x-auto bg-gray-50 rounded-xl border border-gray-200 p-4">
+        <svg
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          className="max-w-none"
+        >
+          {[0, 25, 50, 75, 100].map((value) => {
+            const y = paddingTop + ((100 - value) / 100) * chartHeight;
+
+            return (
+              <g key={value}>
+                <line
+                  x1={paddingLeft}
+                  y1={y}
+                  x2={width - paddingRight}
+                  y2={y}
+                  stroke="#e5e7eb"
+                />
+                <text
+                  x={paddingLeft - 14}
+                  y={y + 5}
+                  textAnchor="end"
+                  fontSize="13"
+                  fill="#374151"
+                >
+                  {value}%
+                </text>
+              </g>
+            );
+          })}
+
+          <line
+            x1={paddingLeft}
+            y1={paddingTop}
+            x2={paddingLeft}
+            y2={height - paddingBottom}
+            stroke="#111827"
+            strokeWidth="1.5"
+          />
+          <line
+            x1={paddingLeft}
+            y1={height - paddingBottom}
+            x2={width - paddingRight}
+            y2={height - paddingBottom}
+            stroke="#111827"
+            strokeWidth="1.5"
+          />
+
+          <text
+            x={paddingLeft + chartWidth / 2}
+            y={height - 18}
+            textAnchor="middle"
+            fontSize="15"
+            fontWeight="700"
+            fill="#1f2937"
+          >
+            Test Code
+          </text>
+
+          <text
+            x={18}
+            y={paddingTop + chartHeight / 2}
+            textAnchor="middle"
+            fontSize="15"
+            fontWeight="700"
+            fill="#1f2937"
+            transform={`rotate(-90, 18, ${paddingTop + chartHeight / 2})`}
+          >
+            Percentage
+          </text>
 
           <polyline
             points={polyline}
             fill="none"
             stroke="#1d4ed8"
-            strokeWidth="2.5"
+            strokeWidth="4"
+            strokeLinejoin="round"
+            strokeLinecap="round"
           />
 
           {points.map((p, index) => (
-            <g key={index}>
-              <circle cx={p.x} cy={p.y} r="3" fill="#1d4ed8" />
+            <g key={`${p.testCode}-${index}`}>
+              <circle cx={p.x} cy={p.y} r="6" fill="#1d4ed8" />
+
               <text
                 x={p.x}
-                y={Math.max(p.y - 6, 8)}
+                y={p.y - 12}
                 textAnchor="middle"
-                fontSize="5"
-                fill="#1f2937"
+                fontSize="13"
+                fontWeight="700"
+                fill="#111827"
               >
                 {p.percent}%
+              </text>
+
+              <text
+                x={p.x}
+                y={height - paddingBottom + 26}
+                textAnchor="middle"
+                fontSize="13"
+                fill="#374151"
+              >
+                {p.testCode}
               </text>
             </g>
           ))}
@@ -278,13 +382,7 @@ function MarksPageContent() {
               {chapterData.map((chapter) => (
                 <button
                   key={chapter.chapterNo}
-                  onClick={() =>
-                    setSelectedChapter(
-                      selectedChapter === chapter.chapterNo
-                        ? null
-                        : chapter.chapterNo
-                    )
-                  }
+                  onClick={() => setSelectedChapter(chapter.chapterNo)}
                   className="w-full text-left border border-gray-200 rounded-xl p-4 hover:shadow-md transition bg-white"
                 >
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -324,103 +422,111 @@ function MarksPageContent() {
               ))}
             </div>
           </div>
+        </div>
+      )}
 
-          {selectedChapterData && (
-            <div className="bg-white shadow rounded-xl p-4 md:p-6 border border-gray-200">
-              <h3 className="text-xl font-bold text-blue-800 mb-2">
-                C{selectedChapterData.chapterNo} -{" "}
-                {selectedChapterData.chapterName}
-              </h3>
+      {selectedChapterData && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-6xl max-h-[90vh] overflow-y-auto p-5 md:p-7">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-xl md:text-2xl font-bold text-blue-800 mb-2">
+                  C{selectedChapterData.chapterNo} -{" "}
+                  {selectedChapterData.chapterName}
+                </h3>
 
-              <p
-                className={`font-semibold mb-5 ${getProgressTextColor(
-                  selectedChapterData.average
-                )}`}
-              >
-                Overall Understanding: {selectedChapterData.average}%
-              </p>
-
-              <div className="overflow-x-auto mb-8">
-                <table className="min-w-full border text-sm md:text-base">
-                  <thead className="bg-gray-200">
-                    <tr>
-                      <th className="p-2 border whitespace-nowrap">
-                        Test Code
-                      </th>
-                      <th className="p-2 border whitespace-nowrap">Date</th>
-                      <th className="p-2 border whitespace-nowrap">
-                        Marks Obtained
-                      </th>
-                      <th className="p-2 border whitespace-nowrap">
-                        Total Marks
-                      </th>
-                      <th className="p-2 border whitespace-nowrap">
-                        Understanding
-                      </th>
-                      <th className="p-2 border whitespace-nowrap">
-                        Comments
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {selectedChapterData.tests.length > 0 ? (
-                      selectedChapterData.tests.map((m, index) => {
-                        const percent = getPercentage(
-                          m.marks_obtained,
-                          m.total_marks
-                        );
-
-                        return (
-                          <tr key={`${m.test_code}-${index}`}>
-                            <td className="p-2 border whitespace-nowrap">
-                              {m.test_code || "-"}
-                            </td>
-                            <td className="p-2 border whitespace-nowrap">
-                              {m.test_date
-                                ? String(m.test_date).slice(0, 10)
-                                : "-"}
-                            </td>
-                            <td className="p-2 border whitespace-nowrap">
-                              {renderMark(m.marks_obtained)}
-                            </td>
-                            <td className="p-2 border whitespace-nowrap">
-                              {m.total_marks ?? "-"}
-                            </td>
-                            <td
-                              className={`p-2 border whitespace-nowrap font-semibold ${getProgressTextColor(
-                                percent
-                              )}`}
-                            >
-                              {percent}%
-                            </td>
-                            <td className="p-2 border break-words">
-                              {m.comments || "-"}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan="6"
-                          className="p-4 border text-center text-gray-500"
-                        >
-                          No tests found for this chapter
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                <p
+                  className={`font-semibold ${getProgressTextColor(
+                    selectedChapterData.average
+                  )}`}
+                >
+                  Overall Understanding: {selectedChapterData.average}%
+                </p>
               </div>
 
-              <h4 className="text-lg font-semibold text-blue-700 mb-3">
-                Chapter Progress Graph
-              </h4>
-
-              <MiniGraph tests={selectedChapterData.tests} />
+              <button
+                type="button"
+                onClick={() => setSelectedChapter(null)}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold w-fit"
+              >
+                Close
+              </button>
             </div>
-          )}
+
+            <div className="overflow-x-auto mb-8">
+              <table className="min-w-full border text-sm md:text-base">
+                <thead className="bg-gray-200">
+                  <tr>
+                    <th className="p-2 border whitespace-nowrap">Test Code</th>
+                    <th className="p-2 border whitespace-nowrap">Date</th>
+                    <th className="p-2 border whitespace-nowrap">
+                      Marks Obtained
+                    </th>
+                    <th className="p-2 border whitespace-nowrap">
+                      Total Marks
+                    </th>
+                    <th className="p-2 border whitespace-nowrap">
+                      Understanding
+                    </th>
+                    <th className="p-2 border whitespace-nowrap">Comments</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {selectedChapterData.tests.length > 0 ? (
+                    selectedChapterData.tests.map((m, index) => {
+                      const percent = getPercentage(
+                        m.marks_obtained,
+                        m.total_marks
+                      );
+
+                      return (
+                        <tr key={`${m.test_code}-${index}`}>
+                          <td className="p-2 border whitespace-nowrap">
+                            {m.test_code || "-"}
+                          </td>
+                          <td className="p-2 border whitespace-nowrap">
+                            {m.test_date ? String(m.test_date).slice(0, 10) : "-"}
+                          </td>
+                          <td className="p-2 border whitespace-nowrap">
+                            {renderMark(m.marks_obtained)}
+                          </td>
+                          <td className="p-2 border whitespace-nowrap">
+                            {m.total_marks ?? "-"}
+                          </td>
+                          <td
+                            className={`p-2 border whitespace-nowrap font-semibold ${getProgressTextColor(
+                              percent
+                            )}`}
+                          >
+                            {percent}%
+                          </td>
+                          <td className="p-2 border break-words">
+                            {m.comments || "-"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="p-4 border text-center text-gray-500"
+                      >
+                        No tests found for this chapter
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <h4 className="text-lg font-semibold text-blue-700 mb-3">
+              Chapter Progress Graph
+            </h4>
+
+            <ProgressGraph tests={selectedChapterData.tests} />
+          </div>
         </div>
       )}
     </div>
