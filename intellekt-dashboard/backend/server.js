@@ -280,6 +280,7 @@ app.get('/marks/:roll', async (req, res) => {
 				m.marks_obtained,
 				m.comments,
 				COALESCE(m.total_marks, t.total_marks) AS total_marks,
+				t.test_date,
 				t.subject_id,
 				CASE
 					WHEN t.subject_id = 1 THEN 'Maths'
@@ -290,7 +291,7 @@ app.get('/marks/:roll', async (req, res) => {
 			LEFT JOIN tests t
 				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
 			WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
-			ORDER BY m.test_code
+			ORDER BY COALESCE(t.test_date, CURRENT_DATE) DESC, m.test_code ASC
 			`,
 			[ roll ]
 		);
@@ -301,6 +302,8 @@ app.get('/marks/:roll', async (req, res) => {
 		res.status(500).json({ error: 'Database error' });
 	}
 });
+	
+
 
 /* =========================================================
 	TEST SCHEDULE WITH REGISTRATION DETAILS
