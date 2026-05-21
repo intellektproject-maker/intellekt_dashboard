@@ -459,7 +459,7 @@ export default function Home() {
       </section>
 
       <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="max-w-7xl mx-auto flex flex-col-reverse xl:grid xl:grid-cols-2 gap-8">
           <div
             ref={contactRef}
             className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
