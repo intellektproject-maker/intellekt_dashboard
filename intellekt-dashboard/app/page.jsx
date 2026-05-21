@@ -332,7 +332,18 @@ export default function Home() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f4f6fb] scroll-smooth">
       <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b border-gray-200">
-        <div className="flex justify-end items-center gap-2 sm:gap-3 px-4 sm:px-8 md:px-16 py-4 flex-wrap">
+        <div className="flex justify-between items-center gap-2 sm:gap-3 px-4 sm:px-8 md:px-16 py-4 flex-wrap">
+  <h1
+    className="text-[28px] sm:text-[34px] font-bold tracking-wide"
+    style={{
+      fontFamily: "Roboto, sans-serif",
+      color: "#000351",
+    }}
+  >
+    Intellekt
+  </h1>
+
+  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
             onClick={() => scrollToSection(contactRef)}
             className="text-[#0b1f5f] border border-[#0b1f5f] px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-[#0b1f5f] hover:text-white transition"
@@ -354,7 +365,8 @@ export default function Home() {
             Login
           </button>
         </div>
-      </header>
+</div>
+</header>
 
       <section className="relative w-full pt-24 sm:pt-28 md:pt-32 pb-10 sm:pb-12 md:pb-14 px-4 sm:px-6 md:px-12 lg:px-16">
         <div className="max-w-7xl mx-auto">
