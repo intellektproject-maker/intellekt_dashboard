@@ -338,6 +338,7 @@ export default function Home() {
     style={{
       fontFamily: "Roboto, sans-serif",
       color: "#000351",
+      fontWeight: 900,
     }}
   >
     Intellekt
