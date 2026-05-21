@@ -9,73 +9,182 @@ const API_BASE =
   "https://responsible-wonder-production.up.railway.app";
 
 const SYLLABUS = {
-  maths: {
-    title: "Mathematics",
-    subjectIds: [1],
-    names: ["MATHS", "MATHEMATICS"],
-    chapters: {
-      1: "Applications of Matrices and Determinants",
-      2: "Complex Numbers",
-      3: "Theory of Equations",
-      4: "Inverse Trigonometric Functions",
-      5: "Two Dimensional Analytical Geometry-II",
-      6: "Applications of Vector Algebra",
-      7: "Applications of Differential Calculus",
-      8: "Differentials and Partial Derivatives",
-      9: "Applications of Integration",
-      10: "Ordinary Differential Equations",
-      11: "Probability Distributions",
-      12: "Discrete Mathematics",
+  "12": {
+    STATE_BOARD: {
+      maths: {
+        title: "Mathematics",
+        subjectIds: [1],
+        names: ["MATHS", "MATHEMATICS"],
+        chapters: {
+          1: "Applications of Matrices and Determinants",
+          2: "Complex Numbers",
+          3: "Theory of Equations",
+          4: "Inverse Trigonometric Functions",
+          5: "Two Dimensional Analytical Geometry-II",
+          6: "Applications of Vector Algebra",
+          7: "Applications of Differential Calculus",
+          8: "Differentials and Partial Derivatives",
+          9: "Applications of Integration",
+          10: "Ordinary Differential Equations",
+          11: "Probability Distributions",
+          12: "Discrete Mathematics",
+        },
+      },
+      physics: {
+        title: "Physics",
+        subjectIds: [2],
+        names: ["PHYSICS"],
+        chapters: {
+          1: "Electrostatics",
+          2: "Current Electricity",
+          3: "Magnetism and Magnetic Effects of Electric Current",
+          4: "Electromagnetic Induction and Alternating Current",
+          5: "Electromagnetic Waves",
+          6: "Ray Optics",
+          7: "Wave Optics",
+          8: "Dual Nature of Radiation and Matter",
+          9: "Atomic and Nuclear Physics",
+          10: "Electronics and Communication",
+          11: "Recent Developments in Physics",
+        },
+      },
     },
-  },
-  physics: {
-    title: "Physics",
-    subjectIds: [2],
-    names: ["PHYSICS"],
-    chapters: {
-      1: "Applications of Matrices and Determinants",
-      2: "Complex Numbers",
-      3: "Theory of Equations",
-      4: "Inverse Trigonometric Functions",
-      5: "Two Dimensional Analytical Geometry-II",
-      6: "Applications of Vector Algebra",
-      7: "Applications of Differential Calculus",
-      8: "Differentials and Partial Derivatives",
-      9: "Applications of Integration",
-      10: "Ordinary Differential Equations",
-      11: "Probability Distributions",
-      12: "Discrete Mathematics",
+    CBSE: {
+      maths: {
+        title: "Mathematics",
+        subjectIds: [1],
+        names: ["MATHS", "MATHEMATICS"],
+        chapters: {
+          1: "Relations and Functions",
+          2: "Inverse Trigonometric Functions",
+          3: "Matrices",
+          4: "Determinants",
+          5: "Continuity and Differentiability",
+          6: "Applications of Derivatives",
+          7: "Integrals",
+          8: "Applications of Integrals",
+          9: "Differential Equations",
+          10: "Vectors",
+          11: "Three Dimensional Geometry",
+          12: "Linear Programming",
+          13: "Probability",
+        },
+      },
+      physics: {
+        title: "Physics",
+        subjectIds: [2],
+        names: ["PHYSICS"],
+        chapters: {
+          1: "Electric Charges and Fields / Electrostatic Potential & Capacitance",
+          2: "Current Electricity",
+          3: "Moving Charges and Magnetism / Magnetism and Matter",
+          4: "Electromagnetic Induction / Alternating Current",
+          5: "Electromagnetic Waves",
+          6: "Ray Optics / Wave Optics",
+          7: "Dual Nature of Radiation and Matter",
+          8: "Atoms / Nuclei",
+          9: "Semiconductor Electronics / Communication Systems",
+        },
+      },
+    },
+    ISC: {
+      maths: {
+        title: "Mathematics",
+        subjectIds: [1],
+        names: ["MATHS", "MATHEMATICS"],
+        chapters: {
+          1: "Relations and Functions",
+          2: "Algebra (Matrices & Determinants)",
+          3: "Calculus (Continuity, Differentiation, Integration, DEs)",
+          4: "Probability",
+          5: "Vectors",
+          6: "Three Dimensional Geometry",
+          7: "Applications of Integrals",
+          8: "Applications of Calculus (Commerce/Economics)",
+          9: "Linear Regression",
+          10: "Linear Programming",
+        },
+      },
+      physics: {
+        title: "Physics",
+        subjectIds: [2],
+        names: ["PHYSICS"],
+        chapters: {
+          1: "Electrostatics",
+          2: "Current Electricity",
+          3: "Magnetism and Magnetic Effects of Current",
+          4: "Electromagnetic Induction and Alternating Currents",
+          5: "Electromagnetic Waves",
+          6: "Optics (Ray and Wave)",
+          7: "Dual Nature of Radiation and Matter",
+          8: "Atoms and Nuclei",
+          9: "Electronic Devices and Communication",
+        },
+      },
     },
   },
 };
+
+function normalizeBoard(board) {
+  const value = String(board || "").toUpperCase().trim();
+
+  if (value.includes("CBSE")) return "CBSE";
+  if (value.includes("ISC") || value.includes("CISCE")) return "ISC";
+  if (value.includes("STATE") || value.includes("SB")) return "STATE_BOARD";
+
+  return "STATE_BOARD";
+}
+
+function normalizeClass(classValue) {
+  const value = String(classValue || "").toUpperCase().trim();
+  const match = value.match(/\d+/);
+  return match ? match[0] : "12";
+}
 
 function MarksPageContent() {
   const searchParams = useSearchParams();
   const roll = searchParams.get("roll");
 
   const [marks, setMarks] = useState(null);
+  const [student, setStudent] = useState(null);
   const [reportSubject, setReportSubject] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
 
   useEffect(() => {
     if (!roll) return;
 
-    async function fetchMarks() {
+    async function fetchData() {
       try {
-        const res = await fetch(`${API_BASE}/marks/${roll}`, {
-          cache: "no-store",
-        });
+        const [marksRes, studentRes] = await Promise.all([
+          fetch(`${API_BASE}/marks/${roll}`, { cache: "no-store" }),
+          fetch(`${API_BASE}/student/${roll}`, { cache: "no-store" }),
+        ]);
 
-        const data = await res.json();
-        setMarks(Array.isArray(data) ? data : []);
+        const marksData = await marksRes.json();
+        const studentData = await studentRes.json();
+
+        setMarks(Array.isArray(marksData) ? marksData : []);
+        setStudent(studentData || null);
       } catch (err) {
         console.error(err);
         setMarks([]);
+        setStudent(null);
       }
     }
 
-    fetchMarks();
+    fetchData();
   }, [roll]);
+
+  const classKey = normalizeClass(
+    student?.class || student?.class_name || marks?.[0]?.class || marks?.[0]?.class_name
+  );
+
+  const boardKey = normalizeBoard(
+    student?.board || marks?.[0]?.board || marks?.[0]?.student_board
+  );
+
+  const currentSyllabus =
+    SYLLABUS[classKey]?.[boardKey] || SYLLABUS["12"].STATE_BOARD;
 
   function renderMark(mark) {
     if (String(mark).toUpperCase() === "A") return "Absent";
@@ -127,7 +236,6 @@ function MarksPageContent() {
     if (!dateValue) return "-";
 
     const date = new Date(dateValue);
-
     if (Number.isNaN(date.getTime())) return "-";
 
     const day = date.getDate();
@@ -140,32 +248,9 @@ function MarksPageContent() {
     return `${week}${suffix} week of ${month}`;
   }
 
-  const mathsMarks = useMemo(() => {
-    if (!marks) return [];
-
-    return marks.filter(
-      (m) =>
-        Number(m.subject_id) === 1 ||
-        ["MATHS", "MATHEMATICS"].includes(
-          String(m.subject_name || "").toUpperCase()
-        )
-    );
-  }, [marks]);
-
-  const physicsMarks = useMemo(() => {
-    if (!marks) return [];
-
-    return marks.filter(
-      (m) =>
-        Number(m.subject_id) === 2 ||
-        String(m.subject_name || "").toUpperCase() === "PHYSICS"
-    );
-  }, [marks]);
-
-  const reportMarks = useMemo(() => {
-    if (!reportSubject || !marks) return [];
-
-    const subject = SYLLABUS[reportSubject];
+  function filterBySubject(subjectKey) {
+    const subject = currentSyllabus[subjectKey];
+    if (!marks || !subject) return [];
 
     return marks.filter((m) => {
       const subjectIdMatch = subject.subjectIds.includes(Number(m.subject_id));
@@ -175,12 +260,28 @@ function MarksPageContent() {
 
       return subjectIdMatch || subjectNameMatch;
     });
-  }, [marks, reportSubject]);
+  }
+
+  const mathsMarks = useMemo(
+    () => filterBySubject("maths"),
+    [marks, currentSyllabus]
+  );
+
+  const physicsMarks = useMemo(
+    () => filterBySubject("physics"),
+    [marks, currentSyllabus]
+  );
+
+  const reportMarks = useMemo(() => {
+    if (!reportSubject) return [];
+    return filterBySubject(reportSubject);
+  }, [marks, reportSubject, currentSyllabus]);
 
   const chapterData = useMemo(() => {
     if (!reportSubject) return [];
 
-    const subject = SYLLABUS[reportSubject];
+    const subject = currentSyllabus[reportSubject];
+    if (!subject) return [];
 
     return Object.entries(subject.chapters).map(([chapterNo, chapterName]) => {
       const tests = reportMarks.filter(
@@ -206,11 +307,7 @@ function MarksPageContent() {
         average,
       };
     });
-  }, [reportSubject, reportMarks]);
-
-  const selectedChapterData = chapterData.find(
-    (chapter) => chapter.chapterNo === selectedChapter
-  );
+  }, [reportSubject, reportMarks, currentSyllabus]);
 
   function HistogramGraph({ tests }) {
     if (!tests || tests.length === 0) {
@@ -304,12 +401,68 @@ function MarksPageContent() {
     );
   }
 
+  function ChapterDetails({ chapter }) {
+    return (
+      <div className="bg-white rounded-xl border border-blue-200 p-4 md:p-6 mt-3 shadow-sm">
+        <h4 className="text-xl md:text-2xl font-bold text-blue-800 mb-2">
+          C{chapter.chapterNo} - {chapter.chapterName}
+        </h4>
+
+        <p className={`font-semibold mb-5 ${getProgressTextColor(chapter.average)}`}>
+          Overall Understanding: {chapter.average}%
+        </p>
+
+        <div className="overflow-x-auto mb-8">
+          <table className="min-w-full border text-sm md:text-base">
+            <thead className="bg-gray-200">
+              <tr>
+                <th className="p-2 border whitespace-nowrap">Test Code</th>
+                <th className="p-2 border whitespace-nowrap">Test Month</th>
+                <th className="p-2 border whitespace-nowrap">Marks</th>
+                <th className="p-2 border whitespace-nowrap">Comments</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {chapter.tests.length > 0 ? (
+                chapter.tests.map((m, index) => (
+                  <tr key={`${m.test_code}-${index}`}>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_code || "-"}
+                    </td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {getWeekOfMonthLabel(m.test_date)}
+                    </td>
+                    <td className="p-2 border whitespace-nowrap font-semibold">
+                      {renderMarksFraction(m.marks_obtained, m.total_marks)}
+                    </td>
+                    <td className="p-2 border break-words">{m.comments || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4" className="p-4 border text-center text-gray-500">
+                    No tests found for this chapter
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <h4 className="text-lg font-semibold text-blue-700 mb-3">
+          Chapter Histogram
+        </h4>
+
+        <HistogramGraph tests={chapter.tests} />
+      </div>
+    );
+  }
+
   const renderTable = (title, data, subjectKey) => (
     <div className="mb-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-        <h3 className="text-xl md:text-2xl font-bold text-blue-800">
-          {title}
-        </h3>
+        <h3 className="text-xl md:text-2xl font-bold text-blue-800">{title}</h3>
 
         <button
           type="button"
@@ -348,17 +501,12 @@ function MarksPageContent() {
                     <td className="p-2 border whitespace-nowrap">
                       {m.total_marks ?? "-"}
                     </td>
-                    <td className="p-2 border break-words">
-                      {m.comments || "-"}
-                    </td>
+                    <td className="p-2 border break-words">{m.comments || "-"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan="4"
-                    className="p-4 border text-center text-gray-500"
-                  >
+                  <td colSpan="4" className="p-4 border text-center text-gray-500">
                     No records found
                   </td>
                 </tr>
@@ -389,7 +537,7 @@ function MarksPageContent() {
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
               <div>
                 <h3 className="text-xl md:text-2xl font-bold text-blue-800 mb-1">
-                  {SYLLABUS[reportSubject].title} Detailed Report
+                  {currentSyllabus[reportSubject]?.title} Detailed Report
                 </h3>
                 <p className="text-gray-600">
                   Chapter-wise understanding based on test marks.
@@ -415,129 +563,60 @@ function MarksPageContent() {
 
               <div className="space-y-4">
                 {chapterData.map((chapter) => (
-                  <button
-                    key={chapter.chapterNo}
-                    onClick={() =>
-                      setSelectedChapter(
-                        selectedChapter === chapter.chapterNo
-                          ? null
-                          : chapter.chapterNo
-                      )
-                    }
-                    className="w-full text-left border border-gray-200 rounded-xl p-4 hover:shadow-md transition bg-white"
-                  >
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                      <div>
-                        <h5 className="font-semibold text-blue-700">
-                          C{chapter.chapterNo} - {chapter.chapterName}
-                        </h5>
-                        <p className="text-sm text-gray-500">
-                          {chapter.tests.length} test
-                          {chapter.tests.length === 1 ? "" : "s"} recorded
-                        </p>
-                      </div>
-
-                      <div className="w-full md:w-80">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-600">Understanding</span>
-                          <span
-                            className={`font-bold ${getProgressTextColor(
-                              chapter.average
-                            )}`}
-                          >
-                            {chapter.average}%
-                          </span>
+                  <div key={chapter.chapterNo}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedChapter(
+                          selectedChapter === chapter.chapterNo
+                            ? null
+                            : chapter.chapterNo
+                        )
+                      }
+                      className="w-full text-left border border-gray-200 rounded-xl p-4 hover:shadow-md transition bg-white"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                          <h5 className="font-semibold text-blue-700">
+                            C{chapter.chapterNo} - {chapter.chapterName}
+                          </h5>
+                          <p className="text-sm text-gray-500">
+                            {chapter.tests.length} test
+                            {chapter.tests.length === 1 ? "" : "s"} recorded
+                          </p>
                         </div>
 
-                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                          <div
-                            className={`h-3 rounded-full ${getProgressColor(
-                              chapter.average
-                            )}`}
-                            style={{ width: `${chapter.average}%` }}
-                          />
+                        <div className="w-full md:w-80">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-600">Understanding</span>
+                            <span
+                              className={`font-bold ${getProgressTextColor(
+                                chapter.average
+                              )}`}
+                            >
+                              {chapter.average}%
+                            </span>
+                          </div>
+
+                          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div
+                              className={`h-3 rounded-full ${getProgressColor(
+                                chapter.average
+                              )}`}
+                              style={{ width: `${chapter.average}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+
+                    {selectedChapter === chapter.chapterNo && (
+                      <ChapterDetails chapter={chapter} />
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
-
-            {selectedChapterData && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
-                <h4 className="text-xl md:text-2xl font-bold text-blue-800 mb-2">
-                  C{selectedChapterData.chapterNo} -{" "}
-                  {selectedChapterData.chapterName}
-                </h4>
-
-                <p
-                  className={`font-semibold mb-5 ${getProgressTextColor(
-                    selectedChapterData.average
-                  )}`}
-                >
-                  Overall Understanding: {selectedChapterData.average}%
-                </p>
-
-                <div className="overflow-x-auto mb-8">
-                  <table className="min-w-full border text-sm md:text-base">
-                    <thead className="bg-gray-200">
-                      <tr>
-                        <th className="p-2 border whitespace-nowrap">
-                          Test Code
-                        </th>
-                        <th className="p-2 border whitespace-nowrap">
-                          Test Month
-                        </th>
-                        <th className="p-2 border whitespace-nowrap">Marks</th>
-                        <th className="p-2 border whitespace-nowrap">
-                          Comments
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {selectedChapterData.tests.length > 0 ? (
-                        selectedChapterData.tests.map((m, index) => (
-                          <tr key={`${m.test_code}-${index}`}>
-                            <td className="p-2 border whitespace-nowrap">
-                              {m.test_code || "-"}
-                            </td>
-                            <td className="p-2 border whitespace-nowrap">
-                              {getWeekOfMonthLabel(m.test_date)}
-                            </td>
-                            <td className="p-2 border whitespace-nowrap font-semibold">
-                              {renderMarksFraction(
-                                m.marks_obtained,
-                                m.total_marks
-                              )}
-                            </td>
-                            <td className="p-2 border break-words">
-                              {m.comments || "-"}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan="4"
-                            className="p-4 border text-center text-gray-500"
-                          >
-                            No tests found for this chapter
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <h4 className="text-lg font-semibold text-blue-700 mb-3">
-                  Chapter Histogram
-                </h4>
-
-                <HistogramGraph tests={selectedChapterData.tests} />
-              </div>
-            )}
           </div>
         </div>
       )}
