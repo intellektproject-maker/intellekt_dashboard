@@ -16,25 +16,23 @@ const cards = [
   {
     title: (
       <>
-        Empowering the
+        premium coaching center
         <br />
-        Future of
+        for Science stream
         <br />
-        Academic
-        <br />
-        Excellence
+        Mathematics and Physics
       </>
     ),
     description:
-      "Intellekt Academy is designed to redefine academic management with secure dashboards, performance tracking, simplified workflows, and a modern digital learning environment.",
-    image: "/slide1.png",
+      "Empowering the Future of Academic Excellence",
+    image: "/Intellekt-AI.png",
     alt: "Academic excellence",
   },
   {
     title: <>About Us</>,
     description:
       "Intellekt Academy is a premium coaching center specializing in Mathematics and Physics for higher secondary students.We provide concept-oriented coaching for students across all major boards.Our teaching focuses on clarity, analytical thinking, and academic excellence.We aim to build strong foundations for engineering, science, and future technical careers.At Intellekt Academy, we nurture confident learners prepared for tomorrow’s challenges.",
-    image: "/slide2.png",
+    image: "/intellekt-about.png",
     alt: "About Intellekt Academy",
   },
 ];
@@ -333,6 +331,7 @@ export default function Home() {
     <div className="min-h-screen overflow-x-hidden bg-[#f4f6fb] scroll-smooth">
       <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b border-gray-200">
         <div className="flex justify-between items-center gap-2 sm:gap-3 px-4 sm:px-8 md:px-16 py-4 flex-wrap">
+  <div className="relative inline-block">
   <h1
     className="text-[28px] sm:text-[34px] font-bold tracking-wide"
     style={{
@@ -343,6 +342,17 @@ export default function Home() {
   >
     Intellekt
   </h1>
+
+  <span
+    className="absolute -top-1 -right-5 text-[12px] sm:text-[14px] font-bold"
+    style={{
+      fontFamily: "Roboto, sans-serif",
+      color: "#000351",
+    }}
+  >
+    ®
+  </span>
+</div>
 
   <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
@@ -371,11 +381,16 @@ export default function Home() {
 
       <section className="relative w-full pt-24 sm:pt-28 md:pt-32 pb-10 sm:pb-12 md:pb-14 px-4 sm:px-6 md:px-12 lg:px-16">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-5 sm:py-6 text-center">
-            <h1 className="text-[#0b1f5f] text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight">
+          <div
+  className="rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-8 sm:py-10 text-center bg-cover bg-center bg-no-repeat relative overflow-hidden"
+  style={{
+    backgroundImage: "url('/banner-bg.png')",
+  }}
+>
+            <h1 className="text-white text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight drop-shadow-lg">
               GenieCampus
             </h1>
-            <p className="mt-2 text-gray-600 text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
+            <p className="mt-2 text-white text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed drop-shadow-md">
              Science Bless You!
             </p>
           </div>
