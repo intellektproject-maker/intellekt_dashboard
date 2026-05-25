@@ -384,7 +384,7 @@ export default function Home() {
           <div
   className="rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-8 sm:py-10 text-center bg-cover bg-center bg-no-repeat relative overflow-hidden"
   style={{
-    backgroundImage: "url('/banner-bg.png')",
+    backgroundImage: "url('/banner.png')",
   }}
 >
             <h1 className="text-white text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight drop-shadow-lg">
