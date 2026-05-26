@@ -16,7 +16,7 @@ const cards = [
   {
     title: (
       <>
-        premium coaching center
+        Premium Coaching Center
         <br />
         for Science stream
         <br />
@@ -69,7 +69,7 @@ export default function Home() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentCard((prev) => (prev + 1) % cards.length);
-  }, 120000);
+  }, 110000);
 
     return () => clearInterval(interval);
   }, []);
@@ -474,7 +474,7 @@ export default function Home() {
       </section>
 
       <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
-        <div className="max-w-7xl mx-auto flex flex-col-reverse xl:grid xl:grid-cols-2 gap-8">
+       <div className="max-w-7xl mx-auto flex flex-col xl:grid xl:grid-cols-3 gap-8 items-start">
           <div
             ref={contactRef}
             className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
@@ -520,7 +520,37 @@ export default function Home() {
               </div>
             </div>
           </div>
+          
+        <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 h-full">
+  <h2 className="text-2xl sm:text-3xl font-bold text-black mb-8 text-center">
+    Vision & Mission
+  </h2>
 
+  <div className="space-y-8">
+    <div>
+      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
+        Vision
+      </h3>
+
+      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
+        “To create a generation of INTELLEKTUALS who lead with logic,
+        creativity, and academic excellence.”
+      </p>
+    </div>
+
+    <div className="border-t border-gray-200 pt-8">
+      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
+        Mission
+      </h3>
+
+      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
+        “To inspire students to achieve their highest potential in
+        Mathematics and Physics through innovative teaching, strategic
+        guidance, and personal mentoring.”
+      </p>
+    </div>
+  </div>
+</div>
           <div
             ref={enquiryRef}
             className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
