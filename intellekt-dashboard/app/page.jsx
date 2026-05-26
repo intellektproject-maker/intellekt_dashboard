@@ -23,15 +23,14 @@ const cards = [
         Mathematics and Physics
       </>
     ),
-    description:
-      "Empowering the Future of Academic Excellence",
+    description: "Empowering the Future of Academic Excellence",
     image: "/Intellekt-AI.png",
     alt: "Academic excellence",
   },
   {
     title: <>About Us</>,
     description:
-      "Intellekt Academy is a premium coaching center specializing in Mathematics and Physics for higher secondary students.We provide concept-oriented coaching for students across all major boards.Our teaching focuses on clarity, analytical thinking, and academic excellence.We aim to build strong foundations for engineering, science, and future technical careers.At Intellekt Academy, we nurture confident learners prepared for tomorrow’s challenges.",
+      "Intellekt Academy is a premium coaching center specializing in Mathematics and Physics for higher secondary students. We provide concept-oriented coaching for students across all major boards. Our teaching focuses on clarity, analytical thinking, and academic excellence. We aim to build strong foundations for engineering, science, and future technical careers. At Intellekt Academy, we nurture confident learners prepared for tomorrow’s challenges.",
     image: "/intellekt-about.png",
     alt: "About Intellekt Academy",
   },
@@ -69,7 +68,7 @@ export default function Home() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentCard((prev) => (prev + 1) % cards.length);
-  }, 110000);
+    }, 110000);
 
     return () => clearInterval(interval);
   }, []);
@@ -80,6 +79,7 @@ export default function Home() {
     };
 
     window.addEventListener("scroll", handleScroll);
+
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -95,6 +95,7 @@ export default function Home() {
     if (!ref.current) return;
 
     const headerOffset = 140;
+
     const elementPosition =
       ref.current.getBoundingClientRect().top + window.pageYOffset;
 
@@ -105,7 +106,10 @@ export default function Home() {
   };
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const sanitizeName = (value) => {
@@ -146,6 +150,7 @@ export default function Home() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
     let cleanedValue = value;
 
     if (name === "studentName" || name === "parentName") {
@@ -156,7 +161,10 @@ export default function Home() {
       cleanedValue = sanitizeArea(value);
     } else if (name === "reference") {
       cleanedValue = sanitizeReference(value);
-    } else if (name === "academicYearFrom" || name === "academicYearTo") {
+    } else if (
+      name === "academicYearFrom" ||
+      name === "academicYearTo"
+    ) {
       cleanedValue = sanitizeYear(value);
     } else if (name === "mobileNumber") {
       cleanedValue = sanitizePhone(value);
@@ -201,7 +209,10 @@ export default function Home() {
       return false;
     }
 
-    if (!schoolName || !/^[A-Za-z0-9\s.,&()'-]+$/.test(schoolName)) {
+    if (
+      !schoolName ||
+      !/^[A-Za-z0-9\s.,&()'-]+$/.test(schoolName)
+    ) {
       alert(
         "School name should not be empty and should contain only valid characters."
       );
@@ -240,7 +251,9 @@ export default function Home() {
 
     if (!/^\d{10}$/.test(mobileNumber)) {
       setPhoneError("Phone number must contain exactly 10 digits");
+
       alert("Phone number must contain exactly 10 digits.");
+
       return false;
     }
 
@@ -255,7 +268,9 @@ export default function Home() {
     }
 
     if (secondaryContact === mobileNumber) {
-      alert("Primary and Secondary contact numbers cannot be the same.");
+      alert(
+        "Primary and Secondary contact numbers cannot be the same."
+      );
       return false;
     }
 
@@ -320,6 +335,7 @@ export default function Home() {
         area: "",
         reference: "",
       });
+
       setPhoneError("");
     } catch (error) {
       console.error("Enquiry error:", error);
@@ -329,77 +345,87 @@ export default function Home() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f4f6fb] scroll-smooth">
+
+      {/* HEADER */}
       <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b border-gray-200">
         <div className="flex justify-between items-center gap-2 sm:gap-3 px-4 sm:px-8 md:px-16 py-4 flex-wrap">
-  <div className="relative inline-block">
-  <h1
-    className="text-[28px] sm:text-[34px] font-bold tracking-wide"
-    style={{
-      fontFamily: "Roboto, sans-serif",
-      color: "#000351",
-      fontWeight: 900,
-    }}
-  >
-    Intellekt
-  </h1>
 
-  <span
-    className="absolute -top-1 -right-5 text-[12px] sm:text-[14px] font-bold"
-    style={{
-      fontFamily: "Roboto, sans-serif",
-      color: "#000351",
-    }}
-  >
-    ®
-  </span>
-</div>
+          <div className="relative inline-block">
+            <h1
+              className="text-[28px] sm:text-[34px] font-bold tracking-wide"
+              style={{
+                fontFamily: "Roboto, sans-serif",
+                color: "#000351",
+                fontWeight: 900,
+              }}
+            >
+              Intellekt
+            </h1>
 
-  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <button
-            onClick={() => scrollToSection(contactRef)}
-            className="text-[#0b1f5f] border border-[#0b1f5f] px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-[#0b1f5f] hover:text-white transition"
-          >
-            Contact Us
-          </button>
+            <span
+              className="absolute -top-1 -right-5 text-[12px] sm:text-[14px] font-bold"
+              style={{
+                fontFamily: "Roboto, sans-serif",
+                color: "#000351",
+              }}
+            >
+              ®
+            </span>
+          </div>
 
-          <button
-            onClick={() => scrollToSection(enquiryRef)}
-            className="text-[#0b1f5f] border border-[#0b1f5f] px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-[#0b1f5f] hover:text-white transition"
-          >
-            Enquiry
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <button
+              onClick={() => scrollToSection(contactRef)}
+              className="text-[#0b1f5f] border border-[#0b1f5f] px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-[#0b1f5f] hover:text-white transition"
+            >
+              Contact Us
+            </button>
 
-          <button
-            onClick={() => router.push("/login")}
-            className="bg-blue-700 text-white px-4 sm:px-6 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-blue-800 transition"
-          >
-            Login
-          </button>
+            <button
+              onClick={() => scrollToSection(enquiryRef)}
+              className="text-[#0b1f5f] border border-[#0b1f5f] px-3 sm:px-5 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-[#0b1f5f] hover:text-white transition"
+            >
+              Enquiry
+            </button>
+
+            <button
+              onClick={() => router.push("/login")}
+              className="bg-blue-700 text-white px-4 sm:px-6 py-2 rounded-full text-xs sm:text-sm font-medium hover:bg-blue-800 transition"
+            >
+              Login
+            </button>
+          </div>
         </div>
-</div>
-</header>
+      </header>
 
+      {/* HERO */}
       <section className="relative w-full pt-24 sm:pt-28 md:pt-32 pb-10 sm:pb-12 md:pb-14 px-4 sm:px-6 md:px-12 lg:px-16">
         <div className="max-w-7xl mx-auto">
+
           <div
-  className="rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-8 sm:py-10 text-center bg-cover bg-center bg-no-repeat relative overflow-hidden"
-  style={{
-    backgroundImage: "url('/banner.png')",
-  }}
->
+            className="rounded-[24px] sm:rounded-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] px-5 sm:px-8 md:px-12 py-8 sm:py-10 text-center bg-cover bg-center bg-no-repeat relative overflow-hidden"
+            style={{
+              backgroundImage: "url('/banner.png')",
+            }}
+          >
             <h1 className="text-white text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight drop-shadow-lg">
               GenieCampus
             </h1>
+
             <p className="mt-2 text-white text-sm sm:text-base md:text-lg max-w-3xl mx-auto leading-relaxed drop-shadow-md">
-             Science Bless You!
+              Science Bless You!
             </p>
           </div>
 
+          {/* SLIDER */}
           <div className="relative mt-6 sm:mt-8">
             <div className="overflow-hidden rounded-[24px] sm:rounded-[30px]">
+
               <div
                 className="flex transition-transform duration-700 ease-in-out"
-                style={{ transform: `translateX(-${currentCard * 100}%)` }}
+                style={{
+                  transform: `translateX(-${currentCard * 100}%)`,
+                }}
               >
                 {cards.map((card, index) => (
                   <div
@@ -407,6 +433,7 @@ export default function Home() {
                     className="w-full shrink-0 bg-[#edf4ff] shadow-[0_12px_35px_rgba(0,0,0,0.08)] rounded-[24px] sm:rounded-[30px] px-4 sm:px-6 md:px-10 py-5 sm:py-7 md:py-10"
                   >
                     <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-6 md:gap-8 items-center">
+
                       <div className="order-1 text-left">
                         <h2
                           className={`text-[#0b1f5f] font-extrabold leading-[1.05] ${
@@ -433,6 +460,7 @@ export default function Home() {
                           />
                         </div>
                       </div>
+
                     </div>
                   </div>
                 ))}
@@ -473,332 +501,454 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
-       <div className="max-w-7xl mx-auto flex flex-col xl:grid xl:grid-cols-3 gap-8 items-start">
-          <div
-            ref={contactRef}
-            className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
-          >
-            <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
-              Contact Us
+      {/* WHY INTELLEKT WORKS */}
+      <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-16 md:pb-24">
+        <div className="max-w-7xl mx-auto space-y-14">
+
+          <div className="text-center">
+            <h2 className="text-4xl sm:text-5xl font-bold text-[#111827] mb-14">
+              Why Intellekt Works
             </h2>
 
-            <div className="space-y-6">
-              <div className="flex items-start gap-3">
-                <Mail className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Email</p>
-                  <p className="text-gray-600 text-sm sm:text-base break-all">
-                    support@intellekt.com
-                  </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-5xl mx-auto">
+
+              <div className="bg-white rounded-[28px] p-8 shadow-sm border border-gray-100 hover:shadow-lg transition duration-300">
+                <div className="w-16 h-16 rounded-full bg-pink-100 flex items-center justify-center mx-auto mb-6">
+                  <span className="text-3xl">📘</span>
                 </div>
+
+                <h3 className="text-2xl font-semibold text-[#111827] mb-4">
+                  Personalized Learning
+                </h3>
+
+                <p className="text-gray-600 leading-relaxed text-lg">
+                  Students learn at their own pace with concept-focused
+                  teaching, helping them strengthen fundamentals and build
+                  confidence in Mathematics and Physics.
+                </p>
               </div>
 
-              <div className="flex items-start gap-3">
-                <Phone className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Phone</p>
-                  <p className="text-gray-600 text-sm sm:text-base">
-                    +91 98765 43210
-                  </p>
+              <div className="bg-white rounded-[28px] p-8 shadow-sm border border-gray-100 hover:shadow-lg transition duration-300">
+                <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-6">
+                  <span className="text-3xl">🚀</span>
                 </div>
+
+                <h3 className="text-2xl font-semibold text-[#111827] mb-4">
+                  Future-Focused Guidance
+                </h3>
+
+                <p className="text-gray-600 leading-relaxed text-lg">
+                  We prepare students for higher education and competitive
+                  academic environments through analytical thinking,
+                  mentoring, and strategic preparation.
+                </p>
               </div>
 
-              <div className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Location</p>
-                  <a
-                    href="https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-700 hover:text-blue-900 text-sm sm:text-base break-all"
-                  >
-                    https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9
-                  </a>
-                </div>
-              </div>
             </div>
           </div>
-          
-        <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 h-full">
-  <h2 className="text-2xl sm:text-3xl font-bold text-black mb-8 text-center">
-    Vision & Mission
-  </h2>
 
-  <div className="space-y-8">
-    <div>
-      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
-        Vision
-      </h3>
+          {/* CONTACT + VISION + ENQUIRY */}
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
 
-      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
-        “To create a generation of INTELLEKTUALS who lead with logic,
-        creativity, and academic excellence.”
-      </p>
-    </div>
+            {/* CONTACT */}
+            <div
+              ref={contactRef}
+              className="bg-white rounded-[30px] shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 border border-gray-100"
+            >
+              <h2 className="text-3xl font-bold text-[#111827] mb-8">
+                Contact Us
+              </h2>
 
-    <div className="border-t border-gray-200 pt-8">
-      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
-        Mission
-      </h3>
+              <div className="space-y-8">
 
-      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
-        “To inspire students to achieve their highest potential in
-        Mathematics and Physics through innovative teaching, strategic
-        guidance, and personal mentoring.”
-      </p>
-    </div>
-  </div>
-</div>
-          <div
-            ref={enquiryRef}
-            className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
-          >
-            <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
-              Enquiry
-            </h2>
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                    <Mail className="w-5 h-5 text-blue-700" />
+                  </div>
 
-            <form onSubmit={handleEnquirySubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Student Name
-                </label>
-                <input
-                  type="text"
-                  name="studentName"
-                  value={formData.studentName}
-                  onChange={handleChange}
-                  placeholder="Enter student name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={50}
-                  autoComplete="off"
-                />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-1">
+                      Email
+                    </p>
+
+                    <p className="text-gray-600 text-base break-all">
+                      support@intellekt.com
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                    <Phone className="w-5 h-5 text-blue-700" />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-1">
+                      Phone
+                    </p>
+
+                    <p className="text-gray-600 text-base">
+                      +91 98765 43210
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                    <MapPin className="w-5 h-5 text-blue-700" />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-1">
+                      Location
+                    </p>
+
+                    <a
+                      href="https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 hover:text-blue-900 text-base break-all"
+                    >
+                      View on Google Maps
+                    </a>
+                  </div>
+                </div>
+
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Class
-                </label>
-                <select
-                  name="className"
-                  value={formData.className}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select class</option>
-                  <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
-                </select>
+            {/* VISION & MISSION */}
+            <div className="bg-white rounded-[30px] shadow-md p-6 sm:p-8 md:p-10 border border-gray-100">
+
+              <h2 className="text-3xl font-bold text-[#111827] mb-10 text-center">
+                Vision & Mission
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                <div className="rounded-3xl bg-[#f8fbff] border border-blue-100 p-6">
+                  <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mb-5">
+                    <span className="text-2xl">🎯</span>
+                  </div>
+
+                  <h3 className="text-2xl font-bold text-[#0b1f5f] mb-4">
+                    Vision
+                  </h3>
+
+                  <p className="text-gray-600 text-lg leading-relaxed">
+                    To create a generation of INTELLEKTUALS who lead with
+                    logic, creativity, and academic excellence.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl bg-[#fffaf5] border border-orange-100 p-6">
+                  <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center mb-5">
+                    <span className="text-2xl">🌟</span>
+                  </div>
+
+                  <h3 className="text-2xl font-bold text-[#0b1f5f] mb-4">
+                    Mission
+                  </h3>
+
+                  <p className="text-gray-600 text-lg leading-relaxed">
+                    To inspire students to achieve their highest potential
+                    in Mathematics and Physics through innovative teaching,
+                    strategic guidance, and personal mentoring.
+                  </p>
+                </div>
+
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Board
-                </label>
-                <select
-                  name="board"
-                  value={formData.board}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select board</option>
-                  <option value="CBSE">CBSE</option>
-                  <option value="Stateboard">Stateboard</option>
-                  <option value="Isc">Isc</option>
-                </select>
-              </div>
+            {/* ENQUIRY */}
+            <div
+              ref={enquiryRef}
+              className="bg-white rounded-[30px] shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 border border-gray-100"
+            >
+              <h2 className="text-3xl font-bold text-[#111827] mb-8">
+                Enquiry
+              </h2>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  School Name
-                </label>
-                <input
-                  type="text"
-                  name="schoolName"
-                  value={formData.schoolName}
-                  onChange={handleChange}
-                  placeholder="Enter school name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={100}
-                  autoComplete="off"
-                />
-              </div>
+              <form
+                onSubmit={handleEnquirySubmit}
+                className="space-y-4"
+              >
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Subjects Looking for
-                </label>
-                <select
-                  name="subjects"
-                  value={formData.subjects}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select subject</option>
-                  <option value="Physics">Physics</option>
-                  <option value="Math">Math</option>
-                  <option value="Both">Both</option>
-                </select>
-              </div>
+                {/* ALL FORM FIELDS SAME */}
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Academic Year
-                </label>
-                <div className="grid grid-cols-2 gap-3">
+                {/* STUDENT NAME */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Student Name
+                  </label>
+
                   <input
                     type="text"
-                    name="academicYearFrom"
-                    value={formData.academicYearFrom}
+                    name="studentName"
+                    value={formData.studentName}
                     onChange={handleChange}
-                    placeholder="From"
+                    placeholder="Enter student name"
                     className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
                     required
-                    inputMode="numeric"
-                    maxLength={4}
-                    autoComplete="off"
-                  />
-                  <input
-                    type="text"
-                    name="academicYearTo"
-                    value={formData.academicYearTo}
-                    onChange={handleChange}
-                    placeholder="To"
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                    required
-                    inputMode="numeric"
-                    maxLength={4}
+                    maxLength={50}
                     autoComplete="off"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Mode of Education
-                </label>
-                <select
-                  name="modeOfEducation"
-                  value={formData.modeOfEducation}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
+                {/* CLASS */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Class
+                  </label>
+
+                  <select
+                    name="className"
+                    value={formData.className}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+                    required
+                  >
+                    <option value="">Select class</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                  </select>
+                </div>
+
+                {/* BOARD */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Board
+                  </label>
+
+                  <select
+                    name="board"
+                    value={formData.board}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+                    required
+                  >
+                    <option value="">Select board</option>
+                    <option value="CBSE">CBSE</option>
+                    <option value="Stateboard">Stateboard</option>
+                    <option value="Isc">Isc</option>
+                  </select>
+                </div>
+
+                {/* SCHOOL NAME */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    School Name
+                  </label>
+
+                  <input
+                    type="text"
+                    name="schoolName"
+                    value={formData.schoolName}
+                    onChange={handleChange}
+                    placeholder="Enter school name"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    maxLength={100}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* SUBJECTS */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Subjects Looking for
+                  </label>
+
+                  <select
+                    name="subjects"
+                    value={formData.subjects}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+                    required
+                  >
+                    <option value="">Select subject</option>
+                    <option value="Physics">Physics</option>
+                    <option value="Math">Math</option>
+                    <option value="Both">Both</option>
+                  </select>
+                </div>
+
+                {/* ACADEMIC YEAR */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Academic Year
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+
+                    <input
+                      type="text"
+                      name="academicYearFrom"
+                      value={formData.academicYearFrom}
+                      onChange={handleChange}
+                      placeholder="From"
+                      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                      required
+                      inputMode="numeric"
+                      maxLength={4}
+                      autoComplete="off"
+                    />
+
+                    <input
+                      type="text"
+                      name="academicYearTo"
+                      value={formData.academicYearTo}
+                      onChange={handleChange}
+                      placeholder="To"
+                      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                      required
+                      inputMode="numeric"
+                      maxLength={4}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
+                {/* MODE */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Mode of Education
+                  </label>
+
+                  <select
+                    name="modeOfEducation"
+                    value={formData.modeOfEducation}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+                    required
+                  >
+                    <option value="">Select mode</option>
+                    <option value="Online">Online</option>
+                    <option value="Offline">Offline</option>
+                  </select>
+                </div>
+
+                {/* PARENT NAME */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Parent Name
+                  </label>
+
+                  <input
+                    type="text"
+                    name="parentName"
+                    value={formData.parentName}
+                    onChange={handleChange}
+                    placeholder="Enter parent name"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    maxLength={50}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* PHONE */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Phone Number
+                  </label>
+
+                  <input
+                    type="tel"
+                    name="mobileNumber"
+                    value={formData.mobileNumber}
+                    onChange={handleChange}
+                    placeholder="Enter phone number"
+                    className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-700 ${
+                      phoneError
+                        ? "border-red-500"
+                        : "border-gray-300"
+                    }`}
+                    required
+                    inputMode="numeric"
+                    maxLength={10}
+                    autoComplete="off"
+                  />
+
+                  {phoneError && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {phoneError}
+                    </p>
+                  )}
+                </div>
+
+                {/* SECONDARY */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Secondary Contact
+                  </label>
+
+                  <input
+                    type="tel"
+                    name="secondaryContact"
+                    value={formData.secondaryContact}
+                    onChange={handleChange}
+                    placeholder="Enter secondary contact"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    inputMode="numeric"
+                    maxLength={10}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* AREA */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Area
+                  </label>
+
+                  <input
+                    type="text"
+                    name="area"
+                    value={formData.area}
+                    onChange={handleChange}
+                    placeholder="Enter area"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    required
+                    maxLength={80}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* REFERENCE */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Reference
+                  </label>
+
+                  <input
+                    type="text"
+                    name="reference"
+                    value={formData.reference}
+                    onChange={handleChange}
+                    placeholder="Enter reference"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+                    maxLength={100}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-blue-700 text-white py-3 rounded-xl font-semibold hover:bg-blue-800 transition"
                 >
-                  <option value="">Select mode</option>
-                  <option value="Online">Online</option>
-                  <option value="Offline">Offline</option>
-                </select>
-              </div>
+                  Submit Enquiry
+                </button>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Parent Name
-                </label>
-                <input
-                  type="text"
-                  name="parentName"
-                  value={formData.parentName}
-                  onChange={handleChange}
-                  placeholder="Enter parent name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={50}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  name="mobileNumber"
-                  value={formData.mobileNumber}
-                  onChange={handleChange}
-                  placeholder="Enter phone number"
-                  className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-700 ${
-                    phoneError ? "border-red-500" : "border-gray-300"
-                  }`}
-                  required
-                  inputMode="numeric"
-                  maxLength={10}
-                  autoComplete="off"
-                />
-                {phoneError && (
-                  <p className="text-red-500 text-sm mt-1">{phoneError}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Secondary Contact
-                </label>
-                <input
-                  type="tel"
-                  name="secondaryContact"
-                  value={formData.secondaryContact}
-                  onChange={handleChange}
-                  placeholder="Enter secondary contact"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  inputMode="numeric"
-                  maxLength={10}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Area
-                </label>
-                <input
-                  type="text"
-                  name="area"
-                  value={formData.area}
-                  onChange={handleChange}
-                  placeholder="Enter area"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={80}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Reference
-                </label>
-                <input
-                  type="text"
-                  name="reference"
-                  value={formData.reference}
-                  onChange={handleChange}
-                  placeholder="Enter reference"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  maxLength={100}
-                  autoComplete="off"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-blue-700 text-white py-3 rounded-xl font-semibold hover:bg-blue-800 transition"
-              >
-                Submit Enquiry
-              </button>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
       </section>
 
+      {/* SCROLL TO TOP */}
       {showScrollTop && (
         <button
           onClick={scrollToTop}
@@ -810,4 +960,4 @@ export default function Home() {
       )}
     </div>
   );
-} 
+}
