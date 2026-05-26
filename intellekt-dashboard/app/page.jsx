@@ -69,7 +69,7 @@ export default function Home() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentCard((prev) => (prev + 1) % cards.length);
-    }, 4000);
+  }, 120000);
 
     return () => clearInterval(interval);
   }, []);
