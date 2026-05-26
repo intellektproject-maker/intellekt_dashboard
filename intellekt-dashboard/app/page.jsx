@@ -473,331 +473,359 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
-       <div className="max-w-7xl mx-auto flex flex-col xl:grid xl:grid-cols-3 gap-8 items-start">
-        <div
-  ref={contactRef}
-  className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 xl:-mt-10"
->
-            <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
-              Contact Us
-            </h2>
+  <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
+  <div className="max-w-7xl mx-auto">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
 
-            <div className="space-y-6">
-              <div className="flex items-start gap-3">
-                <Mail className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Email</p>
-                  <p className="text-gray-600 text-sm sm:text-base break-all">
-                    support@intellekt.com
-                  </p>
-                </div>
-              </div>
+      {/* Quadrant 1 - Mission */}
+      <div className="bg-white rounded-3xl shadow-md p-6 sm:p-8 md:p-10 flex flex-col justify-center">
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-[#0b1f5f] mb-6">
+          Mission
+        </h2>
 
-              <div className="flex items-start gap-3">
-                <Phone className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Phone</p>
-                  <p className="text-gray-600 text-sm sm:text-base">
-                    +91 98765 43210
-                  </p>
-                </div>
-              </div>
+        <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
+          “To inspire students to achieve their highest potential in
+          Mathematics and Physics through innovative teaching,
+          strategic guidance, and personal mentoring.”
+        </p>
+      </div>
 
-              <div className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Location</p>
-                  <a
-                    href="https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-700 hover:text-blue-900 text-sm sm:text-base break-all"
-                  >
-                    https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9
-                  </a>
-                </div>
-              </div>
+      {/* Quadrant 2 - Vision */}
+      <div className="bg-white rounded-3xl shadow-md p-6 sm:p-8 md:p-10 flex flex-col justify-center">
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-[#0b1f5f] mb-6">
+          Vision
+        </h2>
+
+        <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
+          “To create a generation of INTELLEKTUALS who lead with logic,
+          creativity, and academic excellence.”
+        </p>
+      </div>
+
+      {/* Quadrant 3 - Contact Us */}
+      <div
+        ref={contactRef}
+        className="bg-white rounded-3xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
+      >
+        <h2 className="text-2xl sm:text-3xl font-bold text-black mb-8">
+          Contact Us
+        </h2>
+
+        <div className="space-y-6">
+          <div className="flex items-start gap-3">
+            <Mail className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
+
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Email
+              </p>
+
+              <p className="text-gray-600 text-sm sm:text-base break-all">
+                support@intellekt.com
+              </p>
             </div>
           </div>
-          
-        <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 xl:mt-6">
-  <h2 className="text-2xl sm:text-3xl font-bold text-black mb-8 text-center">
-    Vision & Mission
-  </h2>
 
-  <div className="space-y-8">
-    <div>
-      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
-        Vision
-      </h3>
+          <div className="flex items-start gap-3">
+            <Phone className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
 
-      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
-        “To create a generation of INTELLEKTUALS who lead with logic,
-        creativity, and academic excellence.”
-      </p>
-    </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Phone
+              </p>
 
-    <div className="border-t border-gray-200 pt-8">
-      <h3 className="text-xl sm:text-2xl font-bold text-[#0b1f5f] mb-3">
-        Mission
-      </h3>
+              <p className="text-gray-600 text-sm sm:text-base">
+                +91 98765 43210
+              </p>
+            </div>
+          </div>
 
-      <p className="text-gray-600 text-base sm:text-lg leading-relaxed">
-        “To inspire students to achieve their highest potential in
-        Mathematics and Physics through innovative teaching, strategic
-        guidance, and personal mentoring.”
-      </p>
-    </div>
-  </div>
-</div>
-         <div
-  ref={enquiryRef}
-  className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 xl:mt-16"
->
-            <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
-              Enquiry
-            </h2>
+          <div className="flex items-start gap-3">
+            <MapPin className="w-5 h-5 text-blue-700 mt-1 shrink-0" />
 
-            <form onSubmit={handleEnquirySubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Student Name
-                </label>
-                <input
-                  type="text"
-                  name="studentName"
-                  value={formData.studentName}
-                  onChange={handleChange}
-                  placeholder="Enter student name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={50}
-                  autoComplete="off"
-                />
-              </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Location
+              </p>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Class
-                </label>
-                <select
-                  name="className"
-                  value={formData.className}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select class</option>
-                  <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Board
-                </label>
-                <select
-                  name="board"
-                  value={formData.board}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select board</option>
-                  <option value="CBSE">CBSE</option>
-                  <option value="Stateboard">Stateboard</option>
-                  <option value="Isc">Isc</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  School Name
-                </label>
-                <input
-                  type="text"
-                  name="schoolName"
-                  value={formData.schoolName}
-                  onChange={handleChange}
-                  placeholder="Enter school name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={100}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Subjects Looking for
-                </label>
-                <select
-                  name="subjects"
-                  value={formData.subjects}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select subject</option>
-                  <option value="Physics">Physics</option>
-                  <option value="Math">Math</option>
-                  <option value="Both">Both</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Academic Year
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    name="academicYearFrom"
-                    value={formData.academicYearFrom}
-                    onChange={handleChange}
-                    placeholder="From"
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                    required
-                    inputMode="numeric"
-                    maxLength={4}
-                    autoComplete="off"
-                  />
-                  <input
-                    type="text"
-                    name="academicYearTo"
-                    value={formData.academicYearTo}
-                    onChange={handleChange}
-                    placeholder="To"
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                    required
-                    inputMode="numeric"
-                    maxLength={4}
-                    autoComplete="off"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Mode of Education
-                </label>
-                <select
-                  name="modeOfEducation"
-                  value={formData.modeOfEducation}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
-                  required
-                >
-                  <option value="">Select mode</option>
-                  <option value="Online">Online</option>
-                  <option value="Offline">Offline</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Parent Name
-                </label>
-                <input
-                  type="text"
-                  name="parentName"
-                  value={formData.parentName}
-                  onChange={handleChange}
-                  placeholder="Enter parent name"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={50}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  name="mobileNumber"
-                  value={formData.mobileNumber}
-                  onChange={handleChange}
-                  placeholder="Enter phone number"
-                  className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-700 ${
-                    phoneError ? "border-red-500" : "border-gray-300"
-                  }`}
-                  required
-                  inputMode="numeric"
-                  maxLength={10}
-                  autoComplete="off"
-                />
-                {phoneError && (
-                  <p className="text-red-500 text-sm mt-1">{phoneError}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Secondary Contact
-                </label>
-                <input
-                  type="tel"
-                  name="secondaryContact"
-                  value={formData.secondaryContact}
-                  onChange={handleChange}
-                  placeholder="Enter secondary contact"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  inputMode="numeric"
-                  maxLength={10}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Area
-                </label>
-                <input
-                  type="text"
-                  name="area"
-                  value={formData.area}
-                  onChange={handleChange}
-                  placeholder="Enter area"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  required
-                  maxLength={80}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Reference
-                </label>
-                <input
-                  type="text"
-                  name="reference"
-                  value={formData.reference}
-                  onChange={handleChange}
-                  placeholder="Enter reference"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-                  maxLength={100}
-                  autoComplete="off"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-blue-700 text-white py-3 rounded-xl font-semibold hover:bg-blue-800 transition"
+              <a
+                href="https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-700 hover:text-blue-900 text-sm sm:text-base break-all"
               >
-                Submit Enquiry
-              </button>
-            </form>
+                https://maps.app.goo.gl/B4JhSmtsjJsx9ixT9
+              </a>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
+
+      {/* Quadrant 4 - Enquiry */}
+      <div
+        ref={enquiryRef}
+        className="bg-white rounded-3xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
+      >
+        <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6">
+          Enquiry
+        </h2>
+
+    <form onSubmit={handleEnquirySubmit} className="space-y-4">
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Student Name
+    </label>
+
+    <input
+      type="text"
+      name="studentName"
+      value={formData.studentName}
+      onChange={handleChange}
+      placeholder="Enter student name"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      required
+      maxLength={50}
+      autoComplete="off"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Class
+    </label>
+
+    <select
+      name="className"
+      value={formData.className}
+      onChange={handleChange}
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+      required
+    >
+      <option value="">Select class</option>
+      <option value="10">10</option>
+      <option value="11">11</option>
+      <option value="12">12</option>
+    </select>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Board
+    </label>
+
+    <select
+      name="board"
+      value={formData.board}
+      onChange={handleChange}
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+      required
+    >
+      <option value="">Select board</option>
+      <option value="CBSE">CBSE</option>
+      <option value="Stateboard">Stateboard</option>
+      <option value="Isc">Isc</option>
+    </select>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      School Name
+    </label>
+
+    <input
+      type="text"
+      name="schoolName"
+      value={formData.schoolName}
+      onChange={handleChange}
+      placeholder="Enter school name"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      required
+      maxLength={100}
+      autoComplete="off"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Subjects Looking for
+    </label>
+
+    <select
+      name="subjects"
+      value={formData.subjects}
+      onChange={handleChange}
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+      required
+    >
+      <option value="">Select subject</option>
+      <option value="Physics">Physics</option>
+      <option value="Math">Math</option>
+      <option value="Both">Both</option>
+    </select>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Academic Year
+    </label>
+
+    <div className="grid grid-cols-2 gap-3">
+      <input
+        type="text"
+        name="academicYearFrom"
+        value={formData.academicYearFrom}
+        onChange={handleChange}
+        placeholder="From"
+        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+        required
+        inputMode="numeric"
+        maxLength={4}
+        autoComplete="off"
+      />
+
+      <input
+        type="text"
+        name="academicYearTo"
+        value={formData.academicYearTo}
+        onChange={handleChange}
+        placeholder="To"
+        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+        required
+        inputMode="numeric"
+        maxLength={4}
+        autoComplete="off"
+      />
+    </div>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Mode of Education
+    </label>
+
+    <select
+      name="modeOfEducation"
+      value={formData.modeOfEducation}
+      onChange={handleChange}
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+      required
+    >
+      <option value="">Select mode</option>
+      <option value="Online">Online</option>
+      <option value="Offline">Offline</option>
+    </select>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Parent Name
+    </label>
+
+    <input
+      type="text"
+      name="parentName"
+      value={formData.parentName}
+      onChange={handleChange}
+      placeholder="Enter parent name"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      required
+      maxLength={50}
+      autoComplete="off"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Phone Number
+    </label>
+
+    <input
+      type="tel"
+      name="mobileNumber"
+      value={formData.mobileNumber}
+      onChange={handleChange}
+      placeholder="Enter phone number"
+      className={`w-full border rounded-xl px-4 py-3 outline-none focus:border-blue-700 ${
+        phoneError ? "border-red-500" : "border-gray-300"
+      }`}
+      required
+      inputMode="numeric"
+      maxLength={10}
+      autoComplete="off"
+    />
+
+    {phoneError && (
+      <p className="text-red-500 text-sm mt-1">{phoneError}</p>
+    )}
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Secondary Contact
+    </label>
+
+    <input
+      type="tel"
+      name="secondaryContact"
+      value={formData.secondaryContact}
+      onChange={handleChange}
+      placeholder="Enter secondary contact"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      required
+      inputMode="numeric"
+      maxLength={10}
+      autoComplete="off"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Area
+    </label>
+
+    <input
+      type="text"
+      name="area"
+      value={formData.area}
+      onChange={handleChange}
+      placeholder="Enter area"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      required
+      maxLength={80}
+      autoComplete="off"
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Reference
+    </label>
+
+    <input
+      type="text"
+      name="reference"
+      value={formData.reference}
+      onChange={handleChange}
+      placeholder="Enter reference"
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+      maxLength={100}
+      autoComplete="off"
+    />
+  </div>
+
+  <button
+    type="submit"
+    className="w-full bg-blue-700 text-white py-3 rounded-xl font-semibold hover:bg-blue-800 transition"
+  >
+    Submit Enquiry
+  </button>
+
+</form>
+      </div>
+    </div>
+  </div>
+</section>
 
       {showScrollTop && (
         <button
