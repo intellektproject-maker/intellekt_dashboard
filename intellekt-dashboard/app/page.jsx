@@ -475,10 +475,10 @@ export default function Home() {
 
       <section className="px-4 sm:px-6 md:px-12 lg:px-16 pb-12 md:pb-16">
        <div className="max-w-7xl mx-auto flex flex-col xl:grid xl:grid-cols-3 gap-8 items-start">
-          <div
-            ref={contactRef}
-            className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
-          >
+        <div
+  ref={contactRef}
+  className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 xl:-mt-10"
+>
             <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
               Contact Us
             </h2>
@@ -521,7 +521,7 @@ export default function Home() {
             </div>
           </div>
           
-        <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 h-full">
+        <div className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 xl:mt-6">
   <h2 className="text-2xl sm:text-3xl font-bold text-black mb-8 text-center">
     Vision & Mission
   </h2>
@@ -551,10 +551,10 @@ export default function Home() {
     </div>
   </div>
 </div>
-          <div
-            ref={enquiryRef}
-            className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32"
-          >
+         <div
+  ref={enquiryRef}
+  className="bg-white rounded-2xl shadow-md p-6 sm:p-8 md:p-10 scroll-mt-32 xl:mt-16"
+>
             <h2 className="text-2xl sm:text-3xl font-bold text-black mb-6 text-center md:text-left">
               Enquiry
             </h2>
