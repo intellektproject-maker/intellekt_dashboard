@@ -160,23 +160,44 @@ const subjectWiseAverage = useMemo(() => {
   );
 
   function calculateAverage(items) {
-    const validMarks = items
+    const normalizedMarks = items
       .map((item) => {
-        const value = String(item.marks_obtained || "").trim().toUpperCase();
+        const value = String(item.marks_obtained || "")
+          .trim()
+          .toUpperCase();
 
-        if (value === "A") return null;
+        const total = Number(
+          item.total_marks ||
+          item.max_marks ||
+          item.out_of ||
+          100
+        );
 
-        const num = Number(value);
+        if (!Number.isFinite(total) || total <= 0) {
+          return null;
+        }
 
-        return Number.isFinite(num) ? num : null;
+        // Absent = 0
+        if (value === "A") {
+          return 0;
+        }
+
+        const obtained = Number(value);
+
+        if (!Number.isFinite(obtained)) {
+          return null;
+        }
+
+        // Convert marks to percentage out of 100
+        return (obtained / total) * 100;
       })
       .filter((v) => v !== null);
 
-    if (validMarks.length === 0) return "0";
+    if (normalizedMarks.length === 0) return "0";
 
     return (
-      validMarks.reduce((sum, value) => sum + value, 0) /
-      validMarks.length
+      normalizedMarks.reduce((sum, value) => sum + value, 0) /
+      normalizedMarks.length
     ).toFixed(1);
   }
 
@@ -185,8 +206,8 @@ const subjectWiseAverage = useMemo(() => {
     physics: calculateAverage(physicsMarks),
   };
 }, [marks]);
-
-  const upcomingTestsCount = useMemo(() => {
+ 
+const upcomingTestsCount = useMemo(() => {
     if (!tests.length) return 0;
 
     const today = new Date();
