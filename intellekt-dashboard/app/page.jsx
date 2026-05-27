@@ -423,8 +423,8 @@ export default function Home() {
                         </p>
                       </div>
 
-                  <div className="order-2">
-  <div className="relative w-full h-[220px] sm:h-[280px] md:h-[340px] lg:h-[360px] rounded-[18px] overflow-hidden shadow-[0_8px_20px_rgba(0,0,0,0.15)] bg-black flex items-center justify-center">
+<div className="order-2 flex items-center justify-center">
+  <div className="relative w-full max-w-[520px] h-[220px] sm:h-[280px] md:h-[340px] lg:h-[360px] rounded-[18px] overflow-hidden shadow-[0_8px_20px_rgba(0,0,0,0.15)] bg-black">
 
     {/* First Slide */}
     {index === 0 && (
@@ -432,29 +432,30 @@ export default function Home() {
         src="/Intellekt-AI.png"
         alt="Academic excellence"
         fill
-        className="object-cover"
+        className="object-cover object-center"
         priority
       />
     )}
 
-    {/* Second Slide */}
-    {index === 1 && (
-      <Image
-        src="/ai2.png"
-        alt="AI Illustration"
-        fill
-        className="object-contain p-2"
-        priority
-      />
-    )}
-
-  </div>
+   {/* Second Slide */}
+{index === 1 && (
+  <Image
+    src="/ai2.png"
+    alt="AI Illustration"
+    fill
+    className="object-cover object-center"
+    priority
+  />
+)}
+    </div>  
+</div>   
+</div>   
+</div>   
+))}
 </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+</div>
+
+ 
 
             <button
               onClick={goPrev}
