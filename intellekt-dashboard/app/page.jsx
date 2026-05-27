@@ -424,14 +424,25 @@ export default function Home() {
                       </div>
 
                       <div className="order-2">
-                        <div className="relative w-full h-[220px] sm:h-[280px] md:h-[340px] lg:h-[360px] rounded-[18px] overflow-hidden shadow-[0_8px_20px_rgba(0,0,0,0.15)] bg-black">
-                          <Image
-                            src={card.image}
-                            alt={card.alt}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
+                       <div className="relative w-full h-[220px] sm:h-[280px] md:h-[340px] lg:h-[360px] rounded-[18px] overflow-hidden shadow-[0_8px_20px_rgba(0,0,0,0.15)] bg-black flex items-center justify-center">
+  
+  <Image
+    src="/ai2.png"
+    alt="AI Illustration"
+    fill
+    className="object-contain p-2"
+    priority
+  />
+
+  <Image
+    src={card.image}
+    alt={card.alt}
+    fill
+    className={`${
+      index === 1 ? "object-cover" : "hidden"
+    }`}
+  />
+</div>
                       </div>
                     </div>
                   </div>
