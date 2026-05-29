@@ -315,19 +315,18 @@ app.get('/test-schedule/:roll', async (req, res) => {
 		const result = await pool.query(
 			`
 			SELECT 
-				t.test_code,
-				t.subject_id,
-				COALESCE(sub.subject_name, 'Unknown') AS subject_name,
-				t.test_date,
-				t.total_marks,
-				t.portion,
-				t.duration_minutes,
-				t.registration_end_date,
-				t.writing_allowed_till,
-				t.test_slot_link,
-				r.slot_start,
-				r.slot_end,
-				r.writing_date
+	t.test_code,
+	t.subject_id,
+	COALESCE(sub.subject_name, 'Unknown') AS subject_name,
+	t.test_date,
+	t.total_marks,
+	t.portion,
+	t.duration_minutes,
+	t.registration_end_date,
+	t.writing_allowed_till,
+	r.slot_start,
+	r.slot_end,
+	r.writing_date
 			FROM students s
 			JOIN student_subjects ss
 				ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -356,7 +355,6 @@ app.get('/test-schedule/:roll', async (req, res) => {
 			duration_minutes: row.duration_minutes,
 			registration_end_date: row.registration_end_date,
 			writing_allowed_till: row.writing_allowed_till,
-			test_slot_link: row.test_slot_link,
 			is_registered: !!row.writing_date,
 			writing_date: row.writing_date || null,
 			registered_slot_label:
@@ -1974,43 +1972,24 @@ app.post('/post-test', async (req, res) => {
 			});
 		}
 
-		const existingLink = await client.query(
-			`
-				SELECT test_slot_link
-				FROM tests
-				WHERE test_date = $1
-				AND test_slot_link IS NOT NULL
-				LIMIT 1
-				`,
-			[ test_date ]
-		);
-
-		let link;
-
-		if (existingLink.rows.length > 0) {
-			link = existingLink.rows[0].test_slot_link;
-		} else {
-			link = `https://responsible-wonder-production.up.railway.app/register-test?date=${test_date}`;
-		}
-
 		const insertResult = await client.query(
 			`
 				INSERT INTO tests (
-					test_code,
-					subject_id,
-					test_date,
-					total_marks,
-					portion,
-					created_by,
-					class,
-					board,
-					test_slot_link,
-					duration_minutes,
-					registration_end_date,
-					writing_allowed_till
-				)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-				RETURNING *
+	test_code,
+	subject_id,
+	test_date,
+	total_marks,
+	portion,
+	created_by,
+	class,
+	board,
+	duration_minutes,
+	registration_end_date,
+	writing_allowed_till
+)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+RETURNING *
+
 				`,
 			[
 				cleanTestCode,
@@ -2021,7 +2000,6 @@ app.post('/post-test', async (req, res) => {
 				created_by,
 				cleanClassName,
 				cleanBoard,
-				link,
 				duration_minutes || null,
 				registration_end_date || null,
 				writing_allowed_till || null
@@ -2054,7 +2032,6 @@ app.post('/post-test', async (req, res) => {
 		res.json({
 			message: 'Test posted successfully',
 			test: insertResult.rows[0],
-			link
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
