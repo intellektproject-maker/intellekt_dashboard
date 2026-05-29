@@ -539,7 +539,7 @@ export default function Home() {
               </p>
 
               <p className="text-gray-600 text-sm sm:text-base break-all">
-                support@intellekt.com
+                intellektgenie@gmail.com
               </p>
             </div>
           </div>
@@ -553,7 +553,7 @@ export default function Home() {
               </p>
 
               <p className="text-gray-600 text-sm sm:text-base">
-                +91 98765 43210
+               +91 75400 86555
               </p>
             </div>
           </div>
