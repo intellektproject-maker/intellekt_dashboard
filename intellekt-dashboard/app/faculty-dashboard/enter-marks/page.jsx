@@ -30,7 +30,7 @@ function MarksPageContent() {
   const [searchText, setSearchText] = useState("");
   const [filterClass, setFilterClass] = useState("");
   const [filterBoard, setFilterBoard] = useState("");
-
+  const [filterSubject, setFilterSubject] = useState("");
   const totalMarks = manualTotal
     ? Number(manualTotal)
     : selectedTest
@@ -280,7 +280,11 @@ function MarksPageContent() {
   const uniqueClasses = [...new Set(tests.map((t) => t.class))];
 
   const uniqueBoards = [...new Set(tests.map((t) => t.board))];
-
+  const uniqueSubjects = [
+  ...new Set(
+    tests.map((t) => t.subject_name || t.subject || "")
+  ),
+].filter(Boolean);
   const filteredTests = tests.filter((t) => {
     const matchesSearch =
       !searchText ||
@@ -291,9 +295,11 @@ function MarksPageContent() {
 
     const matchesBoard =
       !filterBoard || String(t.board) === String(filterBoard);
-
-    return matchesSearch && matchesClass && matchesBoard;
-  });
+ 
+    const matchesSubject =
+  !filterSubject ||
+  String(t.subject_name || t.subject) === String(filterSubject);
+    return matchesSearch && matchesClass && matchesBoard && matchesSubject;  });
 
   const hasExistingMarks = Object.keys(savedMarks).length > 0;
 
@@ -305,8 +311,7 @@ function MarksPageContent() {
         </h2>
 
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Search Test Code
@@ -355,7 +360,25 @@ function MarksPageContent() {
                 ))}
               </select>
             </div>
+          <div>
+  <label className="block text-sm font-semibold text-gray-700 mb-2">
+    Filter Subject
+  </label>
 
+  <select
+    value={filterSubject}
+    onChange={(e) => setFilterSubject(e.target.value)}
+    className="w-full border border-gray-300 rounded-lg px-4 py-3"
+  >
+    <option value="">All Subjects</option>
+
+    {uniqueSubjects.map((subject) => (
+      <option key={subject} value={subject}>
+        {subject}
+      </option>
+    ))}
+  </select>
+</div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
