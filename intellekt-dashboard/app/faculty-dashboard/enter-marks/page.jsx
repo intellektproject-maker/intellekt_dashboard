@@ -27,6 +27,10 @@ function MarksPageContent() {
   const [classError, setClassError] = useState("");
   const [totalError, setTotalError] = useState("");
 
+  const [searchText, setSearchText] = useState("");
+  const [filterClass, setFilterClass] = useState("");
+  const [filterBoard, setFilterBoard] = useState("");
+
   const totalMarks = manualTotal
     ? Number(manualTotal)
     : selectedTest
@@ -273,6 +277,24 @@ function MarksPageContent() {
     }
   }
 
+  const uniqueClasses = [...new Set(tests.map((t) => t.class))];
+
+  const uniqueBoards = [...new Set(tests.map((t) => t.board))];
+
+  const filteredTests = tests.filter((t) => {
+    const matchesSearch =
+      !searchText ||
+      String(t.test_code).toLowerCase().includes(searchText.toLowerCase());
+
+    const matchesClass =
+      !filterClass || String(t.class) === String(filterClass);
+
+    const matchesBoard =
+      !filterBoard || String(t.board) === String(filterBoard);
+
+    return matchesSearch && matchesClass && matchesBoard;
+  });
+
   const hasExistingMarks = Object.keys(savedMarks).length > 0;
 
   return (
@@ -283,6 +305,59 @@ function MarksPageContent() {
         </h2>
 
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Search Test Code
+              </label>
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search Test Code"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Filter Class
+              </label>
+              <select
+                value={filterClass}
+                onChange={(e) => setFilterClass(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3"
+              >
+                <option value="">All Classes</option>
+                {uniqueClasses.map((cls) => (
+                  <option key={cls} value={cls}>
+                    {cls}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Filter Board
+              </label>
+              <select
+                value={filterBoard}
+                onChange={(e) => setFilterBoard(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3"
+              >
+                <option value="">All Boards</option>
+                {uniqueBoards.map((board) => (
+                  <option key={board} value={board}>
+                    {board}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -301,7 +376,7 @@ function MarksPageContent() {
                   {loadingTests ? "Loading tests..." : "Select Test Code"}
                 </option>
 
-                {tests.map((t) => (
+                {filteredTests.map((t) => (
                   <option key={t.test_code} value={t.test_code}>
                     {t.test_code} — {t.class} — {t.board}
                   </option>
