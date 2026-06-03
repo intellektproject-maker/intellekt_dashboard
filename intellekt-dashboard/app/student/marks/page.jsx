@@ -417,6 +417,14 @@ function MarksPageContent() {
             <thead className="bg-gray-200">
               <tr>
                 <th className="p-2 border whitespace-nowrap">Test Code</th>
+                <thead className="bg-gray-200">
+  <tr>
+    <th className="p-2 border whitespace-nowrap">Test Code</th>
+    <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
+    <th className="p-2 border whitespace-nowrap">Total Marks</th>
+    <th className="p-2 border whitespace-nowrap">Comments</th>
+  </tr>
+</thead>
                 <th className="p-2 border whitespace-nowrap">Test Month</th>
                 <th className="p-2 border whitespace-nowrap">Marks</th>
                 <th className="p-2 border whitespace-nowrap">Comments</th>
@@ -426,22 +434,33 @@ function MarksPageContent() {
             <tbody>
               {chapter.tests.length > 0 ? (
                 chapter.tests.map((m, index) => (
-                  <tr key={`${m.test_code}-${index}`}>
-                    <td className="p-2 border whitespace-nowrap">
-                      {m.test_code || "-"}
-                    </td>
-                    <td className="p-2 border whitespace-nowrap">
-                      {getWeekOfMonthLabel(m.test_date)}
-                    </td>
-                    <td className="p-2 border whitespace-nowrap font-semibold">
-                      {renderMarksFraction(m.marks_obtained, m.total_marks)}
-                    </td>
-                    <td className="p-2 border break-words">{m.comments || "-"}</td>
-                  </tr>
+                <tr key={`${m.test_code}-${index}`}>
+  <td className="p-2 border whitespace-nowrap">
+    {m.test_code || "-"}
+  </td>
+
+  <td className="p-2 border whitespace-nowrap">
+    {m.test_date
+      ? new Date(m.test_date).toLocaleDateString("en-GB")
+      : "-"}
+  </td>
+
+  <td className="p-2 border whitespace-nowrap">
+    {renderMark(m.marks_obtained)}
+  </td>
+
+  <td className="p-2 border whitespace-nowrap">
+    {m.total_marks ?? "-"}
+  </td>
+
+  <td className="p-2 border break-words">
+    {m.comments || "-"}
+  </td>
+</tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="4" className="p-4 border text-center text-gray-500">
+                  <td colSpan="5" className="p-4 border text-center text-gray-500">
                     No tests found for this chapter
                   </td>
                 </tr>
