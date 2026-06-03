@@ -414,29 +414,21 @@ function MarksPageContent() {
 
         <div className="overflow-x-auto mb-8">
           <table className="min-w-full border text-sm md:text-base">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="p-2 border whitespace-nowrap">Test Code</th>
-                <thead className="bg-gray-200">
+          <thead className="bg-gray-200">
   <tr>
     <th className="p-2 border whitespace-nowrap">Test Code</th>
+    <th className="p-2 border whitespace-nowrap">Test Date</th>
     <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
     <th className="p-2 border whitespace-nowrap">Total Marks</th>
     <th className="p-2 border whitespace-nowrap">Comments</th>
   </tr>
-</thead>
-                <th className="p-2 border whitespace-nowrap">Test Month</th>
-                <th className="p-2 border whitespace-nowrap">Marks</th>
-                <th className="p-2 border whitespace-nowrap">Comments</th>
-              </tr>
-            </thead>
-
+</thead> 
             <tbody>
               {chapter.tests.length > 0 ? (
                 chapter.tests.map((m, index) => (
                 <tr key={`${m.test_code}-${index}`}>
-  <td className="p-2 border whitespace-nowrap">
-    {m.test_code || "-"}
+                <td className="p-2 border whitespace-nowrap">
+               {m.test_code || "-"}
   </td>
 
   <td className="p-2 border whitespace-nowrap">
