@@ -491,13 +491,14 @@ function MarksPageContent() {
         <div className="overflow-x-auto">
           <table className="min-w-full border text-sm md:text-base">
             <thead className="bg-gray-200">
-              <tr>
-                <th className="p-2 border whitespace-nowrap">Test Code</th>
-                <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
-                <th className="p-2 border whitespace-nowrap">Total Marks</th>
-                <th className="p-2 border whitespace-nowrap">Comments</th>
-              </tr>
-            </thead>
+  <tr>
+    <th className="p-2 border whitespace-nowrap">Test Code</th>
+    <th className="p-2 border whitespace-nowrap">Test Date</th>
+    <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
+    <th className="p-2 border whitespace-nowrap">Total Marks</th>
+    <th className="p-2 border whitespace-nowrap">Comments</th>
+  </tr>
+</thead>
 
             <tbody>
               {data.length > 0 ? (
@@ -505,6 +506,11 @@ function MarksPageContent() {
                   <tr key={`${m.test_code}-${index}`}>
                     <td className="p-2 border whitespace-nowrap">
                       {m.test_code || "-"}
+                    </td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_date
+                        ? new Date(m.test_date).toLocaleDateString("en-GB")
+                        : "-"}
                     </td>
                     <td className="p-2 border whitespace-nowrap">
                       {renderMark(m.marks_obtained)}
@@ -517,7 +523,7 @@ function MarksPageContent() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="4" className="p-4 border text-center text-gray-500">
+                  <td colSpan="5" className="p-4 border text-center text-gray-500">
                     No records found
                   </td>
                 </tr>
