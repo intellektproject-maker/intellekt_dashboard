@@ -41,7 +41,20 @@ function TestScheduleContent() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
-        setTests(Array.isArray(data) ? data : []);
+
+const activeTests = (Array.isArray(data) ? data : []).filter((test) => {
+  if (!test.writing_allowed_till) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const writingTill = new Date(test.writing_allowed_till);
+  writingTill.setHours(0, 0, 0, 0);
+
+  return writingTill >= today;
+});
+
+setTests(activeTests);
       } catch (err) {
         console.error("Error loading tests:", err);
         setTests([]);
