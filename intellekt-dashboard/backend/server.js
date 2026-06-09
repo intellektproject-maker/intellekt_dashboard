@@ -1513,9 +1513,13 @@ app.post('/attendance', async (req, res) => {
 		return res.status(400).json({ error: 'records are required' });
 	}
 
-	if (!subject) {
-		return res.status(400).json({ error: 'subject is required' });
-	}
+	const isSundayMode =
+	!subject &&
+	records.some((record) => record.subject_id);
+
+if (!subject && !isSundayMode) {
+	return res.status(400).json({ error: 'subject is required' });
+}
 
 	if (!facultyId) {
 		return res.status(400).json({ error: 'facultyId is required' });
@@ -1534,6 +1538,7 @@ app.post('/attendance', async (req, res) => {
 		const existingStudents = [];
 
 		for (const record of records) {
+			const actualSubject = subject || record.subject_id;
 			const enrolledCheck = await client.query(
 				`
 				SELECT 1
@@ -4028,6 +4033,140 @@ app.get('/faculty-roles', async (req, res) => {
 		console.error('GET /faculty-roles error:', err);
 		res.status(500).json({ error: 'Failed to fetch faculty roles' });
 	}
+});
+app.get('/attendance-students', async (req, res) => {
+  const {
+    date,
+    class: className,
+    board,
+    subject_id
+  } = req.query;
+
+  if (!date) {
+    return res.status(400).json({
+      error: 'date is required'
+    });
+  }
+
+  try {
+    const dayOfWeek = new Date(date).getDay();
+
+    // ==========================
+    // SUNDAY MODE
+    // ==========================
+    if (dayOfWeek === 0) {
+      const result = await pool.query(
+        `
+        SELECT
+          roll_no,
+          student_name AS name,
+          class,
+          board,
+          subject_id,
+          test_code
+        FROM test_registrations
+        WHERE writing_date = $1
+        ORDER BY class, subject_id, roll_no
+        `,
+        [date]
+      );
+
+      return res.json({
+        mode: 'sunday',
+        students: result.rows
+      });
+    }
+
+    // ==========================
+    // WEEKDAY MODE
+    // ==========================
+    if (!className || !board || !subject_id) {
+      return res.status(400).json({
+        error: 'class, board and subject_id are required'
+      });
+    }
+
+    const testCheck = await pool.query(
+      `
+      SELECT 1
+      FROM tests
+      WHERE test_date = $1
+        AND TRIM(class) = TRIM($2)
+        AND UPPER(TRIM(board)) = UPPER(TRIM($3))
+        AND subject_id = $4
+      LIMIT 1
+      `,
+      [date, className, board, Number(subject_id)]
+    );
+
+    // ==========================
+    // TEST EXISTS
+    // ==========================
+    if (testCheck.rows.length > 0) {
+      const registrations = await pool.query(
+        `
+        SELECT
+          roll_no,
+          student_name AS name,
+          class,
+          board,
+          subject_id,
+          test_code
+        FROM test_registrations
+        WHERE writing_date = $1
+          AND TRIM(class) = TRIM($2)
+          AND UPPER(TRIM(board)) = UPPER(TRIM($3))
+          AND subject_id = $4
+        ORDER BY roll_no
+        `,
+        [date, className, board, Number(subject_id)]
+      );
+
+      return res.json({
+        mode: 'test',
+        students: registrations.rows
+      });
+    }
+
+    // ==========================
+    // NORMAL ATTENDANCE
+    // ==========================
+    const students = await pool.query(
+      `
+      SELECT DISTINCT
+        s.roll_no,
+        s.name,
+        s.class,
+        s.board,
+        s.phone,
+        s.email,
+        s.school_name,
+        s.password,
+        s.mode_of_education
+      FROM students s
+      INNER JOIN student_subjects ss
+        ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      WHERE TRIM(s.class) = TRIM($1)
+        AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+        AND ss.subject_id = $3
+      ORDER BY s.roll_no ASC
+      `,
+      [className, board, Number(subject_id)]
+    );
+
+    return res.json({
+      mode: 'normal',
+      students: students.rows
+    });
+
+  } catch (err) {
+    console.error('GET /attendance-students error:', err);
+
+    return res.status(500).json({
+      error: 'Failed to load attendance students',
+      details: err.message
+    });
+  }
 });
 /* =========================================================
 	SERVER START

@@ -30,6 +30,7 @@ function EnterAttendancePageInner() {
   const [classBoard, setClassBoard] = useState('');
   const [subject, setSubject] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
+  const [isSunday, setIsSunday] = useState(false);
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(false);
@@ -75,50 +76,71 @@ function EnterAttendancePageInner() {
   }
 
   async function loadStudents() {
-    if (!classBoard || !subject || !selectedDate) {
-      alert('Please select class, subject and date');
-      return;
-    }
+  if (!selectedDate) {
+    alert('Please select a date');
+    return;
+  }
 
-    const { board, className } = splitClassBoard(classBoard);
-    const subjectId = subjectMap[subject];
+  if (!isSunday && (!classBoard || !subject)) {
+    alert('Please select class, subject and date');
+    return;
+  }
 
-    try {
-      setLoading(true);
-      setStudents([]);
-      setAttendance({});
+  try {
+    setLoading(true);
+    setStudents([]);
+    setAttendance({});
 
-      const params = new URLSearchParams();
+    let params = new URLSearchParams();
+
+    params.append('date', selectedDate);
+
+    if (!isSunday) {
+      const { board, className } = splitClassBoard(classBoard);
+      const subjectId = subjectMap[subject];
+
       params.append('class', className);
       params.append('board', board);
       params.append('subject_id', subjectId);
-
-      const res = await fetch(`${API_BASE}/students?${params.toString()}`, {
-        cache: 'no-store',
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !Array.isArray(data)) {
-        alert(data.error || 'Failed to load students');
-        return;
-      }
-
-      setStudents(data);
-
-      const map = {};
-      data.forEach((student) => {
-        map[student.roll_no] = 'Present';
-      });
-
-      setAttendance(map);
-    } catch (err) {
-      console.error('Load students error:', err);
-      alert('Failed to load students');
-    } finally {
-      setLoading(false);
     }
+
+    const res = await fetch(
+      `${API_BASE}/attendance-students?${params.toString()}`,
+      {
+        cache: 'no-store',
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || 'Failed to load students');
+      return;
+    }
+
+    const studentList = data.students || [];
+
+    setStudents(studentList);
+
+    const map = {};
+
+    studentList.forEach((student) => {
+      const key = isSunday
+        ? `${student.roll_no}_${student.subject_id}`
+        : student.roll_no;
+
+      map[key] = 'Present';
+    });
+
+    setAttendance(map);
+
+  } catch (err) {
+    console.error('Load students error:', err);
+    alert('Failed to load students');
+  } finally {
+    setLoading(false);
   }
+}
 
   function handleAttendanceChange(rollNo, value) {
     setAttendance((prev) => ({
@@ -128,12 +150,18 @@ function EnterAttendancePageInner() {
   }
 
   function markAllPresent() {
-    const map = {};
-    students.forEach((student) => {
-      map[student.roll_no] = 'Present';
-    });
-    setAttendance(map);
-  }
+  const map = {};
+
+  students.forEach((student) => {
+    const key = isSunday
+      ? `${student.roll_no}_${student.subject_id}`
+      : student.roll_no;
+
+    map[key] = 'Present';
+  });
+
+  setAttendance(map);
+}
 
   function handlePreview() {
     if (students.length === 0) {
@@ -141,23 +169,32 @@ function EnterAttendancePageInner() {
       return;
     }
 
-    const absentList = students.filter(
-      (student) => attendance[student.roll_no] === 'Absent'
-    );
+   const absentList = students.filter((student) => {
+  const key = isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no;
+
+  return attendance[key] === 'Absent';
+}); 
 
     setAbsentees(absentList);
     setShowPopup(true);
   }
-
+  
   function resetForm() {
-    setClassBoard('');
-    setSubject('');
-    setStudents([]);
-    setAttendance({});
-    setShowPopup(false);
-    setAbsentees([]);
-    setSelectedDate(new Date().toISOString().split('T')[0]);
-  }
+  const today = new Date().toISOString().split('T')[0];
+
+  setClassBoard('');
+  setSubject('');
+  setStudents([]);
+  setAttendance({});
+  setShowPopup(false);
+  setAbsentees([]);
+  setSelectedDate(today);
+
+  const day = new Date(today).getDay();
+  setIsSunday(day === 0);
+}
 
   async function submitAttendance(overwrite = false) {
     if (students.length === 0) {
@@ -168,21 +205,28 @@ function EnterAttendancePageInner() {
     try {
       setSubmitting(true);
 
-      const records = students.map((student) => ({
-        roll_no: student.roll_no,
-        status: attendance[student.roll_no] || 'Present',
-      }));
+     const records = students.map((student) => {
+  const key = isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no;
+
+  return {
+    roll_no: student.roll_no,
+    subject_id: student.subject_id,
+    status: attendance[key] || 'Present',
+  };
+});
 
       const res = await fetch(`${API_BASE}/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          records,
-          subject: subjectMap[subject],
-          facultyId,
-          date: selectedDate,
-          overwrite,
-        }),
+       body: JSON.stringify({
+  records,
+  subject: isSunday ? null : subjectMap[subject],
+  facultyId,
+  date: selectedDate,
+  overwrite,
+}),
       });
 
       const data = await res.json();
@@ -224,6 +268,7 @@ function EnterAttendancePageInner() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <select
             value={classBoard}
+            disabled={isSunday}
             onChange={(e) => setClassBoard(e.target.value)}
             className="border rounded-lg px-4 py-3"
           >
@@ -240,6 +285,7 @@ function EnterAttendancePageInner() {
 
           <select
             value={subject}
+            disabled={isSunday}
             onChange={(e) => setSubject(e.target.value)}
             className="border rounded-lg px-4 py-3"
           >
@@ -251,7 +297,7 @@ function EnterAttendancePageInner() {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => {
+          onChange={(e) => {
   const value = e.target.value;
 
   const today = new Date().toISOString().split('T')[0];
@@ -261,7 +307,15 @@ function EnterAttendancePageInner() {
     return;
   }
 
+  const day = new Date(value).getDay();
+
+  setIsSunday(day === 0);
   setSelectedDate(value);
+
+  if (day === 0) {
+    setClassBoard('');
+    setSubject('');
+  }
 }}
             className="border rounded-lg px-4 py-3"
           />
@@ -274,7 +328,13 @@ function EnterAttendancePageInner() {
             {loading ? 'Loading...' : 'Load Students'}
           </button>
         </div>
-      </div>
+            </div>
+
+      {isSunday && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800">
+          Sunday detected. Test attendance mode is active.
+        </div>
+      )}
 
       {loading && <p className="text-gray-600">Loading students...</p>}
 
@@ -293,26 +353,74 @@ function EnterAttendancePageInner() {
             <table className="w-full border-collapse min-w-[700px]">
               <thead>
                 <tr className="border-b text-gray-700">
-                  <th className="text-left py-3 px-2 text-blue-700">Roll No</th>
-                  <th className="text-left py-3 px-2 text-blue-700">Name</th>
-                  <th className="text-left py-3 px-2 text-blue-700">Status</th>
+                 <th className="text-left py-3 px-2 text-blue-700">Roll No</th>
+                <th className="text-left py-3 px-2 text-blue-700">Name</th>
+
+                 {isSunday && (
+                <>
+                <th className="text-left py-3 px-2 text-blue-700">Board-Class</th>
+                <th className="text-left py-3 px-2 text-blue-700">Subject</th>
+                <th className="text-left py-3 px-2 text-blue-700">Test Code</th>
+                </>
+                 )}
+
+<th className="text-left py-3 px-2 text-blue-700">Status</th>
                 </tr>
               </thead>
 
               <tbody>
                 {students.map((student) => (
-                  <tr key={student.roll_no} className="border-b">
+                    <tr
+  key={
+    isSunday
+      ? `${student.roll_no}_${student.subject_id}`
+      : student.roll_no
+  }
+  className="border-b"
+>
                     <td className="py-3 px-2">{student.roll_no}</td>
                     <td className="py-3 px-2">{student.name}</td>
+                    {isSunday && (
+  <>
+    <td className="py-3 px-2">
+      {student.board}-{student.class}
+    </td>
+
+    <td className="py-3 px-2">
+      {student.subject_id === 1 ? 'MATHS' : 'PHYSICS'}
+    </td>
+
+    <td className="py-3 px-2">
+      {student.test_code}
+    </td>
+  </>
+)}
                     <td className="py-3 px-2">
                       <div className="flex gap-5">
                         <label className="flex items-center gap-2">
                           <input
                             type="radio"
-                            name={`attendance-${student.roll_no}`}
-                            checked={(attendance[student.roll_no] || 'Present') === 'Present'}
+                            name={`attendance-${
+  isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no
+}`}
+                            checked={
+  (
+    attendance[
+      isSunday
+        ? `${student.roll_no}_${student.subject_id}`
+        : student.roll_no
+    ] || 'Present'
+  ) === 'Present'
+}
                             onChange={() =>
-                              handleAttendanceChange(student.roll_no, 'Present')
+                              handleAttendanceChange(
+  isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no,
+  'Present'
+)
                             }
                           />
                           Present
@@ -321,10 +429,25 @@ function EnterAttendancePageInner() {
                         <label className="flex items-center gap-2">
                           <input
                             type="radio"
-                            name={`attendance-${student.roll_no}`}
-                            checked={attendance[student.roll_no] === 'Absent'}
+                            name={`attendance-${
+  isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no
+}`}
+                            checked={
+  attendance[
+    isSunday
+      ? `${student.roll_no}_${student.subject_id}`
+      : student.roll_no
+  ] === 'Absent'
+}
                             onChange={() =>
-                              handleAttendanceChange(student.roll_no, 'Absent')
+                              handleAttendanceChange(
+  isSunday
+    ? `${student.roll_no}_${student.subject_id}`
+    : student.roll_no,
+  'Absent'
+)
                             }
                           />
                           Absent
@@ -346,9 +469,11 @@ function EnterAttendancePageInner() {
         </div>
       )}
 
-      {!loading && students.length === 0 && classBoard && subject && (
-        <p className="text-gray-500">No students loaded.</p>
-      )}
+      {!loading &&
+  students.length === 0 &&
+  (isSunday || (classBoard && subject)) && (
+    <p className="text-gray-500">No students loaded.</p>
+)}
 
       {showPopup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
