@@ -53,7 +53,10 @@ const testsPerPage = 10;
     try {
       const res = await fetch(`${API_BASE}/posted-tests`, { cache: "no-store" });
       const data = await res.json();
-      setPostedTests(Array.isArray(data) ? data : []);
+
+console.log("POSTED TESTS API:", data);
+
+setPostedTests(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Posted tests fetch failed:", err);
       setPostedTests([]);
