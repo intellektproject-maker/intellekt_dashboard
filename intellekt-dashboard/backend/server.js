@@ -1925,6 +1925,7 @@ app.post('/post-test', async (req, res) => {
 			test_date,
 			total_marks,
 			portion,
+			 chapter,
 			created_by,
 			class_name,
 			board,
@@ -1979,36 +1980,38 @@ app.post('/post-test', async (req, res) => {
 
 		const insertResult = await client.query(
 			`
-				INSERT INTO tests (
-	test_code,
-	subject_id,
-	test_date,
-	total_marks,
-	portion,
-	created_by,
-	class,
-	board,
-	duration_minutes,
-	registration_end_date,
-	writing_allowed_till
+	INSERT INTO tests (
+  test_code,
+  subject_id,
+  test_date,
+  total_marks,
+  portion,
+  chapter,
+  created_by,
+  class,
+  board,
+  duration_minutes,
+  registration_end_date,
+  writing_allowed_till
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 RETURNING *
 
 				`,
 			[
-				cleanTestCode,
-				subject_id,
-				test_date,
-				total_marks,
-				portion || '',
-				created_by,
-				cleanClassName,
-				cleanBoard,
-				duration_minutes || null,
-				registration_end_date || null,
-				writing_allowed_till || null
-			]
+  cleanTestCode,
+  subject_id,
+  test_date,
+  total_marks,
+  portion || '',
+  chapter || '',
+  created_by,
+  cleanClassName,
+  cleanBoard,
+  duration_minutes || null,
+  registration_end_date || null,
+  writing_allowed_till || null
+]
 		);
 		const studentsForNotification = await client.query(
 	`
@@ -3984,15 +3987,17 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 			`
       UPDATE tests
       SET
-        subject_id = $1,
-        test_date = $2,
-        total_marks = $3,
-        portion = $4,
-        class = $5,
-        board = $6,
-        duration_minutes = $7,
-        registration_end_date = $8,
-        writing_allowed_till = $9
+       SET
+  subject_id = $1,
+  test_date = $2,
+  total_marks = $3,
+  portion = $4,
+  chapter = $5,
+  class = $6,
+  board = $7,
+  duration_minutes = $8,
+  registration_end_date = $9,
+  writing_allowed_till = $10
       WHERE test_code = $10
       RETURNING *
       `,

@@ -17,6 +17,7 @@ function PostTestInner() {
   const [date, setDate] = useState("");
   const [marks, setMarks] = useState("");
   const [portion, setPortion] = useState("");
+  const [chapter, setChapter] = useState("");
   const [className, setClassName] = useState("");
   const [board, setBoard] = useState("");
   const [duration, setDuration] = useState("");
@@ -114,6 +115,7 @@ function PostTestInner() {
     setRegistrationEndDate("");
     setWritingAllowedTill("");
     setEditingTestCode("");
+    setChapter("");
   }
 
   function editTest(t) {
@@ -126,6 +128,7 @@ function PostTestInner() {
     setClassName(t.class || "");
     setBoard(t.board || "");
     setDuration(String(t.duration_minutes || ""));
+    setChapter(t.chapter || "");
     setRegistrationEndDate(toInputDate(t.registration_end_date));
     setWritingAllowedTill(toInputDate(t.writing_allowed_till));
 
@@ -174,6 +177,10 @@ function PostTestInner() {
       alert("Select duration");
       return false;
     }
+    if (!chapter.trim()) {
+  alert("Enter chapter");
+  return false;
+}
 
     if (!registrationEndDate) {
       alert("Select link active till date");
@@ -220,6 +227,12 @@ function PostTestInner() {
           test_date: date,
           total_marks: Number(marks),
           portion: portion.trim(),
+
+          chapter:
+    chapter.trim().toLowerCase() === "combined"
+      ? "combined"
+      : chapter.trim(),
+
           created_by: facultyId,
           class_name: className,
           board,
@@ -332,6 +345,12 @@ function PostTestInner() {
             onChange={(e) => setPortion(e.target.value)}
             className="border rounded-lg px-4 py-3 text-gray-700"
           />
+          <input
+  placeholder="Chapter"
+  value={chapter}
+  onChange={(e) => setChapter(e.target.value)}
+  className="border rounded-lg px-4 py-3 text-gray-700"
+/>
 
           <select
             value={className ? `${className}||${board}` : ""}
@@ -428,8 +447,9 @@ function PostTestInner() {
                 <th className="p-3">Board</th>
                 <th className="p-3">Duration</th>
                 <th className="p-3">By</th>
-                <th className="p-3">Portion</th>
-                <th className="p-3">Action</th>
+              <th className="p-3">Portion</th>
+<th className="p-3">Chapter</th>
+<th className="p-3">Action</th>
               </tr>
             </thead>
 
@@ -449,6 +469,7 @@ function PostTestInner() {
                   </td>
                   <td className="p-3">{t.created_by || "-"}</td>
                   <td className="p-3">{t.portion || "-"}</td>
+                  <td className="p-3">{t.chapter || "-"}</td>
 
                   <td className="p-3">
                     <div className="flex gap-2">
