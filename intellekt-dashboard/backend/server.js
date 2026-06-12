@@ -1732,24 +1732,25 @@ app.get('/tests', async (req, res) => {
 	try {
 		const result = await pool.query(`
 				SELECT
-					test_code,
-					subject_id,
-					CASE 
-						WHEN subject_id = 1 THEN 'Maths'
-						WHEN subject_id = 2 THEN 'Physics'
-						ELSE 'Unknown'
-					END AS subject_name,
-					test_date,
-					total_marks,
-					portion,
-					created_by,
-					TRIM(class) AS class,
-					TRIM(board) AS board,
-					duration_minutes,
-					registration_end_date,
-					writing_allowed_till
-				FROM tests
-				ORDER BY test_date DESC
+    test_code,
+    subject_id,
+    CASE
+        WHEN subject_id = 1 THEN 'Maths'
+        WHEN subject_id = 2 THEN 'Physics'
+        ELSE 'Unknown'
+    END AS subject_name,
+    test_date,
+    total_marks,
+    portion,
+    chapter,
+    created_by,
+    TRIM(class) AS class,
+    TRIM(board) AS board,
+    duration_minutes,
+    registration_end_date,
+    writing_allowed_till
+FROM tests
+ORDER BY test_date DESC
 			`);
 
 		res.json(result.rows);
@@ -1763,24 +1764,25 @@ app.get('/posted-tests', async (req, res) => {
 	try {
 		const result = await pool.query(`
 				SELECT
-					test_code,
-					subject_id,
-					CASE 
-						WHEN subject_id = 1 THEN 'Maths'
-						WHEN subject_id = 2 THEN 'Physics'
-						ELSE 'Unknown'
-					END AS subject_name,
-					test_date,
-					total_marks,
-					portion,
-					created_by,
-					TRIM(class) AS class,
-					TRIM(board) AS board,
-					duration_minutes,
-					registration_end_date,
-					writing_allowed_till
-				FROM tests
-				ORDER BY test_date DESC
+    test_code,
+    subject_id,
+    CASE
+        WHEN subject_id = 1 THEN 'Maths'
+        WHEN subject_id = 2 THEN 'Physics'
+        ELSE 'Unknown'
+    END AS subject_name,
+    test_date,
+    total_marks,
+    portion,
+    chapter,
+    created_by,
+    TRIM(class) AS class,
+    TRIM(board) AS board,
+    duration_minutes,
+    registration_end_date,
+    writing_allowed_till
+FROM tests
+ORDER BY test_date DESC
 			`);
 
 		res.json(result.rows);
@@ -1818,16 +1820,17 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 
 	try {
 		const {
-			subject_id,
-			test_date,
-			total_marks,
-			portion,
-			class_name,
-			board,
-			duration_minutes,
-			registration_end_date,
-			writing_allowed_till
-		} = req.body;
+    subject_id,
+    test_date,
+    total_marks,
+    portion,
+    chapter,
+    class_name,
+    board,
+    duration_minutes,
+    registration_end_date,
+    writing_allowed_till
+} = req.body;
 
 		if (
 			!subject_id ||
@@ -1874,30 +1877,32 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 			`
 			UPDATE tests
 			SET
-				subject_id = $1,
-				test_date = $2,
-				total_marks = $3,
-				portion = $4,
-				class = $5,
-				board = $6,
-				duration_minutes = $7,
-				registration_end_date = $8,
-				writing_allowed_till = $9
-			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($10))
+    subject_id = $1,
+    test_date = $2,
+    total_marks = $3,
+    portion = $4,
+    chapter = $5,
+    class = $6,
+    board = $7,
+    duration_minutes = $8,
+    registration_end_date = $9,
+    writing_allowed_till = $10
+WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($11))
 			RETURNING *
 			`,
-			[
-				subject_id,
-				test_date,
-				total_marks,
-				portion || '',
-				String(class_name).trim(),
-				String(board).trim(),
-				duration_minutes || null,
-				registration_end_date || null,
-				writing_allowed_till || null,
-				testCode
-			]
+	[
+    subject_id,
+    test_date,
+    total_marks,
+    portion || '',
+    chapter || '',
+    String(class_name).trim(),
+    String(board).trim(),
+    duration_minutes || null,
+    registration_end_date || null,
+    writing_allowed_till || null,
+    testCode
+]
 		);
 
 		res.json({
@@ -3985,21 +3990,20 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 	try {
 		const result = await pool.query(
 			`
-      UPDATE tests
-      SET
-       SET
-  subject_id = $1,
-  test_date = $2,
-  total_marks = $3,
-  portion = $4,
-  chapter = $5,
-  class = $6,
-  board = $7,
-  duration_minutes = $8,
-  registration_end_date = $9,
-  writing_allowed_till = $10
-      WHERE test_code = $10
-      RETURNING *
+UPDATE tests
+SET
+    subject_id = $1,
+    test_date = $2,
+    total_marks = $3,
+    portion = $4,
+    chapter = $5,
+    class = $6,
+    board = $7,
+    duration_minutes = $8,
+    registration_end_date = $9,
+    writing_allowed_till = $10
+WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($11))
+RETURNING *
       `,
 			[
 				subject_id,
