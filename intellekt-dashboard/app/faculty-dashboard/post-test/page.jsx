@@ -26,8 +26,13 @@ function PostTestInner() {
 
   const [classes, setClasses] = useState([]);
   const [postedTests, setPostedTests] = useState([]);
-  const [editingTestCode, setEditingTestCode] = useState("");
-  const [saving, setSaving] = useState(false);
+const [editingTestCode, setEditingTestCode] = useState("");
+const [saving, setSaving] = useState(false);
+
+const [searchCode, setSearchCode] = useState("");
+const [currentPage, setCurrentPage] = useState(1);
+
+const testsPerPage = 10;
 
   useEffect(() => {
     async function loadClasses() {
@@ -252,6 +257,7 @@ function PostTestInner() {
       alert(editingTestCode ? "Test updated successfully" : "Test posted successfully");
       resetForm();
       await loadPostedTests();
+setCurrentPage(1);
     } catch (err) {
       console.error("Save test error:", err);
       alert("Something went wrong");
@@ -260,7 +266,20 @@ function PostTestInner() {
     }
   }
 
-  async function deleteTest(code) {
+  const filteredTests = [...postedTests]
+  .sort((a, b) => new Date(b.test_date) - new Date(a.test_date))
+  .filter((t) =>
+    t.test_code?.toLowerCase().includes(searchCode.toLowerCase())
+  );
+
+const totalPages = Math.ceil(filteredTests.length / testsPerPage);
+
+const currentTests = filteredTests.slice(
+  (currentPage - 1) * testsPerPage,
+  currentPage * testsPerPage
+);
+
+async function deleteTest(code) {
     if (!window.confirm(`Delete test ${code}?`)) return;
 
     try {
@@ -435,6 +454,19 @@ function PostTestInner() {
       <div className="mt-10">
         <h2 className="text-xl font-bold text-blue-800 mb-5">Posted Tests</h2>
 
+<div className="mb-4">
+  <input
+    type="text"
+    placeholder="Search by Test Code"
+    value={searchCode}
+    onChange={(e) => {
+      setSearchCode(e.target.value);
+      setCurrentPage(1);
+    }}
+    className="border rounded-lg px-4 py-2 w-full md:w-80"
+  />
+</div>
+
         <div className="bg-white shadow-md rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-blue-700 text-white">
@@ -454,7 +486,7 @@ function PostTestInner() {
             </thead>
 
             <tbody>
-              {postedTests.map((t) => (
+              {currentTests.map((t) => (
                 <tr key={t.test_code} className="border-b hover:bg-gray-50">
                   <td className="p-3 text-blue-700 font-semibold">
                     {t.test_code}
@@ -491,7 +523,7 @@ function PostTestInner() {
                 </tr>
               ))}
 
-              {postedTests.length === 0 && (
+              {currentTests.length === 0 && (
                 <tr>
                   <td colSpan="10" className="p-5 text-center text-gray-500">
                     No posted tests found
@@ -499,8 +531,30 @@ function PostTestInner() {
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+         </table>
+</div>
+
+<div className="flex justify-center items-center gap-2 mt-5">
+  <button
+    disabled={currentPage === 1}
+    onClick={() => setCurrentPage((p) => p - 1)}
+    className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+  >
+    Prev
+  </button>
+
+  <span className="font-semibold">
+    Page {currentPage} of {totalPages || 1}
+  </span>
+
+  <button
+    disabled={currentPage === totalPages || totalPages === 0}
+    onClick={() => setCurrentPage((p) => p + 1)}
+    className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+  >
+    Next
+  </button>
+</div>
       </div>
     </div>
   );
