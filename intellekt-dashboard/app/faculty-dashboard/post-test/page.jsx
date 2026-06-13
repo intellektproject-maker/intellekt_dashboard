@@ -236,10 +236,15 @@ setPostedTests(Array.isArray(data) ? data : []);
           total_marks: Number(marks),
           portion: portion.trim(),
 
-          chapter:
-    chapter.trim().toLowerCase() === "combined"
-      ? "combined"
-      : chapter.trim(),
+      chapter: (() => {
+  const ch = chapter.trim().toLowerCase();
+
+  if (ch.startsWith("combin")) {
+    return "combined";
+  }
+
+  return chapter.trim();
+})(),
 
           created_by: facultyId,
           class_name: className,
