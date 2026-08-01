@@ -3,7 +3,9 @@ const cors = require('cors');
 const pool = require('./db');
 const crypto = require("node:crypto");
 const app = express();
-
+const {
+  createNotification,
+} = require("./notifications/notificationService");
 app.use(cors());
 app.use(express.json());
 
@@ -61,7 +63,6 @@ function getNextMonday(dateValue) {
 	date.setDate(date.getDate() + daysToAdd);
 	return date;
 }
-
 async function cleanupCompletedTasks() {
 	const result = await pool.query(`
 		SELECT id, completed_at
@@ -953,7 +954,20 @@ app.post('/marks', async (req, res) => {
 					});
 				}
 			}
+                const existingMarks = await pool.query(
+  `
+  SELECT id
+  FROM marks
+  WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+    AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))
+  `,
+  [
+    studentResult.rows[0].roll_no,
+    test.test_code,
+  ]
+);
 
+const isUpdate = existingMarks.rows.length > 0;
 					await pool.query(
 				`
 				INSERT INTO marks (
@@ -981,24 +995,24 @@ app.post('/marks', async (req, res) => {
 					totalMarks
 				]
 			);
+// Remove any previous unread marks notification
+await pool.query(
+  `
+  DELETE FROM student_notifications
+  WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+    AND module_name = 'marks'
+  `,
+  [studentResult.rows[0].roll_no]
+);
 
-			await pool.query(
-				`
-				DELETE FROM student_notifications
-				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-				  AND module_name = 'marks'
-				`,
-				[studentResult.rows[0].roll_no]
-			);
-
-			await pool.query(
-				`
-				INSERT INTO student_notifications
-				(roll_no, module_name, message, is_read)
-				VALUES ($1, 'marks', 'New marks have been uploaded', FALSE)
-				`,
-				[studentResult.rows[0].roll_no]
-			);
+// Create a new notification
+await createNotification({
+  rollNo: studentResult.rows[0].roll_no,
+  moduleName: "marks",
+  title: "Marks Published",
+  message: `${test.test_code} marks have been published.`,
+  referenceId: null, // we'll improve this later
+});
 		}
 
 		res.json({ message: 'Marks saved successfully' });
