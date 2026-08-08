@@ -2,10 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
 const crypto = require("node:crypto");
+const { makeEventKey, queueNotificationEvent } = require('./web-notification-outbox');
 const app = express();
-const {
-  createNotification,
-} = require("./notifications/notificationService");
+
 app.use(cors());
 app.use(express.json());
 
@@ -63,6 +62,7 @@ function getNextMonday(dateValue) {
 	date.setDate(date.getDate() + daysToAdd);
 	return date;
 }
+
 async function cleanupCompletedTasks() {
 	const result = await pool.query(`
 		SELECT id, completed_at
@@ -895,13 +895,16 @@ app.post('/marks', async (req, res) => {
 		return res.status(400).json({ error: 'records are required' });
 	}
 
+	const client = await pool.connect();
 	try {
+		await client.query('BEGIN');
+		const queuedGroups = new Map();
 		for (const record of records) {
 			if (record.marks === undefined || record.marks === null || record.marks === '') {
 				continue;
 			}
 
-			const testResult = await pool.query(
+			const testResult = await client.query(
 				`
 				SELECT test_code, subject_id, total_marks
 				FROM tests
@@ -918,9 +921,9 @@ app.post('/marks', async (req, res) => {
 
 			const test = testResult.rows[0];
 
-			const studentResult = await pool.query(
+			const studentResult = await client.query(
 				`
-				SELECT s.roll_no, s.name
+				SELECT s.roll_no, s.name, s.class, s.board
 				FROM students s
 				JOIN student_subjects ss
 					ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -954,21 +957,8 @@ app.post('/marks', async (req, res) => {
 					});
 				}
 			}
-                const existingMarks = await pool.query(
-  `
-  SELECT id
-  FROM marks
-  WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-    AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))
-  `,
-  [
-    studentResult.rows[0].roll_no,
-    test.test_code,
-  ]
-);
 
-const isUpdate = existingMarks.rows.length > 0;
-					await pool.query(
+					await client.query(
 				`
 				INSERT INTO marks (
 					roll_no,
@@ -995,33 +985,56 @@ const isUpdate = existingMarks.rows.length > 0;
 					totalMarks
 				]
 			);
-// Remove any previous unread marks notification
-await pool.query(
-  `
-  DELETE FROM student_notifications
-  WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-    AND module_name = 'marks'
-  `,
-  [studentResult.rows[0].roll_no]
-);
 
-// Create a new notification
-await createNotification({
-  rollNo: studentResult.rows[0].roll_no,
-  moduleName: "marks",
-  title: "Marks Published",
-  message: `${test.test_code} marks have been published.`,
-  referenceId: null, // we'll improve this later
-});
+			await client.query(
+				`
+				DELETE FROM student_notifications
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+				  AND module_name = 'marks'
+				`,
+				[studentResult.rows[0].roll_no]
+			);
+
+			await client.query(
+				`
+				INSERT INTO student_notifications
+				(roll_no, module_name, message, is_read)
+				VALUES ($1, 'marks', 'New marks have been uploaded', FALSE)
+				`,
+				[studentResult.rows[0].roll_no]
+			);
+
+			const student = studentResult.rows[0];
+			const eventKey = makeEventKey('marks', test.test_code, student.class, student.board);
+			queuedGroups.set(eventKey, {
+				eventKey,
+				moduleName: 'marks',
+				className: student.class,
+				board: student.board,
+				subjectId: Number(test.subject_id),
+				title: 'Marks posted',
+				message: `Marks for ${String(test.test_code).trim().toUpperCase()} have been posted`,
+				payload: { test_code: String(test.test_code).trim().toUpperCase() }
+			});
 		}
 
-		res.json({ message: 'Marks saved successfully' });
+		let notificationQueued = false;
+		for (const event of queuedGroups.values()) {
+			const queued = await queueNotificationEvent(client, event);
+			notificationQueued = notificationQueued || queued.queued;
+		}
+
+		await client.query('COMMIT');
+		res.json({ message: 'Marks saved successfully', notificationQueued });
 	} catch (err) {
+		await client.query('ROLLBACK');
 		console.error('POST /marks error:', err);
 		res.status(500).json({
 			error: 'Marks save failed',
 			details: err.message
 		});
+	} finally {
+		client.release();
 	}
 });
 app.get('/marks', async (req, res) => {
@@ -1636,10 +1649,37 @@ if (!subject && !isSundayMode) {
 			);
 		}
 
+		const attendanceTarget = await client.query(
+			`
+			SELECT s.class, s.board
+			FROM students s
+			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+			LIMIT 1
+			`,
+			[records[0].roll_no]
+		);
+
+		let notificationQueued = false;
+		if (attendanceTarget.rows.length > 0) {
+			const target = attendanceTarget.rows[0];
+			const queued = await queueNotificationEvent(client, {
+				eventKey: makeEventKey('attendance', selectedDate, subject, target.class, target.board),
+				moduleName: 'attendance',
+				className: target.class,
+				board: target.board,
+				subjectId: Number(subject),
+				title: 'Attendance posted',
+				message: `Attendance for ${selectedDate} has been posted`,
+				payload: { attendance_date: selectedDate }
+			});
+			notificationQueued = queued.queued;
+		}
+
 		await client.query('COMMIT');
 
 		res.json({
-			message: overwrite ? 'Attendance overwritten successfully' : 'Attendance saved successfully'
+			message: overwrite ? 'Attendance overwritten successfully' : 'Attendance saved successfully',
+			notificationQueued
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
@@ -2055,10 +2095,22 @@ RETURNING *
 				[ student.roll_no, 'test-schedule', 'New test has been scheduled' ]
 			);
 		}
+
+		const queued = await queueNotificationEvent(client, {
+			eventKey: makeEventKey('test-schedule', cleanTestCode, cleanClassName, cleanBoard),
+			moduleName: 'test-schedule',
+			className: cleanClassName,
+			board: cleanBoard,
+			subjectId: Number(subject_id),
+			title: 'New test scheduled',
+			message: `Test ${cleanTestCode} has been scheduled`,
+			payload: { test_code: cleanTestCode }
+		});
 		await client.query('COMMIT');
 		res.json({
 			message: 'Test posted successfully',
 			test: insertResult.rows[0],
+			notificationQueued: queued.queued
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
