@@ -200,13 +200,12 @@ function MarksPageContent() {
   }
 
   function getChapterNo(testCode) {
-    const match = String(testCode || "")
-      .toUpperCase()
-      .match(/C(\d+)$/);
+  const match = String(testCode || "")
+    .toUpperCase()
+    .match(/C(\d+)(?:\.\d+)?$/);
 
-    return match ? Number(match[1]) : null;
-  }
-
+  return match ? Number(match[1]) : null;
+}
   function getPercentage(marksObtained, totalMarks) {
     if (String(marksObtained).toUpperCase() === "A") return 0;
 
@@ -288,17 +287,19 @@ function MarksPageContent() {
         (m) => getChapterNo(m.test_code) === Number(chapterNo)
       );
 
-      const percentages = tests.map((m) =>
-        getPercentage(m.marks_obtained, m.total_marks)
-      );
+      const percentages = tests
+  .filter(
+    (m) => String(m.marks_obtained).toUpperCase() !== "A"
+  )
+  .map((m) => getPercentage(m.marks_obtained, m.total_marks));
 
-      const average =
-        percentages.length > 0
-          ? Math.round(
-              percentages.reduce((sum, value) => sum + value, 0) /
-                percentages.length
-            )
-          : 0;
+const average =
+  percentages.length > 0
+    ? Math.round(
+        percentages.reduce((sum, value) => sum + value, 0) /
+          percentages.length
+      )
+    : 0;
 
       return {
         chapterNo: Number(chapterNo),
