@@ -4243,6 +4243,382 @@ app.get('/attendance-students', async (req, res) => {
     });
   }
 });
+app.delete('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    const result = await pool.query(
+      `
+      DELETE FROM syllabus
+      WHERE syllabus_id = $1
+      RETURNING *
+      `,
+      [syllabusId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    res.json({
+      message: 'Syllabus chapter deleted successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('DELETE /syllabus/:id error:', err);
+
+    res.status(500).json({
+      error: 'Failed to delete syllabus',
+      details: err.message
+    });
+  }
+});
+app.put('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log(
+      'PUT /syllabus BODY:',
+      req.params.id,
+      req.body
+    );
+
+    // -----------------------------
+    // Validate ID
+    // -----------------------------
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    // -----------------------------
+    // Validate fields
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check record exists
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE syllabus_id = $1
+      `,
+      [syllabusId]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const duplicate = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+        AND syllabus_id <> $5
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        syllabusId
+      ]
+    );
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Another syllabus chapter already uses this chapter number'
+      });
+    }
+
+    // -----------------------------
+    // Update
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      UPDATE syllabus
+      SET
+        class = $1,
+        board = $2,
+        subject_id = $3,
+        chapter_no = $4,
+        chapter_name = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE syllabus_id = $6
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName,
+        syllabusId
+      ]
+    );
+
+    res.json({
+      message: 'Syllabus chapter updated successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('PUT /syllabus/:id error:', err);
+
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to update syllabus',
+      details: err.message
+    });
+  }
+});
+app.post('/syllabus', async (req, res) => {
+  try {
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log('POST /syllabus BODY:', req.body);
+
+    // -----------------------------
+    // Validation
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo
+      ]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // -----------------------------
+    // Insert
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      INSERT INTO syllabus (
+        class,
+        board,
+        subject_id,
+        chapter_no,
+        chapter_name
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Syllabus chapter added successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('POST /syllabus error:', err);
+
+    // PostgreSQL unique violation
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // Foreign key violation
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create syllabus',
+      details: err.message
+    });
+  }
+});
+app.get('/syllabus', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        sy.syllabus_id,
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        s.subject_name,
+        sy.chapter_no,
+        sy.chapter_name,
+        sy.created_at,
+        sy.updated_at
+      FROM syllabus sy
+      JOIN subjects s
+        ON s.subject_id = sy.subject_id
+      ORDER BY
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        sy.chapter_no
+    `);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.error('GET /syllabus error:', err);
+
+    res.status(500).json({
+      error: 'Failed to fetch syllabus',
+      details: err.message
+    });
+  }
+});
 /* =========================================================
 	SERVER START
 	========================================================= */
