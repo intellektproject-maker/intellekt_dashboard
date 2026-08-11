@@ -30,6 +30,7 @@ const SYLLABUS = {
           12: "Discrete Mathematics",
         },
       },
+
       physics: {
         title: "Physics",
         subjectIds: [2],
@@ -49,6 +50,7 @@ const SYLLABUS = {
         },
       },
     },
+
     CBSE: {
       maths: {
         title: "Mathematics",
@@ -70,6 +72,7 @@ const SYLLABUS = {
           13: "Probability",
         },
       },
+
       physics: {
         title: "Physics",
         subjectIds: [2],
@@ -87,6 +90,7 @@ const SYLLABUS = {
         },
       },
     },
+
     ISC: {
       maths: {
         title: "Mathematics",
@@ -105,6 +109,7 @@ const SYLLABUS = {
           10: "Linear Programming",
         },
       },
+
       physics: {
         title: "Physics",
         subjectIds: [2],
@@ -138,6 +143,7 @@ function normalizeBoard(board) {
 function normalizeClass(classValue) {
   const value = String(classValue || "").toUpperCase().trim();
   const match = value.match(/\d+/);
+
   return match ? match[0] : "12";
 }
 
@@ -148,6 +154,11 @@ function MarksPageContent() {
   const [marks, setMarks] = useState(null);
   const [student, setStudent] = useState(null);
   const [reportSubject, setReportSubject] = useState(null);
+
+  // Can be:
+  // null
+  // number -> chapter number
+  // "combined" -> combined tests
   const [selectedChapter, setSelectedChapter] = useState(null);
 
   useEffect(() => {
@@ -156,8 +167,12 @@ function MarksPageContent() {
     async function fetchData() {
       try {
         const [marksRes, studentRes] = await Promise.all([
-          fetch(`${API_BASE}/marks/${roll}`, { cache: "no-store" }),
-          fetch(`${API_BASE}/student/${roll}`, { cache: "no-store" }),
+          fetch(`${API_BASE}/marks/${roll}`, {
+            cache: "no-store",
+          }),
+          fetch(`${API_BASE}/student/${roll}`, {
+            cache: "no-store",
+          }),
         ]);
 
         const marksData = await marksRes.json();
@@ -167,6 +182,7 @@ function MarksPageContent() {
         setStudent(studentData || null);
       } catch (err) {
         console.error(err);
+
         setMarks([]);
         setStudent(null);
       }
@@ -176,18 +192,26 @@ function MarksPageContent() {
   }, [roll]);
 
   const classKey = normalizeClass(
-    student?.class || student?.class_name || marks?.[0]?.class || marks?.[0]?.class_name
+    student?.class ||
+      student?.class_name ||
+      marks?.[0]?.class ||
+      marks?.[0]?.class_name
   );
 
   const boardKey = normalizeBoard(
-    student?.board || marks?.[0]?.board || marks?.[0]?.student_board
+    student?.board ||
+      marks?.[0]?.board ||
+      marks?.[0]?.student_board
   );
 
   const currentSyllabus =
     SYLLABUS[classKey]?.[boardKey] || SYLLABUS["12"].STATE_BOARD;
 
   function renderMark(mark) {
-    if (String(mark).toUpperCase() === "A") return "Absent";
+    if (String(mark).toUpperCase() === "A") {
+      return "Absent";
+    }
+
     return mark ?? "-";
   }
 
@@ -199,35 +223,80 @@ function MarksPageContent() {
     return `${marksObtained ?? "-"}/${totalMarks ?? "-"}`;
   }
 
-  function getChapterNo(testCode) {
-  const match = String(testCode || "")
-    .toUpperCase()
-    .match(/C(\d+)(?:\.\d+)?$/);
+  /*
+   * IMPORTANT:
+   * Chapter grouping is now based on the `chapter` field
+   * coming from the backend /marks/{roll} response.
+   *
+   * Examples:
+   *   chapter = "6"         -> Chapter 6
+   *   chapter = 6           -> Chapter 6
+   *   chapter = "chapter 6" -> Chapter 6
+   *   chapter = "combined"  -> Combined Tests
+   */
 
-  return match ? Number(match[1]) : null;
-}
+  function getChapterValue(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const normalized = String(value).trim().toLowerCase();
+
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized === "combined") {
+      return "combined";
+    }
+
+    const match = normalized.match(/\d+/);
+
+    if (!match) {
+      return null;
+    }
+
+    return Number(match[0]);
+  }
+
+  function isCombinedTest(test) {
+    return (
+      String(test?.chapter || "")
+        .trim()
+        .toLowerCase() === "combined"
+    );
+  }
+
   function getPercentage(marksObtained, totalMarks) {
-    if (String(marksObtained).toUpperCase() === "A") return 0;
+    if (String(marksObtained).toUpperCase() === "A") {
+      return 0;
+    }
 
     const obtained = Number(marksObtained);
     const total = Number(totalMarks);
 
-    if (!Number.isFinite(obtained) || !Number.isFinite(total) || total <= 0) {
+    if (
+      !Number.isFinite(obtained) ||
+      !Number.isFinite(total) ||
+      total <= 0
+    ) {
       return 0;
     }
 
-    return Math.round((obtained / total) * 100);
+    return (obtained / total) * 100;
   }
 
   function getProgressColor(percent) {
     if (percent < 40) return "bg-red-500";
     if (percent < 70) return "bg-yellow-500";
+
     return "bg-green-500";
   }
 
   function getProgressTextColor(percent) {
     if (percent < 40) return "text-red-700";
     if (percent < 70) return "text-yellow-700";
+
     return "text-green-700";
   }
 
@@ -235,24 +304,41 @@ function MarksPageContent() {
     if (!dateValue) return "-";
 
     const date = new Date(dateValue);
-    if (Number.isNaN(date.getTime())) return "-";
+
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
 
     const day = date.getDate();
     const week = Math.ceil(day / 7);
-    const month = date.toLocaleString("en-US", { month: "long" });
+    const month = date.toLocaleString("en-US", {
+      month: "long",
+    });
 
     const suffix =
-      week === 1 ? "st" : week === 2 ? "nd" : week === 3 ? "rd" : "th";
+      week === 1
+        ? "st"
+        : week === 2
+        ? "nd"
+        : week === 3
+        ? "rd"
+        : "th";
 
     return `${week}${suffix} week of ${month}`;
   }
 
   function filterBySubject(subjectKey) {
     const subject = currentSyllabus[subjectKey];
-    if (!marks || !subject) return [];
+
+    if (!marks || !subject) {
+      return [];
+    }
 
     return marks.filter((m) => {
-      const subjectIdMatch = subject.subjectIds.includes(Number(m.subject_id));
+      const subjectIdMatch = subject.subjectIds.includes(
+        Number(m.subject_id)
+      );
+
       const subjectNameMatch = subject.names.includes(
         String(m.subject_name || "").toUpperCase()
       );
@@ -272,43 +358,106 @@ function MarksPageContent() {
   );
 
   const reportMarks = useMemo(() => {
-    if (!reportSubject) return [];
+    if (!reportSubject) {
+      return [];
+    }
+
     return filterBySubject(reportSubject);
   }, [marks, reportSubject, currentSyllabus]);
 
+  /*
+   * Chapter data
+   *
+   * Each chapter is now determined from:
+   *
+   *     m.chapter
+   *
+   * instead of trying to extract the chapter number
+   * from test_code.
+   */
   const chapterData = useMemo(() => {
-    if (!reportSubject) return [];
+    if (!reportSubject) {
+      return [];
+    }
 
     const subject = currentSyllabus[reportSubject];
-    if (!subject) return [];
 
-    return Object.entries(subject.chapters).map(([chapterNo, chapterName]) => {
-      const tests = reportMarks.filter(
-        (m) => getChapterNo(m.test_code) === Number(chapterNo)
-      );
+    if (!subject) {
+      return [];
+    }
 
-      const percentages = tests
-  .filter(
-    (m) => String(m.marks_obtained).toUpperCase() !== "A"
-  )
-  .map((m) => getPercentage(m.marks_obtained, m.total_marks));
+    return Object.entries(subject.chapters).map(
+      ([chapterNo, chapterName]) => {
+        const chapterNumber = Number(chapterNo);
 
-const average =
-  percentages.length > 0
-    ? Math.round(
-        percentages.reduce((sum, value) => sum + value, 0) /
-          percentages.length
-      )
-    : 0;
+        const tests = reportMarks.filter((m) => {
+          const testChapter = getChapterValue(m.chapter);
 
-      return {
-        chapterNo: Number(chapterNo),
-        chapterName,
-        tests,
-        average,
-      };
-    });
+          return testChapter === chapterNumber;
+        });
+
+        /*
+         * Calculate overall understanding using total marks:
+         *
+         * sum(obtained) / sum(total) * 100
+         *
+         * This means:
+         *
+         * 11/40
+         * 20/40
+         * 27/40
+         * 16/40
+         *
+         * becomes:
+         *
+         * 74/160 = 46.25% -> 46%
+         *
+         * Absent tests are excluded.
+         */
+        const validTests = tests.filter(
+          (m) =>
+            String(m.marks_obtained).toUpperCase() !== "A" &&
+            Number.isFinite(Number(m.marks_obtained)) &&
+            Number.isFinite(Number(m.total_marks)) &&
+            Number(m.total_marks) > 0
+        );
+
+        const totalObtained = validTests.reduce(
+          (sum, m) => sum + Number(m.marks_obtained),
+          0
+        );
+
+        const totalPossible = validTests.reduce(
+          (sum, m) => sum + Number(m.total_marks),
+          0
+        );
+
+        const average =
+          totalPossible > 0
+            ? Math.round((totalObtained / totalPossible) * 100)
+            : 0;
+
+        return {
+          chapterNo: chapterNumber,
+          chapterName,
+          tests,
+          average,
+        };
+      }
+    );
   }, [reportSubject, reportMarks, currentSyllabus]);
+
+  /*
+   * Combined tests are kept completely separate
+   * from chapter analytics.
+   */
+  const combinedTests = useMemo(() => {
+    if (!reportSubject) {
+      return [];
+    }
+
+    return reportMarks.filter((m) => isCombinedTest(m));
+  }, [reportSubject, reportMarks]);
 
   function HistogramGraph({ tests }) {
     if (!tests || tests.length === 0) {
@@ -321,7 +470,9 @@ const average =
 
     const graphTests = tests.map((test) => ({
       ...test,
-      percent: getPercentage(test.marks_obtained, test.total_marks),
+      percent: Math.round(
+        getPercentage(test.marks_obtained, test.total_marks)
+      ),
     }));
 
     const maxBarHeight = 220;
@@ -368,7 +519,9 @@ const average =
                           className={`w-12 rounded-t-lg ${getProgressColor(
                             test.percent
                           )}`}
-                          style={{ height: `${barHeight}px` }}
+                          style={{
+                            height: `${barHeight}px`,
+                          }}
                           title={`${test.test_code}: ${test.percent}%`}
                         />
                       </div>
@@ -409,51 +562,71 @@ const average =
           C{chapter.chapterNo} - {chapter.chapterName}
         </h4>
 
-        <p className={`font-semibold mb-5 ${getProgressTextColor(chapter.average)}`}>
+        <p
+          className={`font-semibold mb-5 ${getProgressTextColor(
+            chapter.average
+          )}`}
+        >
           Overall Understanding: {chapter.average}%
         </p>
 
         <div className="overflow-x-auto mb-8">
           <table className="min-w-full border text-sm md:text-base">
-          <thead className="bg-gray-200">
-  <tr>
-    <th className="p-2 border whitespace-nowrap">Test Code</th>
-    <th className="p-2 border whitespace-nowrap">Test Date</th>
-    <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
-    <th className="p-2 border whitespace-nowrap">Total Marks</th>
-    <th className="p-2 border whitespace-nowrap">Comments</th>
-  </tr>
-</thead> 
+            <thead className="bg-gray-200">
+              <tr>
+                <th className="p-2 border whitespace-nowrap">
+                  Test Code
+                </th>
+                <th className="p-2 border whitespace-nowrap">
+                  Test Date
+                </th>
+                <th className="p-2 border whitespace-nowrap">
+                  Marks Obtained
+                </th>
+                <th className="p-2 border whitespace-nowrap">
+                  Total Marks
+                </th>
+                <th className="p-2 border whitespace-nowrap">
+                  Comments
+                </th>
+              </tr>
+            </thead>
+
             <tbody>
               {chapter.tests.length > 0 ? (
                 chapter.tests.map((m, index) => (
-                <tr key={`${m.test_code}-${index}`}>
-                <td className="p-2 border whitespace-nowrap">
-               {m.test_code || "-"}
-  </td>
+                  <tr key={`${m.test_code}-${index}`}>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_code || "-"}
+                    </td>
 
-  <td className="p-2 border whitespace-nowrap">
-    {m.test_date
-      ? new Date(m.test_date).toLocaleDateString("en-GB")
-      : "-"}
-  </td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_date
+                        ? new Date(m.test_date).toLocaleDateString(
+                            "en-GB"
+                          )
+                        : "-"}
+                    </td>
 
-  <td className="p-2 border whitespace-nowrap">
-    {renderMark(m.marks_obtained)}
-  </td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {renderMark(m.marks_obtained)}
+                    </td>
 
-  <td className="p-2 border whitespace-nowrap">
-    {m.total_marks ?? "-"}
-  </td>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.total_marks ?? "-"}
+                    </td>
 
-  <td className="p-2 border break-words">
-    {m.comments || "-"}
-  </td>
-</tr>
+                    <td className="p-2 border break-words">
+                      {m.comments || "-"}
+                    </td>
+                  </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="p-4 border text-center text-gray-500">
+                  <td
+                    colSpan="5"
+                    className="p-4 border text-center text-gray-500"
+                  >
                     No tests found for this chapter
                   </td>
                 </tr>
@@ -471,10 +644,101 @@ const average =
     );
   }
 
+  /*
+   * Combined Tests Details
+   *
+   * IMPORTANT:
+   * No graph.
+   * No understanding percentage.
+   * No analytics.
+   *
+   * Just the test table.
+   */
+  function CombinedTestsDetails({ tests }) {
+    return (
+      <div className="bg-white rounded-xl border border-blue-200 p-4 md:p-6 mt-3 shadow-sm">
+        <h4 className="text-xl md:text-2xl font-bold text-blue-800 mb-5">
+          Combined Tests
+        </h4>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full border text-sm md:text-base">
+            <thead className="bg-gray-200">
+              <tr>
+                <th className="p-2 border whitespace-nowrap">
+                  Test Code
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Test Date
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Marks Obtained
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Total Marks
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Comments
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {tests.length > 0 ? (
+                tests.map((m, index) => (
+                  <tr key={`${m.test_code}-${index}`}>
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_code || "-"}
+                    </td>
+
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.test_date
+                        ? new Date(m.test_date).toLocaleDateString(
+                            "en-GB"
+                          )
+                        : "-"}
+                    </td>
+
+                    <td className="p-2 border whitespace-nowrap">
+                      {renderMark(m.marks_obtained)}
+                    </td>
+
+                    <td className="p-2 border whitespace-nowrap">
+                      {m.total_marks ?? "-"}
+                    </td>
+
+                    <td className="p-2 border break-words">
+                      {m.comments || "-"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan="5"
+                    className="p-4 border text-center text-gray-500"
+                  >
+                    No combined tests found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   const renderTable = (title, data, subjectKey) => (
     <div className="mb-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-        <h3 className="text-xl md:text-2xl font-bold text-blue-800">{title}</h3>
+        <h3 className="text-xl md:text-2xl font-bold text-blue-800">
+          {title}
+        </h3>
 
         <button
           type="button"
@@ -492,14 +756,28 @@ const average =
         <div className="overflow-x-auto">
           <table className="min-w-full border text-sm md:text-base">
             <thead className="bg-gray-200">
-  <tr>
-    <th className="p-2 border whitespace-nowrap">Test Code</th>
-    <th className="p-2 border whitespace-nowrap">Test Date</th>
-    <th className="p-2 border whitespace-nowrap">Marks Obtained</th>
-    <th className="p-2 border whitespace-nowrap">Total Marks</th>
-    <th className="p-2 border whitespace-nowrap">Comments</th>
-  </tr>
-</thead>
+              <tr>
+                <th className="p-2 border whitespace-nowrap">
+                  Test Code
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Test Date
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Marks Obtained
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Total Marks
+                </th>
+
+                <th className="p-2 border whitespace-nowrap">
+                  Comments
+                </th>
+              </tr>
+            </thead>
 
             <tbody>
               {data.length > 0 ? (
@@ -508,23 +786,34 @@ const average =
                     <td className="p-2 border whitespace-nowrap">
                       {m.test_code || "-"}
                     </td>
+
                     <td className="p-2 border whitespace-nowrap">
                       {m.test_date
-                        ? new Date(m.test_date).toLocaleDateString("en-GB")
+                        ? new Date(m.test_date).toLocaleDateString(
+                            "en-GB"
+                          )
                         : "-"}
                     </td>
+
                     <td className="p-2 border whitespace-nowrap">
                       {renderMark(m.marks_obtained)}
                     </td>
+
                     <td className="p-2 border whitespace-nowrap">
                       {m.total_marks ?? "-"}
                     </td>
-                    <td className="p-2 border break-words">{m.comments || "-"}</td>
+
+                    <td className="p-2 border break-words">
+                      {m.comments || "-"}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="p-4 border text-center text-gray-500">
+                  <td
+                    colSpan="5"
+                    className="p-4 border text-center text-gray-500"
+                  >
                     No records found
                   </td>
                 </tr>
@@ -547,6 +836,7 @@ const average =
       </h2>
 
       {renderTable("Mathematics", mathsMarks, "maths")}
+
       {renderTable("Physics", physicsMarks, "physics")}
 
       {reportSubject && (
@@ -557,6 +847,7 @@ const average =
                 <h3 className="text-xl md:text-2xl font-bold text-blue-800 mb-1">
                   {currentSyllabus[reportSubject]?.title} Detailed Report
                 </h3>
+
                 <p className="text-gray-600">
                   Chapter-wise understanding based on test marks.
                 </p>
@@ -596,17 +887,25 @@ const average =
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div>
                           <h5 className="font-semibold text-blue-700">
-                            C{chapter.chapterNo} - {chapter.chapterName}
+                            C{chapter.chapterNo} -{" "}
+                            {chapter.chapterName}
                           </h5>
+
                           <p className="text-sm text-gray-500">
                             {chapter.tests.length} test
-                            {chapter.tests.length === 1 ? "" : "s"} recorded
+                            {chapter.tests.length === 1
+                              ? ""
+                              : "s"}{" "}
+                            recorded
                           </p>
                         </div>
 
                         <div className="w-full md:w-80">
                           <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-600">Understanding</span>
+                            <span className="text-gray-600">
+                              Understanding
+                            </span>
+
                             <span
                               className={`font-bold ${getProgressTextColor(
                                 chapter.average
@@ -621,7 +920,9 @@ const average =
                               className={`h-3 rounded-full ${getProgressColor(
                                 chapter.average
                               )}`}
-                              style={{ width: `${chapter.average}%` }}
+                              style={{
+                                width: `${chapter.average}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -633,6 +934,48 @@ const average =
                     )}
                   </div>
                 ))}
+
+                {/* =====================================================
+                    COMBINED TESTS
+                    ===================================================== */}
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedChapter(
+                        selectedChapter === "combined"
+                          ? null
+                          : "combined"
+                      )
+                    }
+                    className="w-full text-left border border-gray-200 rounded-xl p-4 hover:shadow-md transition bg-white"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <h5 className="font-semibold text-blue-700">
+                          Combined Tests
+                        </h5>
+
+                        <p className="text-sm text-gray-500">
+                          {combinedTests.length} test
+                          {combinedTests.length === 1
+                            ? ""
+                            : "s"}{" "}
+                          recorded
+                        </p>
+                      </div>
+
+                      <div className="text-sm font-semibold text-blue-700">
+                        View Tests →
+                      </div>
+                    </div>
+                  </button>
+
+                  {selectedChapter === "combined" && (
+                    <CombinedTestsDetails tests={combinedTests} />
+                  )}
+                </div>
               </div>
             </div>
           </div>

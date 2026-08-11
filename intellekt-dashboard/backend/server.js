@@ -271,39 +271,39 @@ app.get('/attendance/:rollNo', async (req, res) => {
 	STUDENT MARKS
 	========================================================= */
 app.get('/marks/:roll', async (req, res) => {
-	const { roll } = req.params;
+  const { roll } = req.params;
 
-	try {
-		const result = await pool.query(
-			`
-			SELECT 
-				m.test_code,
-				m.marks_obtained,
-				m.comments,
-				COALESCE(m.total_marks, t.total_marks) AS total_marks,
-				t.test_date,
-				t.subject_id,
-				CASE
-					WHEN t.subject_id = 1 THEN 'Maths'
-					WHEN t.subject_id = 2 THEN 'Physics'
-					ELSE 'Archived Test'
-				END AS subject_name
-			FROM marks m
-			LEFT JOIN tests t
-				ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
-			WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
-			ORDER BY COALESCE(t.test_date, CURRENT_DATE) DESC, m.test_code ASC
-			`,
-			[ roll ]
-		);
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        m.test_code,
+        m.marks_obtained,
+        m.comments,
+        COALESCE(m.total_marks, t.total_marks) AS total_marks,
+        t.test_date,
+        t.subject_id,
+        t.chapter,
+        CASE
+          WHEN t.subject_id = 1 THEN 'Maths'
+          WHEN t.subject_id = 2 THEN 'Physics'
+          ELSE 'Archived Test'
+        END AS subject_name
+      FROM marks m
+      LEFT JOIN tests t
+        ON UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+      WHERE UPPER(TRIM(m.roll_no)) = UPPER(TRIM($1))
+      ORDER BY COALESCE(t.test_date, CURRENT_DATE) DESC, m.test_code ASC
+      `,
+      [roll]
+    );
 
-		res.json(result.rows);
-	} catch (err) {
-		console.error('GET /marks/:roll error:', err);
-		res.status(500).json({ error: 'Database error' });
-	}
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /marks/:roll error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
-	
 
 
 /* =========================================================
