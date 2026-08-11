@@ -88,6 +88,13 @@ function FacultyLayoutContent({ children }) {
           >
             Test
           </Link>
+          <Link
+  href={`/faculty-dashboard/syllabus?id=${facultyId}`}
+  onClick={() => setMenuOpen(false)}
+  className={linkClass(isActive("/faculty-dashboard/syllabus"))}
+>
+  Syllabus
+</Link>
 
           <div className="rounded-lg">
             <button
