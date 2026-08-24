@@ -850,6 +850,361 @@ app.get('/fees/:roll', async (req, res) => {
 		res.status(500).json({ error: 'Database error' });
 	}
 });
+/* =========================================================
+   FACULTY - GET ALL STUDENT FEES
+========================================================= */
+
+app.get('/faculty/fees', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT
+				s.roll_no,
+				s.name,
+				TRIM(s.class) AS class,
+				TRIM(s.board) AS board,
+				COALESCE(f.total_fee, 0) AS total_fee,
+				COALESCE(f.fee_paid, 0) AS paid_amount,
+				COALESCE(f.total_fee, 0) - COALESCE(f.fee_paid, 0) AS pending_amount,
+				f.next_due AS due_date,
+				CASE
+					WHEN COALESCE(f.total_fee, 0) > 0
+						AND COALESCE(f.fee_paid, 0) >= COALESCE(f.total_fee, 0)
+					THEN 'Paid'
+					WHEN COALESCE(f.fee_paid, 0) > 0
+						AND COALESCE(f.fee_paid, 0) < COALESCE(f.total_fee, 0)
+					THEN 'Partial'
+					ELSE 'Pending'
+				END AS status
+			FROM students s
+			LEFT JOIN fees f
+				ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(f.roll_no))
+			ORDER BY s.roll_no ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty/fees error:', err);
+
+		res.status(500).json({
+			error: 'Failed to fetch student fee details',
+			details: err.message
+		});
+	}
+});
+/* =========================================================
+   FACULTY - UPDATE STUDENT FEE
+========================================================= */
+
+app.put('/faculty/fees/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	const {
+		total_fee,
+		paid_amount,
+		due_date,
+		status,
+		reminder_enabled
+	} = req.body;
+
+	const client = await pool.connect();
+
+	try {
+		const totalFee = Number(total_fee);
+		const paidAmount = Number(paid_amount);
+
+		/* -----------------------------
+		   VALIDATE FEE VALUES
+		----------------------------- */
+
+		if (
+			Number.isNaN(totalFee) ||
+			Number.isNaN(paidAmount) ||
+			totalFee < 0 ||
+			paidAmount < 0
+		) {
+			return res.status(400).json({
+				error: 'Invalid fee amount'
+			});
+		}
+
+		if (paidAmount > totalFee) {
+			return res.status(400).json({
+				error: 'Paid amount cannot be greater than total fee'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		/* -----------------------------
+		   CHECK STUDENT
+		----------------------------- */
+
+		const studentResult = await client.query(
+			`
+			SELECT
+				roll_no,
+				name,
+				class,
+				board
+			FROM students
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[rollNo]
+		);
+
+		if (studentResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+
+			return res.status(404).json({
+				error: 'Student not found'
+			});
+		}
+
+		const student = studentResult.rows[0];
+
+		/* -----------------------------
+		   CHECK WHETHER FEE EXISTS
+		----------------------------- */
+
+		const feeCheck = await client.query(
+			`
+			SELECT roll_no
+			FROM fees
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[rollNo]
+		);
+
+		/* -----------------------------
+		   UPDATE / INSERT FEE
+		----------------------------- */
+
+		if (feeCheck.rows.length > 0) {
+			await client.query(
+				`
+				UPDATE fees
+				SET
+					total_fee = $1,
+					fee_paid = $2,
+					next_due = $3
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($4))
+				`,
+				[
+					totalFee,
+					paidAmount,
+					due_date || null,
+					rollNo
+				]
+			);
+		} else {
+			await client.query(
+				`
+				INSERT INTO fees (
+					roll_no,
+					total_fee,
+					fee_paid,
+					next_due
+				)
+				VALUES ($1, $2, $3, $4)
+				`,
+				[
+					rollNo,
+					totalFee,
+					paidAmount,
+					due_date || null
+				]
+			);
+		}
+
+		/* -----------------------------
+		   CALCULATE FINAL STATUS
+		----------------------------- */
+
+		const pendingAmount = Math.max(
+			totalFee - paidAmount,
+			0
+		);
+
+		const finalStatus =
+			totalFee > 0 && paidAmount >= totalFee
+				? 'Paid'
+				: paidAmount > 0
+					? 'Partial'
+					: 'Pending';
+
+		/* -----------------------------
+		   STUDENT NOTIFICATION
+		----------------------------- */
+
+		await client.query(
+			`
+			DELETE FROM student_notifications
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			  AND module_name = 'fees'
+			`,
+			[rollNo]
+		);
+
+		await client.query(
+			`
+			INSERT INTO student_notifications
+			(roll_no, module_name, message, is_read)
+			VALUES ($1, 'fees', $2, FALSE)
+			`,
+			[
+				rollNo,
+				'Your fee details have been updated'
+			]
+		);
+
+		/* -----------------------------
+		   COMMIT
+		----------------------------- */
+
+		await client.query('COMMIT');
+
+		res.json({
+			message: 'Fee updated successfully',
+
+			fee: {
+				roll_no: rollNo,
+				total_fee: totalFee,
+				paid_amount: paidAmount,
+				pending_amount: pendingAmount,
+				due_date: due_date || null,
+				status: finalStatus,
+				reminder_enabled:
+					reminder_enabled === true
+			}
+		});
+
+	} catch (err) {
+		await client.query('ROLLBACK');
+
+		console.error(
+			'PUT /faculty/fees/:rollNo error:',
+			err
+		);
+
+		res.status(500).json({
+			error: 'Failed to update fee',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+/* =========================================================
+   FACULTY - FEE REMINDER
+========================================================= */
+
+app.patch('/faculty/fees/:rollNo/reminder', async (req, res) => {
+	const { rollNo } = req.params;
+	const { enabled } = req.body;
+
+	const client = await pool.connect();
+
+	try {
+		if (typeof enabled !== 'boolean') {
+			return res.status(400).json({
+				error: 'enabled must be true or false'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		/* -----------------------------
+		   CHECK FEE RECORD
+		----------------------------- */
+
+		const feeResult = await client.query(
+			`
+			SELECT
+				total_fee,
+				fee_paid
+			FROM fees
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[rollNo]
+		);
+
+		if (feeResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+
+			return res.status(404).json({
+				error: 'Fee record not found'
+			});
+		}
+
+		const fee = feeResult.rows[0];
+
+		const totalFee = Number(
+			fee.total_fee || 0
+		);
+
+		const paidAmount = Number(
+			fee.fee_paid || 0
+		);
+
+		const isFullyPaid =
+			totalFee > 0 &&
+			paidAmount >= totalFee;
+
+		/* -----------------------------
+		   PREVENT REMINDER FOR PAID FEE
+		----------------------------- */
+
+		if (enabled && isFullyPaid) {
+			await client.query('ROLLBACK');
+
+			return res.status(400).json({
+				error: 'Cannot enable reminder for a paid fee'
+			});
+		}
+
+		/* -----------------------------
+		   UPDATE REMINDER
+		----------------------------- */
+
+		await client.query(
+			`
+			UPDATE fees
+			SET reminder_enabled = $1
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($2))
+			`,
+			[
+				enabled,
+				rollNo
+			]
+		);
+
+		await client.query('COMMIT');
+
+		res.json({
+			message: enabled
+				? 'Fee reminder enabled'
+				: 'Fee reminder disabled',
+
+			roll_no: rollNo,
+			reminder_enabled: enabled
+		});
+
+	} catch (err) {
+		await client.query('ROLLBACK');
+
+		console.error(
+			'PATCH /faculty/fees/:rollNo/reminder error:',
+			err
+		);
+
+		res.status(500).json({
+			error: 'Failed to update fee reminder',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
 
 /* =========================================================
 	FACULTY PROFILE
