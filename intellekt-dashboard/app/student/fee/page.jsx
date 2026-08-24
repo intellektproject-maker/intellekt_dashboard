@@ -59,6 +59,10 @@ function FeePageContent() {
     return `${day}-${month}-${year}`;
   };
 
+  const handlePay = () => {
+    alert("Online payment option will be available soon.");
+  };
+
   if (!roll) {
     return (
       <div className="p-6 md:p-10 text-red-600 font-semibold">
@@ -81,71 +85,233 @@ function FeePageContent() {
         Fee Details
       </h2>
 
-      <div className="bg-white shadow-md rounded-xl p-6">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead className="bg-blue-700 text-white">
-              <tr>
-                <th className="p-3 text-left whitespace-nowrap">
-                  Total Fee
-                </th>
+      {fee.length > 0 ? (
+        fee.map((f, i) => {
+          const totalFee = Number(f.total_fee || 0);
+          const feePaid = Number(f.fee_paid || 0);
+          const balance = Math.max(0, totalFee - feePaid);
 
-                <th className="p-3 text-left whitespace-nowrap">
-                  Fee Paid
-                </th>
+          /*
+           * Payment history will come from the backend.
+           * If it doesn't exist yet, use an empty array.
+           */
+          const paymentHistory = Array.isArray(f.payment_history)
+            ? f.payment_history
+            : [];
 
-                <th className="p-3 text-left whitespace-nowrap">
-                  Balance
-                </th>
+          return (
+            <div
+              key={i}
+              className="bg-white shadow-md rounded-xl p-6 mb-8"
+            >
+              {/* CURRENT FEE STATUS */}
 
-                <th className="p-3 text-left whitespace-nowrap">
-                  Next Due
-                </th>
-              </tr>
-            </thead>
+              <h3 className="text-xl font-semibold text-gray-800 mb-4">
+                Current Fee Status
+              </h3>
 
-            <tbody>
-              {fee.length > 0 ? (
-                fee.map((f, i) => {
-                  const totalFee = Number(f.total_fee || 0);
-                  const feePaid = Number(f.fee_paid || 0);
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse">
+                  <thead className="bg-blue-700 text-white">
+                    <tr>
+                      <th className="p-3 text-left whitespace-nowrap">
+                        Total Fee
+                      </th>
 
-                  const balance = Math.max(0, totalFee - feePaid);
+                      <th className="p-3 text-left whitespace-nowrap">
+                        Total Paid
+                      </th>
 
-                  return (
-                    <tr key={i} className="border-b text-gray-700">
+                      <th className="p-3 text-left whitespace-nowrap">
+                        Balance
+                      </th>
+
+                      <th className="p-3 text-left whitespace-nowrap">
+                        Next Due
+                      </th>
+
+                      <th className="p-3 text-left whitespace-nowrap">
+                        Payment
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <tr className="border-b text-gray-700">
                       <td className="p-3 whitespace-nowrap">
-                        {totalFee}
+                        ₹{totalFee}
                       </td>
 
                       <td className="p-3 whitespace-nowrap">
-                        {feePaid}
+                        ₹{feePaid}
                       </td>
 
-                      <td className="p-3 whitespace-nowrap font-semibold text-red-600">
-                        {balance}
+                      <td
+                        className={`p-3 whitespace-nowrap font-semibold ${
+                          balance > 0
+                            ? "text-red-600"
+                            : "text-green-600"
+                        }`}
+                      >
+                        ₹{balance}
                       </td>
 
                       <td className="p-3 whitespace-nowrap">
-                        {formatDate(f.next_due)}
+                        {balance > 0
+                          ? formatDate(f.next_due)
+                          : "Fully Paid"}
+                      </td>
+
+                      <td className="p-3 whitespace-nowrap">
+                        {balance > 0 ? (
+                          <button
+                            onClick={handlePay}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
+                          >
+                            Pay
+                          </button>
+                        ) : (
+                          <span className="text-green-600 font-semibold">
+                            Paid
+                          </span>
+                        )}
                       </td>
                     </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="p-6 text-center text-gray-500"
-                  >
-                    No fee records found
-                  </td>
-                </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* PAYMENT HISTORY */}
+
+              {paymentHistory.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">
+                    Payment History
+                  </h3>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border-collapse">
+                      <thead className="bg-gray-700 text-white">
+                        <tr>
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Payment Date
+                          </th>
+
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Amount Paid
+                          </th>
+
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Total Paid
+                          </th>
+
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Balance
+                          </th>
+
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Next Due
+                          </th>
+
+                          <th className="p-3 text-left whitespace-nowrap">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {paymentHistory.map((payment, index) => {
+                          const amountPaid = Number(
+                            payment.amount_paid || 0
+                          );
+
+                          const totalPaid = Number(
+                            payment.total_paid || 0
+                          );
+
+                          const paymentBalance = Math.max(
+                            0,
+                            Number(
+                              payment.balance ??
+                                totalFee - totalPaid
+                            )
+                          );
+
+                          return (
+                            <tr
+                              key={index}
+                              className="border-b text-gray-700"
+                            >
+                              <td className="p-3 whitespace-nowrap">
+                                {formatDate(
+                                  payment.payment_date
+                                )}
+                              </td>
+
+                              <td className="p-3 whitespace-nowrap">
+                                ₹{amountPaid}
+                              </td>
+
+                              <td className="p-3 whitespace-nowrap">
+                                ₹{totalPaid}
+                              </td>
+
+                              <td
+                                className={`p-3 whitespace-nowrap font-semibold ${
+                                  paymentBalance > 0
+                                    ? "text-red-600"
+                                    : "text-green-600"
+                                }`}
+                              >
+                                ₹{paymentBalance}
+                              </td>
+
+                              <td className="p-3 whitespace-nowrap">
+                                {paymentBalance > 0
+                                  ? formatDate(
+                                      payment.next_due
+                                    )
+                                  : "-"}
+                              </td>
+
+                              <td className="p-3 whitespace-nowrap">
+                                {paymentBalance === 0 ? (
+                                  <span className="text-green-600 font-semibold">
+                                    Fully Paid
+                                  </span>
+                                ) : (
+                                  <span className="text-orange-600 font-semibold">
+                                    Partially Paid
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
+
+              {/* NO HISTORY YET */}
+
+              {paymentHistory.length === 0 && feePaid > 0 && (
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg text-gray-600">
+                  Payment history will appear here after payment
+                  records are added.
+                </div>
+              )}
+            </div>
+          );
+        })
+      ) : (
+        <div className="bg-white shadow-md rounded-xl p-6">
+          <p className="text-center text-gray-500">
+            No fee records found
+          </p>
         </div>
-      </div>
+      )}
     </div>
   );
 }

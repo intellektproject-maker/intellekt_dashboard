@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 
 import { useEffect, useState } from "react";
 
@@ -22,6 +22,9 @@ export default function FeesPage() {
 
   const [students, setStudents] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [boardFilter, setBoardFilter] = useState("");
+  const [rollNoFilter, setRollNoFilter] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -118,28 +121,119 @@ export default function FeesPage() {
   }, []);
 
   // =========================================================
-  // SEARCH
+  // FILTERS + SEARCH
   // =========================================================
+
+  const getStudentClass = (student) =>
+    String(
+      student?.class ??
+        student?.class_name ??
+        student?.standard ??
+        student?.grade ??
+        ""
+    ).trim();
+
+  const getStudentBoard = (student) =>
+    String(
+      student?.board ??
+        student?.board_name ??
+        ""
+    ).trim();
+
+  const getStudentRollNo = (student) =>
+    String(
+      student?.roll_no ??
+        student?.register_no ??
+        ""
+    ).trim();
+
+  const uniqueClasses = [
+    ...new Set(
+      students
+        .map(getStudentClass)
+        .filter(Boolean)
+    ),
+  ].sort((a, b) =>
+    a.localeCompare(b, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
+  const uniqueBoards = [
+    ...new Set(
+      students
+        .map(getStudentBoard)
+        .filter(Boolean)
+    ),
+  ].sort((a, b) =>
+    a.localeCompare(b, undefined, {
+      sensitivity: "base",
+    })
+  );
+
+  const uniqueRollNos = [
+    ...new Set(
+      students
+        .map(getStudentRollNo)
+        .filter(Boolean)
+    ),
+  ].sort((a, b) =>
+    a.localeCompare(b, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
 
   const search = searchTerm.trim().toLowerCase();
 
   const filteredStudents = students.filter((student) => {
-    if (!search) {
-      return true;
-    }
-
     const name = String(student?.name || "").toLowerCase();
-    const rollNo = String(student?.roll_no || "").toLowerCase();
+    const rollNo = getStudentRollNo(student).toLowerCase();
     const registerNo = String(
       student?.register_no || ""
     ).toLowerCase();
+    const studentClass = getStudentClass(student);
+    const studentBoard = getStudentBoard(student);
 
-    return (
+    const matchesSearch =
+      !search ||
       name.includes(search) ||
       rollNo.includes(search) ||
-      registerNo.includes(search)
+      registerNo.includes(search);
+
+    const matchesClass =
+      !classFilter ||
+      studentClass === classFilter;
+
+    const matchesBoard =
+      !boardFilter ||
+      studentBoard === boardFilter;
+
+    const matchesRollNo =
+      !rollNoFilter ||
+      getStudentRollNo(student) === rollNoFilter;
+
+    return (
+      matchesSearch &&
+      matchesClass &&
+      matchesBoard &&
+      matchesRollNo
     );
   });
+
+  const hasActiveFilters =
+    Boolean(searchTerm) ||
+    Boolean(classFilter) ||
+    Boolean(boardFilter) ||
+    Boolean(rollNoFilter);
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setClassFilter("");
+    setBoardFilter("");
+    setRollNoFilter("");
+  };
 
   // =========================================================
   // OPEN EDIT MODAL
@@ -355,117 +449,152 @@ export default function FeesPage() {
   // =========================================================
 
   const toggleReminder = async (student) => {
-    const rollNo = String(
-      student?.roll_no || ""
-    ).trim();
+  const rollNo = String(
+    student?.roll_no || ""
+  ).trim();
 
-    if (!rollNo) {
-      alert("Student roll number is missing.");
-      return;
-    }
+  if (!rollNo) {
+    alert("Student roll number is missing.");
+    return;
+  }
 
-    const totalFee = Number(
-      student?.total_fee || 0
+  const totalFee = Number(
+    student?.total_fee || 0
+  );
+
+  const paidAmount = Number(
+    student?.paid_amount || 0
+  );
+
+  const pendingAmount = Math.max(
+    totalFee - paidAmount,
+    0
+  );
+
+  const isPaid =
+    student?.status === "Paid" ||
+    (totalFee > 0 && pendingAmount === 0);
+
+  if (isPaid) {
+    alert(
+      "This fee is already fully paid. Reminders are disabled."
+    );
+    return;
+  }
+
+  const currentState =
+    Boolean(student?.reminder_enabled);
+
+  const newState = !currentState;
+
+  /* =========================================
+     CONFIRM ACTION
+  ========================================= */
+
+  let confirmed = false;
+
+  if (newState) {
+    confirmed = window.confirm(
+      "Do you want to send fee reminder notifications to this student?"
+    );
+  } else {
+    confirmed = window.confirm(
+      "Do you want to stop fee reminder notifications for this student?"
+    );
+  }
+
+  /* =========================================
+     USER CANCELLED
+  ========================================= */
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${BACKEND_URL}/faculty/fees/${encodeURIComponent(
+        rollNo
+      )}/reminder`,
+      {
+        method: "PATCH",
+
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+
+        body: JSON.stringify({
+          enabled: newState,
+        }),
+      }
     );
 
-    const paidAmount = Number(
-      student?.paid_amount || 0
-    );
+    const responseText =
+      await response.text();
 
-    const pendingAmount = Math.max(
-      totalFee - paidAmount,
-      0
-    );
-
-    const isPaid =
-      student?.status === "Paid" ||
-      (totalFee > 0 && pendingAmount === 0);
-
-    if (isPaid) {
-      return;
-    }
-
-    const newState =
-      !Boolean(student?.reminder_enabled);
+    let data;
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/faculty/fees/${encodeURIComponent(
-          rollNo
-        )}/reminder`,
-        {
-          method: "PATCH",
-
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-
-          body: JSON.stringify({
-            enabled: newState,
-          }),
-        }
-      );
-
-      const responseText = await response.text();
-
-      let data;
-
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        data = responseText;
-      }
-
-      console.log(
-        "PATCH reminder status:",
-        response.status
-      );
-
-      console.log(
-        "PATCH reminder response:",
-        data
-      );
-
-      if (!response.ok) {
-        const message =
-          typeof data === "object" && data?.error
-            ? data.error
-            : "Failed to update reminder.";
-
-        throw new Error(message);
-      }
-
-      // Update UI immediately.
-      setStudents((previous) =>
-        previous.map((item) => {
-          if (
-            String(item?.roll_no || "")
-              .trim()
-              .toUpperCase() !==
-            rollNo.toUpperCase()
-          ) {
-            return item;
-          }
-
-          return {
-            ...item,
-            reminder_enabled: newState,
-          };
-        })
-      );
-    } catch (err) {
-      console.error(
-        "Error updating reminder:",
-        err
-      );
-
-      alert(
-        err?.message ||
-          "Failed to update reminder."
-      );
+      data = JSON.parse(responseText);
+    } catch {
+      data = responseText;
     }
-  };
+
+    console.log(
+      "PATCH reminder status:",
+      response.status
+    );
+
+    console.log(
+      "PATCH reminder response:",
+      data
+    );
+
+    if (!response.ok) {
+      const message =
+        typeof data === "object" &&
+        data?.error
+          ? data.error
+          : "Failed to update reminder.";
+
+      throw new Error(message);
+    }
+
+    /* =========================================
+       UPDATE UI IMMEDIATELY
+    ========================================= */
+
+    setStudents((previous) =>
+      previous.map((item) => {
+        if (
+          String(item?.roll_no || "")
+            .trim()
+            .toUpperCase() !==
+          rollNo.toUpperCase()
+        ) {
+          return item;
+        }
+
+        return {
+          ...item,
+          reminder_enabled: newState,
+        };
+      })
+    );
+
+  } catch (err) {
+    console.error(
+      "Error updating reminder:",
+      err
+    );
+
+    alert(
+      err?.message ||
+        "Failed to update reminder."
+    );
+  }
+};
 
   // =========================================================
   // BELL ICON
@@ -549,11 +678,11 @@ export default function FeesPage() {
       </div>
 
       {/* ================================================= */}
-      {/* SEARCH */}
+      {/* SEARCH + FILTERS */}
       {/* ================================================= */}
 
-      <div className="mb-6">
-        <div className="relative max-w-xl">
+      <div className="mb-6 bg-white rounded-2xl border border-gray-200 p-4 md:p-5">
+        <div className="relative w-full mb-4">
 
           <div className="absolute left-4 top-1/2 -translate-y-1/2">
             <SearchIcon />
@@ -561,7 +690,7 @@ export default function FeesPage() {
 
           <input
             type="text"
-            placeholder="Search student..."
+            placeholder="Search student by name or roll no..."
             value={searchTerm}
             onChange={(event) =>
               setSearchTerm(event.target.value)
@@ -570,6 +699,74 @@ export default function FeesPage() {
           />
 
         </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+          {/* CLASS FILTER */}
+          <select
+            value={classFilter}
+            onChange={(event) =>
+              setClassFilter(event.target.value)
+            }
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+          >
+            <option value="">All Classes</option>
+            {uniqueClasses.map((className) => (
+              <option key={className} value={className}>
+                Class {className}
+              </option>
+            ))}
+          </select>
+
+          {/* BOARD FILTER */}
+          <select
+            value={boardFilter}
+            onChange={(event) =>
+              setBoardFilter(event.target.value)
+            }
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+          >
+            <option value="">All Boards</option>
+            {uniqueBoards.map((board) => (
+              <option key={board} value={board}>
+                {board}
+              </option>
+            ))}
+          </select>
+
+          {/* ROLL NUMBER FILTER */}
+          <select
+            value={rollNoFilter}
+            onChange={(event) =>
+              setRollNoFilter(event.target.value)
+            }
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+          >
+            <option value="">All Roll Numbers</option>
+            {uniqueRollNos.map((rollNo) => (
+              <option key={rollNo} value={rollNo}>
+                {rollNo}
+              </option>
+            ))}
+          </select>
+
+          {/* CLEAR FILTERS */}
+          <button
+            type="button"
+            onClick={clearFilters}
+            disabled={!hasActiveFilters}
+            className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            Clear Filters
+          </button>
+
+        </div>
+
+        {hasActiveFilters && (
+          <p className="text-sm text-gray-500 mt-3">
+            Showing {filteredStudents.length} of {students.length} students
+          </p>
+        )}
       </div>
 
       {/* ================================================= */}
@@ -723,6 +920,20 @@ export default function FeesPage() {
                             student?.register_no ||
                             "Student"}
                         </p>
+
+                        {(getStudentClass(student) ||
+                          getStudentBoard(student)) && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {getStudentClass(student)
+                              ? `Class ${getStudentClass(student)}`
+                              : ""}
+                            {getStudentClass(student) &&
+                            getStudentBoard(student)
+                              ? " • "
+                              : ""}
+                            {getStudentBoard(student) || ""}
+                          </p>
+                        )}
 
                       </div>
 

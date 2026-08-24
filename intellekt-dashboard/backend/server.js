@@ -835,22 +835,85 @@ app.get('/fees/:roll', async (req, res) => {
 	const { roll } = req.params;
 
 	try {
-		const result = await pool.query(
+		/* -----------------------------------------
+		   GET CURRENT FEE
+		----------------------------------------- */
+
+		const feeResult = await pool.query(
 			`
-		SELECT total_fee, fee_paid, next_due
-		FROM fees
-		WHERE roll_no = $1
-		`,
-			[ roll ]
+			SELECT
+				id,
+				roll_no,
+				total_fee,
+				fee_paid,
+				next_due
+			FROM fees
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			`,
+			[roll]
 		);
 
-		res.json(result.rows);
+		if (feeResult.rows.length === 0) {
+			return res.json([]);
+		}
+
+		/* -----------------------------------------
+		   GET PAYMENT HISTORY
+		----------------------------------------- */
+
+		const paymentResult = await pool.query(
+			`
+			SELECT
+				id,
+				amount_paid,
+				total_paid,
+				balance,
+				payment_date,
+				next_due
+			FROM fee_payments
+			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			ORDER BY payment_date ASC, id ASC
+			`,
+			[roll]
+		);
+
+		/* -----------------------------------------
+		   FORMAT RESPONSE
+		----------------------------------------- */
+
+		const formattedFees = feeResult.rows.map((fee) => ({
+			id: fee.id,
+			roll_no: fee.roll_no,
+			total_fee: Number(fee.total_fee || 0),
+			fee_paid: Number(fee.fee_paid || 0),
+			balance: Math.max(
+				0,
+				Number(fee.total_fee || 0) -
+				Number(fee.fee_paid || 0)
+			),
+			next_due: fee.next_due,
+
+			payment_history: paymentResult.rows.map((payment) => ({
+				id: payment.id,
+				amount_paid: Number(payment.amount_paid || 0),
+				total_paid: Number(payment.total_paid || 0),
+				balance: Number(payment.balance || 0),
+				payment_date: payment.payment_date,
+				next_due: payment.next_due
+			}))
+		}));
+
+		res.json(formattedFees);
+
 	} catch (err) {
 		console.error('GET /fees/:roll error:', err);
-		res.status(500).json({ error: 'Database error' });
+
+		res.status(500).json({
+			error: 'Database error',
+			details: err.message
+		});
 	}
-});
-/* =========================================================
+});/* =========================================================
    FACULTY - GET ALL STUDENT FEES
 ========================================================= */
 
@@ -866,6 +929,7 @@ app.get('/faculty/fees', async (req, res) => {
 				COALESCE(f.fee_paid, 0) AS paid_amount,
 				COALESCE(f.total_fee, 0) - COALESCE(f.fee_paid, 0) AS pending_amount,
 				f.next_due AS due_date,
+				f.reminder_enabled AS reminder_enabled,
 				CASE
 					WHEN COALESCE(f.total_fee, 0) > 0
 						AND COALESCE(f.fee_paid, 0) >= COALESCE(f.total_fee, 0)
@@ -912,9 +976,9 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 		const totalFee = Number(total_fee);
 		const paidAmount = Number(paid_amount);
 
-		/* -----------------------------
+		/* -----------------------------------------
 		   VALIDATE FEE VALUES
-		----------------------------- */
+		----------------------------------------- */
 
 		if (
 			Number.isNaN(totalFee) ||
@@ -935,9 +999,9 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 
 		await client.query('BEGIN');
 
-		/* -----------------------------
+		/* -----------------------------------------
 		   CHECK STUDENT
-		----------------------------- */
+		----------------------------------------- */
 
 		const studentResult = await client.query(
 			`
@@ -962,42 +1026,36 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 
 		const student = studentResult.rows[0];
 
-		/* -----------------------------
-		   CHECK WHETHER FEE EXISTS
-		----------------------------- */
+		/* -----------------------------------------
+		   GET EXISTING FEE
+		----------------------------------------- */
 
 		const feeCheck = await client.query(
 			`
-			SELECT roll_no
+			SELECT
+				id,
+				total_fee,
+				fee_paid,
+				next_due
 			FROM fees
 			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+			FOR UPDATE
 			`,
 			[rollNo]
 		);
 
-		/* -----------------------------
-		   UPDATE / INSERT FEE
-		----------------------------- */
+		let feeId;
+		let previousPaidAmount = 0;
+		let isNewFee = false;
 
-		if (feeCheck.rows.length > 0) {
-			await client.query(
-				`
-				UPDATE fees
-				SET
-					total_fee = $1,
-					fee_paid = $2,
-					next_due = $3
-				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($4))
-				`,
-				[
-					totalFee,
-					paidAmount,
-					due_date || null,
-					rollNo
-				]
-			);
-		} else {
-			await client.query(
+		/* -----------------------------------------
+		   CREATE NEW FEE
+		----------------------------------------- */
+
+		if (feeCheck.rows.length === 0) {
+			isNewFee = true;
+
+			const insertFeeResult = await client.query(
 				`
 				INSERT INTO fees (
 					roll_no,
@@ -1006,19 +1064,116 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 					next_due
 				)
 				VALUES ($1, $2, $3, $4)
+				RETURNING id
 				`,
 				[
 					rollNo,
 					totalFee,
 					paidAmount,
-					due_date || null
+					paidAmount >= totalFee ? null : (due_date || null)
+				]
+			);
+
+			feeId = insertFeeResult.rows[0].id;
+
+		} else {
+			/* -----------------------------------------
+			   EXISTING FEE
+			----------------------------------------- */
+
+			const existingFee = feeCheck.rows[0];
+
+			feeId = existingFee.id;
+			previousPaidAmount = Number(
+				existingFee.fee_paid || 0
+			);
+
+			/* -----------------------------------------
+			   UPDATE CURRENT FEE
+			----------------------------------------- */
+
+			await client.query(
+				`
+				UPDATE fees
+				SET
+					total_fee = $1,
+					fee_paid = $2,
+					next_due = $3
+				WHERE id = $4
+				`,
+				[
+					totalFee,
+					paidAmount,
+					paidAmount >= totalFee
+						? null
+						: (due_date || null),
+					feeId
 				]
 			);
 		}
 
-		/* -----------------------------
+		/* -----------------------------------------
+		   CALCULATE NEW PAYMENT
+		----------------------------------------- */
+
+		const newPaymentAmount =
+			paidAmount - previousPaidAmount;
+
+		/*
+		 * Only create a payment history record when
+		 * the paid amount actually increases.
+		 *
+		 * Example:
+		 *
+		 * Previous paid = 10000
+		 * New paid      = 15000
+		 *
+		 * New payment   = 5000
+		 */
+
+		if (newPaymentAmount > 0) {
+			const balance = Math.max(
+				0,
+				totalFee - paidAmount
+			);
+
+			await client.query(
+				`
+				INSERT INTO fee_payments (
+					fee_id,
+					roll_no,
+					amount_paid,
+					total_paid,
+					balance,
+					payment_date,
+					next_due
+				)
+				VALUES (
+					$1,
+					$2,
+					$3,
+					$4,
+					$5,
+					CURRENT_DATE,
+					$6
+				)
+				`,
+				[
+					feeId,
+					rollNo,
+					newPaymentAmount,
+					paidAmount,
+					balance,
+					balance > 0
+						? (due_date || null)
+						: null
+				]
+			);
+		}
+
+		/* -----------------------------------------
 		   CALCULATE FINAL STATUS
-		----------------------------- */
+		----------------------------------------- */
 
 		const pendingAmount = Math.max(
 			totalFee - paidAmount,
@@ -1026,15 +1181,16 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 		);
 
 		const finalStatus =
-			totalFee > 0 && paidAmount >= totalFee
+			totalFee > 0 &&
+			paidAmount >= totalFee
 				? 'Paid'
 				: paidAmount > 0
 					? 'Partial'
 					: 'Pending';
 
-		/* -----------------------------
+		/* -----------------------------------------
 		   STUDENT NOTIFICATION
-		----------------------------- */
+		----------------------------------------- */
 
 		await client.query(
 			`
@@ -1057,9 +1213,9 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 			]
 		);
 
-		/* -----------------------------
+		/* -----------------------------------------
 		   COMMIT
-		----------------------------- */
+		----------------------------------------- */
 
 		await client.query('COMMIT');
 
@@ -1071,10 +1227,21 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 				total_fee: totalFee,
 				paid_amount: paidAmount,
 				pending_amount: pendingAmount,
-				due_date: due_date || null,
+				due_date:
+					paidAmount >= totalFee
+						? null
+						: (due_date || null),
 				status: finalStatus,
 				reminder_enabled:
-					reminder_enabled === true
+					reminder_enabled === true,
+
+				payment_recorded:
+					newPaymentAmount > 0,
+
+				payment_amount:
+					newPaymentAmount > 0
+						? newPaymentAmount
+						: 0
 			}
 		});
 
@@ -1090,11 +1257,11 @@ app.put('/faculty/fees/:rollNo', async (req, res) => {
 			error: 'Failed to update fee',
 			details: err.message
 		});
+
 	} finally {
 		client.release();
 	}
-});
-/* =========================================================
+});/* =========================================================
    FACULTY - FEE REMINDER
 ========================================================= */
 
