@@ -402,7 +402,7 @@ export default function FeesPage() {
           },
 
           body: JSON.stringify({
-            reminder_enabled: newState,
+            enabled: newState,
           }),
         }
       );
