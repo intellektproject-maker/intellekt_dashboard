@@ -1333,17 +1333,22 @@ app.patch('/faculty/fees/:rollNo/reminder', async (req, res) => {
 		   UPDATE REMINDER
 		----------------------------- */
 
-		await client.query(
-			`
-			UPDATE fees
-			SET reminder_enabled = $1
-			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($2))
-			`,
-			[
-				enabled,
-				rollNo
-			]
-		);
+		        await client.query(
+            `
+            UPDATE fees
+            SET
+                reminder_enabled = $1,
+                last_reminder_sent_at = CASE
+                    WHEN $1 = TRUE THEN NULL
+                    ELSE last_reminder_sent_at
+                END
+            WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($2))
+            `,
+            [
+                enabled,
+                rollNo
+            ]
+        );
 
 		await client.query('COMMIT');
 
