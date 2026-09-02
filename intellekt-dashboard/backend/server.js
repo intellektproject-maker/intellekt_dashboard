@@ -2970,7 +2970,7 @@ app.get('/students', async (req, res) => {
         s.password,
         s.mode_of_education
       FROM students s
-      INNER JOIN student_subjects ss
+      LEFT JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
       WHERE 1=1
     `;
@@ -2995,10 +2995,14 @@ app.get('/students', async (req, res) => {
     query += ` ORDER BY s.roll_no ASC`;
 
     const result = await pool.query(query, values);
+
     res.json(result.rows);
   } catch (err) {
     console.error('GET /students error:', err);
-    res.status(500).json({ error: 'Failed to fetch students' });
+
+    res.status(500).json({
+      error: 'Failed to fetch students'
+    });
   }
 });
 
