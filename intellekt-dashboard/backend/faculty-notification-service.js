@@ -2,6 +2,41 @@
 
 const admin = require('firebase-admin');
 
+function initializeFirebase() {
+	if (admin.apps && admin.apps.length > 0) {
+		return;
+	}
+
+	const serviceAccountJson =
+		process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+	if (!serviceAccountJson) {
+		console.warn(
+			'[Faculty Push] FIREBASE_SERVICE_ACCOUNT_JSON is not configured'
+		);
+		return;
+	}
+
+	try {
+		const serviceAccount = JSON.parse(serviceAccountJson);
+
+		admin.initializeApp({
+			credential: admin.credential.cert(serviceAccount)
+		});
+
+		console.log(
+			'[Faculty Push] Firebase Admin initialized successfully'
+		);
+	} catch (error) {
+		console.error(
+			'[Faculty Push] Firebase Admin initialization failed:',
+			error.message
+		);
+	}
+}
+
+initializeFirebase();
+
 const INVALID_TOKEN_CODES = new Set([
 	'messaging/registration-token-not-registered',
 	'messaging/invalid-registration-token',
