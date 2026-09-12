@@ -5,6 +5,10 @@ const crypto = require("node:crypto");
 const { makeEventKey, queueNotificationEvent } = require('./web-notification-outbox');
 const app = express();
 
+const {
+	createFacultyNotification
+} = require('./faculty-notification-service');
+
 app.use(cors());
 app.use(express.json());
 
@@ -3796,6 +3800,10 @@ app.post('/faculty-tasks', async (req, res) => {
 		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
 		const today = new Date().toISOString().slice(0, 10);
 
+		// =========================================================
+		// DAILY TASK
+		// =========================================================
+
 		if (finalTaskType === 'Daily') {
 			const templateResult = await pool.query(
 				`
@@ -3815,7 +3823,7 @@ app.post('/faculty-tasks', async (req, res) => {
 					)
 					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
 					RETURNING *
-					`,
+				`,
 				[
 					faculty_id,
 					faculty_name,
@@ -3850,7 +3858,7 @@ app.post('/faculty-tasks', async (req, res) => {
 					)
 					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
 					RETURNING *
-					`,
+				`,
 				[
 					faculty_id,
 					faculty_name,
@@ -3866,20 +3874,22 @@ app.post('/faculty-tasks', async (req, res) => {
 				]
 			);
 
-			await pool.query(
-				`
-	INSERT INTO faculty_notifications
-	(faculty_id, module_name, message)
-	VALUES ($1, $2, $3)
-	`,
-				[ faculty_id, 'tasks', 'New task assigned by admin' ]
-			);
+			// Create in-app notification and send Firebase push notification
+			await createFacultyNotification(pool, {
+				facultyId: faculty_id,
+				moduleName: 'tasks',
+				message: 'New task assigned by admin'
+			});
 
 			return res.json({
 				message: 'Daily task assigned successfully',
 				task: todayTaskResult.rows[0]
 			});
 		}
+
+		// =========================================================
+		// WEEKLY TASK
+		// =========================================================
 
 		const result = await pool.query(
 			`
@@ -3899,7 +3909,7 @@ app.post('/faculty-tasks', async (req, res) => {
 				)
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
 				RETURNING *
-				`,
+			`,
 			[
 				faculty_id,
 				faculty_name,
@@ -3912,26 +3922,28 @@ app.post('/faculty-tasks', async (req, res) => {
 				loginFacultyId
 			]
 		);
-		await pool.query(
-			`
-	INSERT INTO faculty_notifications
-	(faculty_id, module_name, message)
-	VALUES ($1, $2, $3)
-	`,
-			[ faculty_id, 'tasks', 'New task assigned by admin' ]
-		);
-		res.json({
+
+		// Create in-app notification and send Firebase push notification
+		await createFacultyNotification(pool, {
+			facultyId: faculty_id,
+			moduleName: 'tasks',
+			message: 'New task assigned by admin'
+		});
+
+		return res.json({
 			message: 'Task assigned successfully',
 			task: result.rows[0]
 		});
 	} catch (err) {
 		console.error('POST /faculty-tasks error:', err);
+
 		res.status(500).json({
 			error: 'Failed to assign task',
 			details: err.message
 		});
 	}
 });
+
 
 app.put('/faculty-tasks/:id', async (req, res) => {
 	const { id } = req.params;
@@ -3950,7 +3962,7 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 						completed_at = NULL
 					WHERE id = $3
 					RETURNING *
-					`,
+				`,
 				[ faculty_id, faculty_name, id ]
 			);
 		} else if (typeof is_completed === 'boolean') {
@@ -3959,12 +3971,12 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 					UPDATE faculty_tasks
 					SET is_completed = $1,
 						completed_at = CASE
-						WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
-						ELSE NULL
+							WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+							ELSE NULL
 						END
 					WHERE id = $2
 					RETURNING *
-					`,
+				`,
 				[ is_completed, id ]
 			);
 		} else {
@@ -3974,12 +3986,18 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 		}
 
 		if (result.rowCount === 0) {
-			return res.status(404).json({ error: 'Task not found' });
+			return res.status(404).json({
+				error: 'Task not found'
+			});
 		}
+
 		const updatedTask = result.rows[0];
 
 		if (updatedTask.is_completed === true) {
-			const moduleName = updatedTask.task_type === 'Daily' ? 'daily-tasks' : 'all-tasks';
+			const moduleName =
+				updatedTask.task_type === 'Daily'
+					? 'daily-tasks'
+					: 'all-tasks';
 
 			const message =
 				updatedTask.task_type === 'Daily'
@@ -3988,22 +4006,32 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 
 			await pool.query(
 				`
-		INSERT INTO faculty_notifications
-		(faculty_id, module_name, message)
-		VALUES ($1, $2, $3), ($4, $5, $6)
-		`,
-				[ 'IG001', moduleName, message, 'IG002', moduleName, message ]
+					INSERT INTO faculty_notifications
+					(faculty_id, module_name, message)
+					VALUES ($1, $2, $3), ($4, $5, $6)
+				`,
+				[
+					'IG001',
+					moduleName,
+					message,
+					'IG002',
+					moduleName,
+					message
+				]
 			);
 		}
+
 		res.json(updatedTask);
 	} catch (err) {
 		console.error('PUT /faculty-tasks/:id error:', err);
+
 		res.status(500).json({
 			error: 'Failed to update task',
 			details: err.message
 		});
 	}
 });
+
 
 app.delete('/faculty-tasks/:id', async (req, res) => {
 	const { id } = req.params;
@@ -4018,27 +4046,31 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 
 		const taskResult = await pool.query(
 			`
-			SELECT id, parent_daily_task_id, task_type
-			FROM faculty_tasks
-			WHERE id = $1
+				SELECT id, parent_daily_task_id, task_type
+				FROM faculty_tasks
+				WHERE id = $1
 			`,
 			[ id ]
 		);
 
 		if (taskResult.rows.length === 0) {
-			return res.status(404).json({ error: 'Task not found' });
+			return res.status(404).json({
+				error: 'Task not found'
+			});
 		}
 
 		const task = taskResult.rows[0];
 
-		const deleteId = task.parent_daily_task_id ? task.parent_daily_task_id : task.id;
+		const deleteId = task.parent_daily_task_id
+			? task.parent_daily_task_id
+			: task.id;
 
 		const result = await pool.query(
 			`
-			DELETE FROM faculty_tasks
-			WHERE id = $1
-			   OR parent_daily_task_id = $1
-			RETURNING *
+				DELETE FROM faculty_tasks
+				WHERE id = $1
+				   OR parent_daily_task_id = $1
+				RETURNING *
 			`,
 			[ deleteId ]
 		);
@@ -4049,6 +4081,7 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 		});
 	} catch (err) {
 		console.error('DELETE /faculty-tasks/:id error:', err);
+
 		res.status(500).json({
 			error: 'Failed to delete task',
 			details: err.message
