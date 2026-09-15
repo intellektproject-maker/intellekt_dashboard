@@ -2,7 +2,7 @@
 
 const admin = require('firebase-admin');
 
-const { cert, getApps, initializeApp, getApp, getMessaging } = require('firebase-admin/app');
+const { cert, getApps, initializeApp, getApp } = require('firebase-admin/app');
 
 function initializeFirebase() {
   try {
