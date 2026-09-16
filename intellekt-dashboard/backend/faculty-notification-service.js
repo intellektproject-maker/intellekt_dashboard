@@ -45,15 +45,26 @@ const INVALID_TOKEN_CODES = new Set([
 const ANDROID_NOTIFICATION_CHANNEL_ID = 'intellekt_high_importance';
 
 function getMessaging() {
-	if (!admin.apps || admin.apps.length === 0) {
-		console.warn(
-			'[Faculty Push] Firebase Admin is not initialized'
+	try {
+		const app = initializeFirebase();
+
+		if (!app) {
+			console.warn(
+				'[Faculty Push] Firebase Admin is not initialized'
+			);
+
+			return null;
+		}
+
+		return admin.messaging(app);
+	} catch (error) {
+		console.error(
+			'[Faculty Push] Firebase Messaging initialization failed:',
+			error.message
 		);
 
 		return null;
 	}
-
-	return admin.messaging();
 }
 
 function normalizeFacultyIds(facultyIds) {
