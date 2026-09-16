@@ -1,8 +1,9 @@
 'use strict';
 
-const admin = require('firebase-admin');
-
 const { cert, getApps, initializeApp, getApp } = require('firebase-admin/app');
+const {
+	getMessaging: getFirebaseMessaging
+} = require('firebase-admin/messaging');
 
 function initializeFirebase() {
   try {
@@ -34,7 +35,7 @@ function initializeFirebase() {
   }
 }
 
-initializeFirebase();
+const firebaseApp = initializeFirebase();
 
 const INVALID_TOKEN_CODES = new Set([
 	'messaging/registration-token-not-registered',
@@ -45,18 +46,16 @@ const INVALID_TOKEN_CODES = new Set([
 const ANDROID_NOTIFICATION_CHANNEL_ID = 'intellekt_high_importance';
 
 function getMessaging() {
+	if (!firebaseApp) {
+		console.warn(
+			'[Faculty Push] Firebase Admin is not initialized'
+		);
+
+		return null;
+	}
+
 	try {
-		const app = initializeFirebase();
-
-		if (!app) {
-			console.warn(
-				'[Faculty Push] Firebase Admin is not initialized'
-			);
-
-			return null;
-		}
-
-		return admin.messaging(app);
+		return getFirebaseMessaging(firebaseApp);
 	} catch (error) {
 		console.error(
 			'[Faculty Push] Firebase Messaging initialization failed:',
