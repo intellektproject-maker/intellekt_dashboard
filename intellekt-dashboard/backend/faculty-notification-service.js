@@ -1,41 +1,73 @@
 'use strict';
 
-const { cert, getApps, initializeApp, getApp } = require('firebase-admin/app');
+const {
+	cert,
+	getApps,
+	initializeApp,
+	getApp
+} = require('firebase-admin/app');
+
 const {
 	getMessaging: getFirebaseMessaging
 } = require('firebase-admin/messaging');
 
+/**
+ * ==========================================================
+ * FIREBASE ADMIN INITIALIZATION
+ * ==========================================================
+ *
+ * FIREBASE_SERVICE_ACCOUNT_JSON must be configured in the
+ * Railway environment variables of the responsible-wonder
+ * backend service.
+ *
+ * Do not place this service-account JSON inside the Flutter app.
+ * ==========================================================
+ */
+
 function initializeFirebase() {
-  try {
-    if (getApps().length > 0) {
-      return getApp();
-    }
+	try {
+		// Reuse the existing Firebase app if already initialized.
+		if (getApps().length > 0) {
+			return getApp();
+		}
 
-    const serviceAccountJson =
-      process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+		const serviceAccountJson =
+			process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-    if (!serviceAccountJson) {
-      console.warn(
-        '[Faculty Push] FIREBASE_SERVICE_ACCOUNT_JSON is not configured'
-      );
-      return null;
-    }
+		if (!serviceAccountJson) {
+			console.warn(
+				'[Faculty Push] FIREBASE_SERVICE_ACCOUNT_JSON is not configured'
+			);
 
-    const serviceAccount = JSON.parse(serviceAccountJson);
+			return null;
+		}
 
-    return initializeApp({
-      credential: cert(serviceAccount),
-    });
-  } catch (error) {
-    console.error(
-      '[Faculty Push] Firebase Admin initialization failed:',
-      error.message
-    );
-    return null;
-  }
+		const serviceAccount = JSON.parse(serviceAccountJson);
+
+		const app = initializeApp({
+			credential: cert(serviceAccount)
+		});
+
+		console.log(
+			'[Faculty Push] Firebase Admin initialized successfully'
+		);
+
+		return app;
+	} catch (error) {
+		console.error(
+			'[Faculty Push] Firebase Admin initialization failed:',
+			error.message
+		);
+
+		return null;
+	}
 }
 
-const firebaseApp = initializeFirebase();
+/**
+ * ==========================================================
+ * CONSTANTS
+ * ==========================================================
+ */
 
 const INVALID_TOKEN_CODES = new Set([
 	'messaging/registration-token-not-registered',
@@ -43,10 +75,19 @@ const INVALID_TOKEN_CODES = new Set([
 	'messaging/invalid-argument'
 ]);
 
-const ANDROID_NOTIFICATION_CHANNEL_ID = 'intellekt_high_importance';
+const ANDROID_NOTIFICATION_CHANNEL_ID =
+	'intellekt_high_importance';
+
+/**
+ * ==========================================================
+ * FIREBASE MESSAGING INSTANCE
+ * ==========================================================
+ */
 
 function getMessaging() {
-	if (!firebaseApp) {
+	const app = initializeFirebase();
+
+	if (!app) {
 		console.warn(
 			'[Faculty Push] Firebase Admin is not initialized'
 		);
@@ -55,7 +96,7 @@ function getMessaging() {
 	}
 
 	try {
-		return getFirebaseMessaging(firebaseApp);
+		return getFirebaseMessaging(app);
 	} catch (error) {
 		console.error(
 			'[Faculty Push] Firebase Messaging initialization failed:',
@@ -66,15 +107,34 @@ function getMessaging() {
 	}
 }
 
+/**
+ * ==========================================================
+ * NORMALIZE FACULTY IDS
+ * ==========================================================
+ */
+
 function normalizeFacultyIds(facultyIds) {
 	return [
 		...new Set(
 			(facultyIds || [])
-				.map((id) => String(id || '').trim().toUpperCase())
+				.map((id) =>
+					String(id || '')
+						.trim()
+						.toUpperCase()
+				)
 				.filter(Boolean)
 		)
 	];
 }
+
+/**
+ * ==========================================================
+ * NORMALIZE FIREBASE DATA
+ * ==========================================================
+ *
+ * Firebase Cloud Messaging data values must be strings.
+ * ==========================================================
+ */
 
 function normalizeData(data = {}) {
 	return Object.fromEntries(
@@ -84,6 +144,12 @@ function normalizeData(data = {}) {
 		])
 	);
 }
+
+/**
+ * ==========================================================
+ * SEND PUSH NOTIFICATION TO FACULTY
+ * ==========================================================
+ */
 
 async function sendToFaculty(
 	pool,
@@ -183,7 +249,10 @@ async function sendToFaculty(
 	let failed = 0;
 	let removed = 0;
 
-	// Firebase allows a maximum of 500 tokens per multicast request.
+	/**
+	 * Firebase allows a maximum of 500 registration tokens
+	 * in one multicast request.
+	 */
 	for (let i = 0; i < tokens.length; i += 500) {
 		const batch = tokens.slice(i, i + 500);
 
@@ -217,7 +286,9 @@ async function sendToFaculty(
 		let response;
 
 		try {
-			response = await messaging.sendEachForMulticast(message);
+			response = await messaging.sendEachForMulticast(
+				message
+			);
 		} catch (error) {
 			console.error(
 				'[Faculty Push] Firebase request failed:',
@@ -250,7 +321,9 @@ async function sendToFaculty(
 				return;
 			}
 
-			const errorCode = item.error?.code || 'unknown-error';
+			const errorCode =
+				item.error?.code || 'unknown-error';
+
 			const errorMessage =
 				item.error?.message || 'Unknown Firebase error';
 
@@ -267,6 +340,9 @@ async function sendToFaculty(
 			}
 		});
 
+		/**
+		 * Remove invalid or expired device tokens from the database.
+		 */
 		if (invalidTokens.length) {
 			try {
 				const deleted = await pool.query(
@@ -301,6 +377,12 @@ async function sendToFaculty(
 		tokenCount: tokens.length
 	};
 }
+
+/**
+ * ==========================================================
+ * CREATE FACULTY DATABASE NOTIFICATION + PUSH
+ * ==========================================================
+ */
 
 async function createFacultyNotification(
 	pool,
@@ -376,6 +458,12 @@ async function createFacultyNotification(
 		...push
 	};
 }
+
+/**
+ * ==========================================================
+ * EXPORTS
+ * ==========================================================
+ */
 
 module.exports = {
 	sendToFaculty,
