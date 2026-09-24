@@ -5842,8 +5842,8 @@ app.get('/test-batch/dashboard', requireTestBatchAdmin, async (req,res) => {
     const dateTo = to || '2999-12-31';
 
     const attendance = await pool.query(
-      'SELECT COUNT(*) FILTER(WHERE a.status IN (\\'Present\\',\\'Absent\\'))::int AS total,' +
-      'COUNT(*) FILTER(WHERE a.status=\\'Present\\')::int AS present ' +
+      'SELECT COUNT(*) FILTER(WHERE a.status IN (\'Present\',\'Absent\'))::int AS total,' +
+      'COUNT(*) FILTER(WHERE a.status=\'Present\')::int AS present ' +
       'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
       'WHERE a.attendance_date BETWEEN $1 AND $2 ' +
       (seriesId ? 'AND s.test_series_id=$3' : ''),
@@ -5851,7 +5851,7 @@ app.get('/test-batch/dashboard', requireTestBatchAdmin, async (req,res) => {
     );
 
     const marks = await pool.query(
-      'SELECT COALESCE(SUM(CASE WHEN UPPER(TRIM(m.marks_obtained))=\\'A\\' THEN 0 ELSE CAST(m.marks_obtained AS NUMERIC) END),0) AS obtained,' +
+      'SELECT COALESCE(SUM(CASE WHEN UPPER(TRIM(m.marks_obtained))=\'A\' THEN 0 ELSE CAST(m.marks_obtained AS NUMERIC) END),0) AS obtained,' +
       'COALESCE(SUM(m.total_marks),0) AS total ' +
       'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
       'WHERE 1=1 ' + (seriesId ? 'AND s.test_series_id=$1' : ''),
