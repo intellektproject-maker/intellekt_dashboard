@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import TestBatchManager from "../test-batch/components/TestBatchManager";
 import html2pdf from "html2pdf.js";
 
 const API_BASE =
@@ -28,6 +29,8 @@ function splitClassBoard(value) {
     board: value.slice(0, lastDash).trim(),
     classNameOnly: value.slice(lastDash + 1).trim(),
   };
+      <TestBatchManager section="marks" />
+
 }
 
 export default function ManageMarks() {

@@ -63,7 +63,9 @@ export default function Login() {
 				return;
 			}
 
-			if (data.role === 'student') {
+			if (data.role === 'test-batch-student') {
+				router.push(`/test-batch/student?roll=${rollUpper}`);
+			} else if (data.role === 'student') {
 				router.push(`/student?roll=${rollUpper}`);
 			} else if (data.role === 'faculty') {
 				router.push(`/faculty-dashboard/profile?id=${rollUpper}`);

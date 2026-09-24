@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import TestBatchManager from "../test-batch/components/TestBatchManager";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE =
@@ -828,6 +829,8 @@ const [classesLoading, setClassesLoading] = useState(false);
       )}
     </div>
   );
+      <TestBatchManager section="attendance" />
+
 }
 
 function AttendanceTable({

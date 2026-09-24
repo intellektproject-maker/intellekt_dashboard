@@ -138,6 +138,14 @@ function FacultyLayoutContent({ children }) {
           {isPrivilegedFaculty && (
             <>
               <Link
+                href={"/faculty-dashboard/test-batch?id=" + facultyId}
+                onClick={() => setMenuOpen(false)}
+                className={linkClass(isActive("/faculty-dashboard/test-batch"))}
+              >
+                Test Batch
+              </Link>
+
+              <Link
                 href={`/faculty-dashboard/student-record?id=${facultyId}`}
                 onClick={() => setMenuOpen(false)}
                 className={linkClass(

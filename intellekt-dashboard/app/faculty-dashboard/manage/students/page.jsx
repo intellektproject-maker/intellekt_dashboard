@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, Suspense } from "react";
+import TestBatchManager from "../../test-batch/components/TestBatchManager";
 import { useSearchParams } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
@@ -1230,6 +1231,8 @@ setBoardFilter("");
       )}
     </div>
   );
+      <TestBatchManager section="students" />
+
 }
 
 export default function ManageStudentsPage() {
