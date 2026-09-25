@@ -94,6 +94,22 @@ export default function TestBatchTestManagement() {
 
   const [resultTest, setResultTest] = useState("");
   const [results, setResults] = useState([]);
+  const [postTestTests, setPostTestTests] = useState([]);
+  const [selectedPostTest, setSelectedPostTest] = useState("");
+  const [postTest, setPostTest] = useState(null);
+  const [postTestForm, setPostTestForm] = useState({
+    manual_mark_entry_enabled: true,
+    bulk_mark_upload_enabled: false,
+    passing_percentage: 40,
+    grade_boundaries: { A: 90, B: 75, C: 60, D: 40 },
+    result_publication_mode: "approval",
+    show_detailed_breakdown: false,
+    reevaluation_enabled: false,
+    lock_marks_after_final_submission: true,
+    post_test_export_enabled: true,
+  });
+  const [loadingPostTest, setLoadingPostTest] = useState(false);
+
 
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -211,7 +227,204 @@ export default function TestBatchTestManagement() {
     if (section === "results") {
       loadResults(resultTest);
     }
-  }, [section, resultTest]);
+    if (section === "post-test" && selectedPostTest) {
+      loadPostTest(selectedPostTest);
+    }
+  }, [section, resultTest, selectedPostTest]);
+
+  async function loadPostTestTests() {
+    try {
+      const data = await api(
+        "/test-batch/mark-entry/tests?adminId=" +
+          encodeURIComponent(adminId)
+      );
+      setPostTestTests(data.tests || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function loadPostTest(testCode) {
+    if (!testCode) {
+      setPostTest(null);
+      return;
+    }
+
+    setLoadingPostTest(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await api(
+        "/test-batch/tests/" +
+          encodeURIComponent(testCode) +
+          "/post-test?adminId=" +
+          encodeURIComponent(adminId)
+      );
+
+      const test = data.test;
+      setPostTest(test);
+      setPostTestForm({
+        manual_mark_entry_enabled: test.manual_mark_entry_enabled !== false,
+        bulk_mark_upload_enabled: test.bulk_mark_upload_enabled === true,
+        passing_percentage: Number(test.passing_percentage ?? 40),
+        grade_boundaries: {
+          A: Number(test.grade_boundaries?.A ?? 90),
+          B: Number(test.grade_boundaries?.B ?? 75),
+          C: Number(test.grade_boundaries?.C ?? 60),
+          D: Number(test.grade_boundaries?.D ?? 40),
+        },
+        result_publication_mode: test.result_publication_mode || "approval",
+        show_detailed_breakdown: test.show_detailed_breakdown === true,
+        reevaluation_enabled: test.reevaluation_enabled === true,
+        lock_marks_after_final_submission:
+          test.lock_marks_after_final_submission !== false,
+        post_test_export_enabled: test.post_test_export_enabled !== false,
+      });
+    } catch (err) {
+      setPostTest(null);
+      setError(err.message);
+    } finally {
+      setLoadingPostTest(false);
+    }
+  }
+
+  function updatePostTest(field, value) {
+    setPostTestForm((current) => ({ ...current, [field]: value }));
+    setMessage("");
+  }
+
+  function updateGrade(grade, value) {
+    setPostTestForm((current) => ({
+      ...current,
+      grade_boundaries: {
+        ...current.grade_boundaries,
+        [grade]: value,
+      },
+    }));
+    setMessage("");
+  }
+
+  async function savePostTest(event) {
+    event.preventDefault();
+    if (!postTest) return;
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await api(
+        "/test-batch/tests/" +
+          encodeURIComponent(postTest.test_code) +
+          "/post-test",
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            adminId,
+            ...postTestForm,
+          }),
+        }
+      );
+
+      setPostTest(data.test);
+      await loadTests();
+      await loadEligibleTests();
+      await loadPostTestTests();
+      setMessage("Test Batch Post Test settings saved successfully.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function publishPostTestResults() {
+    if (!postTest || postTest.result_publication_mode !== "approval") return;
+
+    if (!window.confirm("Publish results for " + postTest.test_code + " to Test Batch students?")) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await api(
+        "/test-batch/tests/" +
+          encodeURIComponent(postTest.test_code) +
+          "/post-test/publish",
+        {
+          method: "POST",
+          body: JSON.stringify({ adminId }),
+        }
+      );
+      setPostTest((current) => ({
+        ...current,
+        ...data.test,
+      }));
+      await loadTests();
+      setMessage("Test Batch results published successfully.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function exportPostTestReport() {
+    if (!postTest || !postTest.post_test_export_enabled) return;
+
+    try {
+      const data = await api(
+        "/test-batch/tests/" +
+          encodeURIComponent(postTest.test_code) +
+          "/results?adminId=" +
+          encodeURIComponent(adminId)
+      );
+
+      if (!data.results?.length) {
+        window.alert("No marks are available for export.");
+        return;
+      }
+
+      const rows = data.results.map((row) =>
+        "<tr><td>" +
+        row.roll_no +
+        "</td><td>" +
+        row.name +
+        "</td><td>" +
+        row.subject_name +
+        "</td><td>" +
+        row.marks_obtained +
+        "</td><td>" +
+        row.total_marks +
+        "</td><td>" +
+        (row.percentage ?? "") +
+        "</td><td>" +
+        (row.result_status ?? "") +
+        "</td><td>" +
+        (row.comments || "") +
+        "</td></tr>"
+      ).join("");
+
+      const html =
+        "<table border='1'><tr><th>Roll No</th><th>Student</th><th>Subject</th><th>Marks</th><th>Total</th><th>Percentage</th><th>Result</th><th>Remarks</th></tr>" +
+        rows +
+        "</table>";
+
+      const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = postTest.test_code + "_test_batch_final_report.xls";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   function updateStudent(rollNo, field, value) {
     setStudents((current) =>
@@ -558,18 +771,20 @@ export default function TestBatchTestManagement() {
 
         <button
           onClick={() => {
-            setSection("settings");
-            setEditingTest(null);
+            setSection("post-test");
+            setSelectedPostTest("");
+            setPostTest(null);
             setError("");
             setMessage("");
+            loadPostTestTests();
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch – Test Settings
+            Test Batch – Post Test
           </h3>
           <p className="text-gray-600">
-            Update existing Test Batch test date, status, marks and settings.
+            Configure mark entry, grading, result publication, re-evaluation, locking and exports after a test is completed/returned.
           </p>
         </button>
 
@@ -904,7 +1119,15 @@ export default function TestBatchTestManagement() {
                       <td className="p-3">{test.marks_entry_status}</td>
                       <td className="p-3 flex gap-2">
                         <button
-                          onClick={() => openSettings(test)}
+                          onClick={() => {
+                            if (["Completed", "Returned"].includes(test.status)) {
+                              setSelectedPostTest(test.test_code);
+                              setSection("post-test");
+                              loadPostTest(test.test_code);
+                            } else {
+                              window.alert("Post Test settings are available only after the test is Completed or Returned.");
+                            }
+                          }}
                           className="bg-yellow-500 text-white px-3 py-1 rounded"
                         >
                           Edit
@@ -925,21 +1148,23 @@ export default function TestBatchTestManagement() {
         </Card>
       )}
 
-      {section === "settings" && (
+      {section === "post-test" && (
         <Card>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Test Settings
+                Test Batch – Post Test
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Select an existing Test Batch test to update its settings.
+                Configure post-test operations only for completed or returned
+                Test Batch tests.
               </p>
             </div>
             <button
               onClick={() => {
                 setSection("");
-                setEditingTest(null);
+                setSelectedPostTest("");
+                setPostTest(null);
               }}
               className="px-4 py-2 bg-gray-100 rounded-lg"
             >
@@ -947,191 +1172,203 @@ export default function TestBatchTestManagement() {
             </button>
           </div>
 
-          {!editingTest ? (
-            <div>
-              <label className="text-sm text-gray-600">
-                Select Test
-                <select
-                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
-                  value=""
-                  onChange={(event) => {
-                    const test = tests.find(
-                      (item) => String(item.id) === event.target.value
-                    );
-                    if (test) openSettings(test);
-                  }}
-                >
-                  <option value="">Select Test to Edit</option>
-                  {tests.map((test) => (
-                    <option key={test.id} value={test.id}>
-                      {test.test_code} — {test.test_series_name} —{" "}
-                      {test.subject_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          <div className="mb-6">
+            <label className="text-sm text-gray-600">
+              Select Completed / Returned Test
+              <select
+                className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                value={selectedPostTest}
+                onChange={(event) => setSelectedPostTest(event.target.value)}
+              >
+                <option value="">Select Test</option>
+                {postTestTests.map((test) => (
+                  <option key={test.test_code} value={test.test_code}>
+                    {test.test_code} — {test.test_series_name} —{" "}
+                    {test.subject_name} — {formatDate(test.writing_date)} —{" "}
+                    {test.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {loadingPostTest ? (
+            <p className="text-gray-500">Loading post-test settings...</p>
+          ) : !postTest ? (
+            <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
+              Select a completed or returned test to configure its post-test
+              workflow.
             </div>
           ) : (
-            <form
-              onSubmit={saveSettings}
-              className="grid grid-cols-1 md:grid-cols-2 gap-4"
-            >
-              <div className="md:col-span-2 bg-gray-50 border rounded-lg p-4">
-                <div className="text-xs text-gray-500">Test</div>
-                <div className="font-semibold text-blue-800">
-                  {editingTest.test_code} — {editingTest.test_series_name} —{" "}
-                  {editingTest.subject_name}
+            <form onSubmit={savePostTest} className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Test Code</div>
+                  <div className="font-semibold">{postTest.test_code}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Test Batch</div>
+                  <div className="font-semibold">{postTest.test_series_name}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Subject</div>
+                  <div className="font-semibold">{postTest.subject_name}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Status</div>
+                  <div className="font-semibold">{postTest.status}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Marks Status</div>
+                  <div className="font-semibold">{postTest.marks_entry_status}</div>
                 </div>
               </div>
 
-              <select
-                className="border rounded-lg px-4 py-3 bg-white"
-                value={settingsForm.status}
-                onChange={(event) =>
-                  updateSettings("status", event.target.value)
-                }
-              >
-                <option>Draft</option>
-                <option>Scheduled</option>
-                <option>Active</option>
-                <option>Completed</option>
-                <option>Returned</option>
-                <option>Cancelled</option>
-              </select>
+              <div>
+                <h4 className="font-bold text-blue-800 mb-3">Mark Entry Options</h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.manual_mark_entry_enabled}
+                      onChange={(e) => updatePostTest("manual_mark_entry_enabled", e.target.checked)}
+                    />
+                    <span>Enable manual mark entry by admin</span>
+                  </label>
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.bulk_mark_upload_enabled}
+                      onChange={(e) => updatePostTest("bulk_mark_upload_enabled", e.target.checked)}
+                    />
+                    <span>Enable bulk CSV / Excel mark upload</span>
+                  </label>
+                </div>
+              </div>
 
-              <input
-                type="number"
-                min="1"
-                className="border rounded-lg px-4 py-3"
-                placeholder="Total Marks"
-                value={settingsForm.total_marks}
-                onChange={(event) =>
-                  updateSettings("total_marks", event.target.value)
-                }
-              />
+              <div>
+                <h4 className="font-bold text-blue-800 mb-3">Grading Settings</h4>
+                <div className="grid md:grid-cols-5 gap-4">
+                  <label className="text-sm text-gray-600">
+                    Passing Percentage
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="block w-full border rounded-lg px-3 py-2 mt-1"
+                      value={postTestForm.passing_percentage}
+                      onChange={(e) => updatePostTest("passing_percentage", e.target.value)}
+                    />
+                  </label>
+                  {["A", "B", "C", "D"].map((grade) => (
+                    <label key={grade} className="text-sm text-gray-600">
+                      Grade {grade} Minimum %
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        className="block w-full border rounded-lg px-3 py-2 mt-1"
+                        value={postTestForm.grade_boundaries[grade]}
+                        onChange={(e) => updateGrade(grade, e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
 
-              <label className="text-sm text-gray-600">
-                Test Date
-                <input
-                  type="date"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.test_date}
-                  onChange={(event) =>
-                    updateSettings("test_date", event.target.value)
-                  }
-                />
-              </label>
+              <div>
+                <h4 className="font-bold text-blue-800 mb-3">Result Publication</h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <label className="text-sm text-gray-600">
+                    Result Visibility
+                    <select
+                      className="block w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                      value={postTestForm.result_publication_mode}
+                      onChange={(e) => updatePostTest("result_publication_mode", e.target.value)}
+                    >
+                      <option value="approval">After admin approval</option>
+                      <option value="immediate">Visible immediately</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.show_detailed_breakdown}
+                      onChange={(e) => updatePostTest("show_detailed_breakdown", e.target.checked)}
+                    />
+                    <span>Show detailed breakdown / remarks to students</span>
+                  </label>
+                </div>
+              </div>
 
-              <label className="text-sm text-gray-600">
-                Writing Date
-                <input
-                  type="date"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.writing_date}
-                  onChange={(event) =>
-                    updateSettings("writing_date", event.target.value)
-                  }
-                />
-              </label>
+              <div>
+                <h4 className="font-bold text-blue-800 mb-3">Post-Test Actions</h4>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.reevaluation_enabled}
+                      onChange={(e) => updatePostTest("reevaluation_enabled", e.target.checked)}
+                    />
+                    <span>Allow re-evaluation / remark requests</span>
+                  </label>
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.lock_marks_after_final_submission}
+                      onChange={(e) => updatePostTest("lock_marks_after_final_submission", e.target.checked)}
+                    />
+                    <span>Lock marks after final submission</span>
+                  </label>
+                  <label className="flex items-center gap-3 border rounded-lg p-4">
+                    <input
+                      type="checkbox"
+                      checked={postTestForm.post_test_export_enabled}
+                      onChange={(e) => updatePostTest("post_test_export_enabled", e.target.checked)}
+                    />
+                    <span>Allow final marks / report export</span>
+                  </label>
+                </div>
+              </div>
 
-              <label className="text-sm text-gray-600">
-                Test Slot Start
-                <input
-                  type="time"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.slot_start}
-                  onChange={(event) =>
-                    updateSettings("slot_start", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="text-sm text-gray-600">
-                Test Slot End
-                <input
-                  type="time"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.slot_end}
-                  onChange={(event) =>
-                    updateSettings("slot_end", event.target.value)
-                  }
-                />
-              </label>
-
-              <input
-                type="number"
-                min="1"
-                className="border rounded-lg px-4 py-3"
-                placeholder="Duration (minutes)"
-                value={settingsForm.duration_minutes}
-                onChange={(event) =>
-                  updateSettings("duration_minutes", event.target.value)
-                }
-              />
-
-              <input
-                className="border rounded-lg px-4 py-3"
-                placeholder="Portion"
-                value={settingsForm.portion}
-                onChange={(event) =>
-                  updateSettings("portion", event.target.value)
-                }
-              />
-
-              <input
-                className="border rounded-lg px-4 py-3"
-                placeholder="Chapter"
-                value={settingsForm.chapter}
-                onChange={(event) =>
-                  updateSettings("chapter", event.target.value)
-                }
-              />
-
-              <label className="text-sm text-gray-600">
-                Apply for Test – Open Date
-                <input
-                  type="date"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.application_open_date}
-                  onChange={(event) =>
-                    updateSettings(
-                      "application_open_date",
-                      event.target.value
-                    )
-                  }
-                />
-              </label>
-
-              <label className="text-sm text-gray-600">
-                Apply for Test – Close Date
-                <input
-                  type="date"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                  value={settingsForm.application_close_date}
-                  onChange={(event) =>
-                    updateSettings(
-                      "application_close_date",
-                      event.target.value
-                    )
-                  }
-                />
-              </label>
-
-              <div className="md:col-span-2 flex gap-3">
-                <button
-                  disabled={saving}
-                  className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "Update Test Settings"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setEditingTest(null)}
-                  className="bg-gray-500 text-white px-6 py-3 rounded-lg"
-                >
-                  Cancel
-                </button>
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <div className="font-semibold text-blue-800 mb-1">Publication Status</div>
+                <div className="text-sm text-gray-600 mb-3">
+                  {postTest.result_publication_status}
+                  {postTest.result_published_at
+                    ? " — " + formatDate(postTest.result_published_at)
+                    : ""}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    disabled={saving}
+                    className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save Post Test Settings"}
+                  </button>
+                  {postTest.result_publication_mode === "approval" &&
+                    postTest.result_publication_status !== "Published" && (
+                      <button
+                        type="button"
+                        onClick={publishPostTestResults}
+                        disabled={saving}
+                        className="bg-green-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
+                      >
+                        Publish Results
+                      </button>
+                    )}
+                  {postTest.post_test_export_enabled && (
+                    <button
+                      type="button"
+                      onClick={exportPostTestReport}
+                      className="bg-gray-700 text-white px-6 py-3 rounded-lg"
+                    >
+                      Export Final Report
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           )}
