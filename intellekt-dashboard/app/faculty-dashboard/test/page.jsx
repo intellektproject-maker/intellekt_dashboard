@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import TestBatchTestManagement from "../test-batch/components/TestBatchTestManagement";
 
 function TestPageInner() {
   const searchParams = useSearchParams();
@@ -63,6 +64,8 @@ function TestPageInner() {
           </p>
         </Link>
       </div>
+
+      <TestBatchTestManagement />
     </div>
   );
 }
