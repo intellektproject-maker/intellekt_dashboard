@@ -5432,30 +5432,14 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
       duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
     }=req.body||{};
-    if(!test_code||!test_series_id||!subject_name||!test_date||!writing_date||!duration_minutes||!total_marks){
-      return res.status(400).json({error:'Test code, test batch, subject, test date, writing date, duration and total marks are required'});
+    if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
+      return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
     }
     const series=await validateTestBatchSeries(test_series_id);
     if(!series)return res.status(400).json({error:'Invalid Test Series'});
 
-    const testDateObj = new Date(test_date);
-    const writingDateObj = new Date(writing_date);
-    const openDateObj = new Date(application_open_date);
-    const closeDateObj = new Date(application_close_date);
-    [testDateObj, writingDateObj, openDateObj, closeDateObj].forEach(d => d.setHours(0,0,0,0));
-
-    if (Number.isNaN(testDateObj.getTime()) || Number.isNaN(writingDateObj.getTime()) ||
-        Number.isNaN(openDateObj.getTime()) || Number.isNaN(closeDateObj.getTime())) {
-      return res.status(400).json({error:'Invalid test or application date'});
-    }
-    if (application_close_date < application_open_date) {
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
       return res.status(400).json({error:'Application close date cannot be before application open date'});
-    }
-    if (application_close_date > test_date) {
-      return res.status(400).json({error:'Application close date must be on or before the test date'});
-    }
-    if (writing_date < test_date) {
-      return res.status(400).json({error:'Writing date cannot be before the test date'});
     }
     const result=await pool.query(
       'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status,created_by) '+
@@ -5475,14 +5459,8 @@ app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
       duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
     }=req.body||{};
-    if (application_close_date < application_open_date) {
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
       return res.status(400).json({error:'Application close date cannot be before application open date'});
-    }
-    if (application_close_date > test_date) {
-      return res.status(400).json({error:'Application close date must be on or before the test date'});
-    }
-    if (writing_date < test_date) {
-      return res.status(400).json({error:'Writing date cannot be before the test date'});
     }
     const result=await pool.query(
       'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,status=$14,updated_at=CURRENT_TIMESTAMP WHERE id=$15 RETURNING *',
@@ -5562,6 +5540,17 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
       return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
     }
+
+    const selectedWritingDate = String(req.body?.writing_date || '').trim();
+    const selectedSlotStart = req.body?.slot_start ? String(req.body.slot_start).trim() : null;
+    const selectedSlotEnd = req.body?.slot_end ? String(req.body.slot_end).trim() : null;
+
+    if (!selectedWritingDate) {
+      return res.status(400).json({error:'Select a test date'});
+    }
+    if (!selectedSlotStart || !selectedSlotEnd) {
+      return res.status(400).json({error:'Select a test slot'});
+    }
     if (!['Scheduled','Active'].includes(test.status)) {
       return res.status(400).json({error:'Registration is not available for this test'});
     }
@@ -5570,11 +5559,16 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     today.setHours(0,0,0,0);
     const open = new Date(test.application_open_date);
     const close = new Date(test.application_close_date);
+    const chosenDate = new Date(selectedWritingDate);
     open.setHours(0,0,0,0);
     close.setHours(0,0,0,0);
+    chosenDate.setHours(0,0,0,0);
 
     if (today < open || today > close) {
       return res.status(400).json({error:'Registration period is closed for this test'});
+    }
+    if (Number.isNaN(chosenDate.getTime()) || chosenDate < open || chosenDate > close) {
+      return res.status(400).json({error:'Selected test date must be within the registration window'});
     }
 
     const registered = await pool.query(
@@ -5584,7 +5578,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
        ON CONFLICT(test_code,roll_no)
        DO UPDATE SET status='Registered',updated_at=CURRENT_TIMESTAMP
        RETURNING *`,
-      [testCode,rollNo,test.writing_date,test.slot_start,test.slot_end]
+      [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
     );
 
     res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
