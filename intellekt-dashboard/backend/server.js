@@ -5437,6 +5437,26 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
     }
     const series=await validateTestBatchSeries(test_series_id);
     if(!series)return res.status(400).json({error:'Invalid Test Series'});
+
+    const testDateObj = new Date(test_date);
+    const writingDateObj = new Date(writing_date);
+    const openDateObj = new Date(application_open_date);
+    const closeDateObj = new Date(application_close_date);
+    [testDateObj, writingDateObj, openDateObj, closeDateObj].forEach(d => d.setHours(0,0,0,0));
+
+    if (Number.isNaN(testDateObj.getTime()) || Number.isNaN(writingDateObj.getTime()) ||
+        Number.isNaN(openDateObj.getTime()) || Number.isNaN(closeDateObj.getTime())) {
+      return res.status(400).json({error:'Invalid test or application date'});
+    }
+    if (application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date > test_date) {
+      return res.status(400).json({error:'Application close date must be on or before the test date'});
+    }
+    if (writing_date < test_date) {
+      return res.status(400).json({error:'Writing date cannot be before the test date'});
+    }
     const result=await pool.query(
       'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status,created_by) '+
       'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
@@ -5455,6 +5475,15 @@ app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
       duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
     }=req.body||{};
+    if (application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date > test_date) {
+      return res.status(400).json({error:'Application close date must be on or before the test date'});
+    }
+    if (writing_date < test_date) {
+      return res.status(400).json({error:'Writing date cannot be before the test date'});
+    }
     const result=await pool.query(
       'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,status=$14,updated_at=CURRENT_TIMESTAMP WHERE id=$15 RETURNING *',
       [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',Number(req.params.id)]);
@@ -5464,6 +5493,124 @@ app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
     console.error('PUT /test-batch/tests/:id error:',err);
     if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
     res.status(500).json({error:'Failed to update Test Batch test',details:err.message});
+  }
+});
+
+
+/* =========================================================
+   TEST BATCH STUDENT REGISTRATION
+   Students can register only inside the configured application window.
+========================================================= */
+
+app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
+  try {
+    const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,
+         t.status,
+         CASE WHEN r.id IS NOT NULL AND r.status='Registered' THEN true ELSE false END AS is_registered,
+         r.registered_at,r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,r.slot_end AS registered_slot_end
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+       WHERE t.test_series_id=$2
+         AND t.status IN ('Scheduled','Active')
+       ORDER BY t.test_date ASC,t.test_code ASC`,
+      [rollNo, student.rows[0].test_series_id]
+    );
+    res.json({tests:result.rows});
+  } catch(err) {
+    console.error('GET /test-batch/student-tests/:rollNo error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch test schedule'});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/register', async (req,res) => {
+  try {
+    const testCode = String(req.params.testCode || '').trim().toUpperCase();
+    const rollNo = String(req.body?.roll_no || '').trim().toUpperCase();
+    if (!rollNo) return res.status(400).json({error:'Roll number is required'});
+
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const testResult = await pool.query(
+      `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+              application_open_date,application_close_date,status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const test = testResult.rows[0];
+    if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
+      return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
+    }
+    if (!['Scheduled','Active'].includes(test.status)) {
+      return res.status(400).json({error:'Registration is not available for this test'});
+    }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const open = new Date(test.application_open_date);
+    const close = new Date(test.application_close_date);
+    open.setHours(0,0,0,0);
+    close.setHours(0,0,0,0);
+
+    if (today < open || today > close) {
+      return res.status(400).json({error:'Registration period is closed for this test'});
+    }
+
+    const registered = await pool.query(
+      `INSERT INTO test_batch_registrations
+       (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
+       VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
+       ON CONFLICT(test_code,roll_no)
+       DO UPDATE SET status='Registered',updated_at=CURRENT_TIMESTAMP
+       RETURNING *`,
+      [testCode,rollNo,test.writing_date,test.slot_start,test.slot_end]
+    );
+
+    res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/register error:',err);
+    res.status(500).json({error:'Failed to register for Test Batch test',details:err.message});
+  }
+});
+
+app.delete('/test-batch/tests/:testCode/register/:rollNo', async (req,res) => {
+  try {
+    const testCode=String(req.params.testCode || '').trim().toUpperCase();
+    const rollNo=String(req.params.rollNo || '').trim().toUpperCase();
+    const result=await pool.query(
+      `UPDATE test_batch_registrations
+       SET status='Cancelled',updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+         AND UPPER(TRIM(roll_no))=UPPER(TRIM($2))
+       RETURNING *`,
+      [testCode,rollNo]
+    );
+    if(!result.rows.length)return res.status(404).json({error:'Registration not found'});
+    res.json({message:'Test Batch registration cancelled',registration:result.rows[0]});
+  } catch(err) {
+    console.error('DELETE /test-batch/tests/:testCode/register/:rollNo error:',err);
+    res.status(500).json({error:'Failed to cancel Test Batch registration'});
   }
 });
 
