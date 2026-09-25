@@ -5485,7 +5485,9 @@ app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (r
     const result = await pool.query(
       `SELECT
          t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
-         t.subject_name,t.test_date,t.writing_date,t.total_marks,t.status,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.portion,t.chapter,
+         t.application_open_date,t.application_close_date,t.status,
          t.manual_mark_entry_enabled,t.bulk_mark_upload_enabled,
          t.passing_percentage,t.grade_boundaries,
          t.result_publication_mode,t.show_detailed_breakdown,
