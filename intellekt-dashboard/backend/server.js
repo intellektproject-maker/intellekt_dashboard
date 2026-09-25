@@ -5386,6 +5386,11 @@ function validateTestBatchSubjects(subjects) {
   return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
 }
 
+function validateTestBatchSubjects(subjects) {
+  const value = String(subjects || '').trim();
+  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+}
+
 function validateTestBatchMarks(totalMarks, obtained) {
   const total = Number(totalMarks);
   const raw = String(obtained ?? '').trim().toUpperCase();
