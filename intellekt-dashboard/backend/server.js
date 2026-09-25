@@ -5711,16 +5711,41 @@ app.get('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
       values.push(Number(seriesId));
       where += ' AND s.test_series_id=$' + values.length;
     }
+
     if (search) {
       values.push('%' + String(search).trim() + '%');
       where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
     }
 
+    // Test Batch attendance is date-eligible only.
+    // A student appears on the marking screen only when they have
+    // a registered test application for the selected writing date.
     const result = await pool.query(
-      'SELECT s.roll_no,s.name,ts.name AS test_series_name,a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at ' +
-      'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
-      'LEFT JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=$1 ' +
-      where + ' ORDER BY s.roll_no ASC',
+      `SELECT
+          s.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          a.id,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_students s
+        JOIN test_series ts
+          ON ts.id = s.test_series_id
+        LEFT JOIN test_batch_attendance a
+          ON a.roll_no = s.roll_no
+         AND a.attendance_date = $1
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+            AND tr.writing_date = $1
+        )
+        ORDER BY s.roll_no ASC`,
       values
     );
 
@@ -5735,7 +5760,9 @@ app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
   const client = await pool.connect();
   try {
     const { records, attendanceDate } = req.body || {};
-    if (!attendanceDate || !Array.isArray(records) || records.length===0) return res.status(400).json({ error:'attendanceDate and records are required' });
+    if (!attendanceDate || !Array.isArray(records) || records.length===0) {
+      return res.status(400).json({ error:'attendanceDate and records are required' });
+    }
 
     await client.query('BEGIN');
 
@@ -5748,10 +5775,33 @@ app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
         return res.status(400).json({ error:'Each attendance record needs a valid roll number and status' });
       }
 
-      const student = await client.query('SELECT roll_no FROM test_batch_students WHERE roll_no=$1', [roll]);
+      const student = await client.query(
+        'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+        [roll]
+      );
+
       if (student.rows.length===0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ error:'Test Batch student not found: ' + roll });
+      }
+
+      // Enforce the same eligibility rule on the server so an API caller
+      // cannot create attendance for a Test Batch student who did not
+      // register for a test on the selected attendance date.
+      const registration = await client.query(
+        `SELECT 1
+         FROM test_registrations tr
+         WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
+           AND tr.writing_date = $2
+         LIMIT 1`,
+        [roll, attendanceDate]
+      );
+
+      if (registration.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `No registered test application found for ${roll} on ${attendanceDate}`
+        });
       }
 
       await client.query(
@@ -5776,14 +5826,32 @@ app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
 app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
   try {
     const status = String(req.body?.status || '').trim();
-    if (!['Present','Absent'].includes(status)) return res.status(400).json({ error:'Invalid attendance status' });
+    if (!['Present','Absent'].includes(status)) {
+      return res.status(400).json({ error:'Invalid attendance status' });
+    }
 
     const result = await pool.query(
-      'UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP WHERE id=$3 RETURNING *',
+      `UPDATE test_batch_attendance a
+       SET status=$1,
+           edited_by=$2,
+           edited_at=CURRENT_TIMESTAMP
+       WHERE a.id=$3
+         AND EXISTS (
+           SELECT 1
+           FROM test_registrations tr
+           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+             AND tr.writing_date = a.attendance_date
+         )
+       RETURNING a.*`,
       [status,req.testBatchAdminId,Number(req.params.id)]
     );
 
-    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch attendance record not found' });
+    if (result.rows.length===0) {
+      return res.status(404).json({
+        error:'Eligible Test Batch attendance record not found'
+      });
+    }
+
     res.json({ message:'Test Batch attendance updated successfully', attendance:result.rows[0] });
   } catch (err) {
     console.error('PUT /test-batch/attendance/:id error:', err);
@@ -5803,16 +5871,37 @@ app.get('/test-batch/attendance-report', requireTestBatchAdmin, async (req,res) 
       values.push(Number(seriesId));
       where += ' AND s.test_series_id=$' + values.length;
     }
+
     if (search) {
       values.push('%' + String(search).trim() + '%');
       where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
     }
 
     const result = await pool.query(
-      'SELECT a.id,a.roll_no,s.name,ts.name AS test_series_name,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at ' +
-      'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
-      'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
-      ' ORDER BY a.attendance_date DESC,a.roll_no ASC',
+      `SELECT
+          a.id,
+          a.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_attendance a
+        JOIN test_batch_students s
+          ON s.roll_no=a.roll_no
+        JOIN test_series ts
+          ON ts.id=s.test_series_id
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+            AND tr.writing_date = a.attendance_date
+        )
+        ORDER BY a.attendance_date DESC,a.roll_no ASC`,
       values
     );
 
@@ -5860,6 +5949,11 @@ app.get('/test-batch/dashboard', requireTestBatchAdmin, async (req,res) => {
       'COUNT(*) FILTER(WHERE a.status=\'Present\')::int AS present ' +
       'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
       'WHERE a.attendance_date BETWEEN $1 AND $2 ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date = a.attendance_date' +
+      ') ' +
       (seriesId ? 'AND s.test_series_id=$3' : ''),
       seriesId ? [dateFrom,dateTo,Number(seriesId)] : [dateFrom,dateTo]
     );
@@ -5911,8 +6005,15 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
     );
 
     const attendanceResult=await pool.query(
-      'SELECT id,attendance_date,status,marked_by,marked_at,edited_by,edited_at ' +
-      'FROM test_batch_attendance WHERE roll_no=$1 ORDER BY attendance_date DESC,id DESC LIMIT 100',
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
       [roll]
     );
 
