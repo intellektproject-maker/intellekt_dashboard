@@ -911,7 +911,12 @@ export default function TestBatchTestManagement() {
                 </div>
               </div>
 
-              {students.length === 0 ? (
+              {markTest.manual_mark_entry_enabled === false ? (
+                <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-5 text-yellow-800">
+                  Manual mark entry is disabled for this test in Post Test
+                  settings. Use the configured bulk CSV / Excel workflow.
+                </div>
+              ) : students.length === 0 ? (
                 <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
                   No Test Batch students are marked Present for this test.
                   Mark attendance first for students who appeared.
@@ -932,7 +937,8 @@ export default function TestBatchTestManagement() {
                       <tbody>
                         {students.map((student, index) => {
                           const locked =
-                            markTest.marks_entry_status === "Finalized";
+                            markTest.marks_entry_status === "Finalized" &&
+                            markTest.lock_marks_after_final_submission !== false;
 
                           return (
                             <tr
