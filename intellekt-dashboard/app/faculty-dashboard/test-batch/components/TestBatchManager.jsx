@@ -605,6 +605,6 @@ export default function TestBatchManager({ section = "dashboard", rollNo = "" })
     {section==="students" && <StudentsSection adminId={adminId}/>}
     {section==="marks" && <MarksSection adminId={adminId}/>}
     {section==="attendance" && <AttendanceSection adminId={adminId}/>}
-    {section==="dashboard" && <DashboardSection adminId={adminId}/>}
+    {section==="dashboard" && <><DashboardSection adminId={adminId}/><StudentsSection adminId={adminId}/></>}
   </AdminGate>;
 }
