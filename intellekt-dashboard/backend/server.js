@@ -5410,6 +5410,82 @@ function marksComputedFields(row) {
   return { ...row, percentage:Number(percentage.toFixed(2)), result_status:percentage >= 40 ? 'Pass' : 'Fail' };
 }
 
+app.get('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const { seriesId, search, status, from, to } = req.query;
+    const values=[]; let where='WHERE 1=1';
+    if(seriesId){ values.push(Number(seriesId)); where+=' AND t.test_series_id=$'+values.length; }
+    if(search){ values.push('%'+String(search).trim()+'%'); where+=' AND (t.test_code ILIKE $'+values.length+' OR t.subject_name ILIKE $'+values.length+')'; }
+    if(status){ values.push(String(status)); where+=' AND t.status=$'+values.length; }
+    if(from){ values.push(from); where+=' AND t.writing_date >= $'+values.length; }
+    if(to){ values.push(to); where+=' AND t.writing_date <= $'+values.length; }
+    const result=await pool.query(
+      'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
+      ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
+    res.json({tests:result.rows});
+  } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
+});
+
+app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
+    }=req.body||{};
+    if(!test_code||!test_series_id||!subject_name||!test_date||!writing_date||!duration_minutes||!total_marks){
+      return res.status(400).json({error:'Test code, test batch, subject, test date, writing date, duration and total marks are required'});
+    }
+    const series=await validateTestBatchSeries(test_series_id);
+    if(!series)return res.status(400).json({error:'Invalid Test Series'});
+    const result=await pool.query(
+      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status,created_by) '+
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+    res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('POST /test-batch/tests error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to create Test Batch test',details:err.message});
+  }
+});
+
+app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
+    }=req.body||{};
+    const result=await pool.query(
+      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,status=$14,updated_at=CURRENT_TIMESTAMP WHERE id=$15 RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test updated successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('PUT /test-batch/tests/:id error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to update Test Batch test',details:err.message});
+  }
+});
+
+app.delete('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test deleted successfully',test:result.rows[0]});
+  } catch(err){ console.error('DELETE /test-batch/tests/:id error:',err); res.status(500).json({error:'Failed to delete Test Batch test'}); }
+});
+
+app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const result=await pool.query(
+      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
+      'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
+      [req.params.testCode]);
+    res.json({results:result.rows.map(marksComputedFields)});
+  } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
+});
+
 app.get('/test-batch/series', requireTestBatchAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
