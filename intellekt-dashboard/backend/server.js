@@ -5475,6 +5475,143 @@ app.delete('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
   } catch(err){ console.error('DELETE /test-batch/tests/:id error:',err); res.status(500).json({error:'Failed to delete Test Batch test'}); }
 });
 
+/* =========================================================
+   TEST BATCH POST-TEST CONFIGURATION
+   Available only after a test is Completed or Returned.
+========================================================= */
+
+app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.total_marks,t.status,
+         t.manual_mark_entry_enabled,t.bulk_mark_upload_enabled,
+         t.passing_percentage,t.grade_boundaries,
+         t.result_publication_mode,t.show_detailed_breakdown,
+         t.reevaluation_enabled,t.lock_marks_after_final_submission,
+         t.post_test_export_enabled,t.result_publication_status,
+         t.result_published_at,t.marks_entry_status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test is available only for completed or returned tests'});
+    }
+
+    res.json({test});
+  } catch(err) {
+    console.error('GET /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to load Test Batch post-test settings'});
+  }
+});
+
+app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const body = req.body || {};
+    const result = await pool.query(
+      `SELECT id,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test settings can only be changed for completed or returned tests'});
+    }
+
+    const passing = Number(body.passing_percentage);
+    if (!Number.isFinite(passing) || passing < 0 || passing > 100) {
+      return res.status(400).json({error:'Passing percentage must be between 0 and 100'});
+    }
+
+    const boundaries = body.grade_boundaries || {A:90,B:75,C:60,D:40};
+    if (!boundaries || typeof boundaries !== 'object' || Array.isArray(boundaries)) {
+      return res.status(400).json({error:'Grade boundaries must be an object'});
+    }
+
+    for (const grade of ['A','B','C','D']) {
+      const value = Number(boundaries[grade]);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return res.status(400).json({error:'Each grade boundary must be between 0 and 100'});
+      }
+    }
+
+    const publicationMode = body.result_publication_mode === 'immediate' ? 'immediate' : 'approval';
+
+    const updated = await pool.query(
+      `UPDATE test_batch_tests
+       SET manual_mark_entry_enabled=$1,
+           bulk_mark_upload_enabled=$2,
+           passing_percentage=$3,
+           grade_boundaries=$4::jsonb,
+           result_publication_mode=$5,
+           show_detailed_breakdown=$6,
+           reevaluation_enabled=$7,
+           lock_marks_after_final_submission=$8,
+           post_test_export_enabled=$9,
+           result_publication_status=CASE WHEN $5='immediate' THEN 'Published' ELSE result_publication_status END,
+           result_published_at=CASE WHEN $5='immediate' THEN COALESCE(result_published_at,CURRENT_TIMESTAMP) ELSE result_published_at END,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$10
+       RETURNING *`,
+      [
+        body.manual_mark_entry_enabled !== false,
+        body.bulk_mark_upload_enabled === true,
+        passing,
+        JSON.stringify({A:Number(boundaries.A),B:Number(boundaries.B),C:Number(boundaries.C),D:Number(boundaries.D)}),
+        publicationMode,
+        body.show_detailed_breakdown === true,
+        body.reevaluation_enabled === true,
+        body.lock_marks_after_final_submission !== false,
+        body.post_test_export_enabled !== false,
+        test.id
+      ]
+    );
+
+    res.json({message:'Test Batch Post Test settings saved successfully',test:updated.rows[0]});
+  } catch(err) {
+    console.error('PUT /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to save Test Batch post-test settings',details:err.message});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET result_publication_status='Published',
+           result_published_at=CURRENT_TIMESTAMP,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+         AND status IN ('Completed','Returned')
+         AND result_publication_mode='approval'
+       RETURNING id,test_code,result_publication_status,result_published_at`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) {
+      return res.status(400).json({error:'Test must be completed/returned and configured for admin approval before publishing'});
+    }
+
+    res.json({message:'Test Batch results published successfully',test:result.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/post-test/publish error:',err);
+    res.status(500).json({error:'Failed to publish Test Batch results'});
+  }
+});
+
 app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req,res) => {
   try {
     const result=await pool.query(
