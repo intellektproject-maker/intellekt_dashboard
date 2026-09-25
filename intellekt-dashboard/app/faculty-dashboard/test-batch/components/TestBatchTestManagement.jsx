@@ -205,10 +205,6 @@ export default function TestBatchTestManagement() {
         test_code: test.test_code || "",
         test_series_id: String(test.test_series_id || ""),
         subject_name: test.subject_name || "",
-        test_date: dateOnly(test.test_date),
-        writing_date: dateOnly(test.writing_date),
-        slot_start: test.slot_start || "",
-        slot_end: test.slot_end || "",
         duration_minutes: test.duration_minutes || "",
         total_marks: test.total_marks || "",
         portion: test.portion || "",
@@ -233,8 +229,6 @@ export default function TestBatchTestManagement() {
     if (!form.test_code.trim()) return setError("Enter test code.");
     if (!form.test_series_id) return setError("Select Test Batch / Series.");
     if (!form.subject_name.trim()) return setError("Enter subject.");
-    if (!form.test_date) return setError("Select test date.");
-    if (!form.writing_date) return setError("Select writing date.");
     if (!form.total_marks || Number(form.total_marks) <= 0) return setError("Enter valid total marks.");
     if (!form.duration_minutes || Number(form.duration_minutes) <= 0) return setError("Enter valid duration.");
     if (!form.application_open_date) return setError("Select Apply for Test open date.");
@@ -244,13 +238,6 @@ export default function TestBatchTestManagement() {
       return setError("Apply for Test close date cannot be before the open date.");
     }
 
-    if (form.application_close_date > form.test_date) {
-      return setError("Apply for Test close date must be on or before the test date.");
-    }
-
-    if (form.writing_date < form.test_date) {
-      return setError("Writing date cannot be before the test date.");
-    }
 
     setSaving(true);
     setError("");
@@ -263,10 +250,6 @@ export default function TestBatchTestManagement() {
         test_code: form.test_code.trim().toUpperCase(),
         test_series_id: Number(form.test_series_id),
         subject_name: form.subject_name.trim(),
-        test_date: form.test_date,
-        writing_date: form.writing_date,
-        slot_start: form.slot_start || null,
-        slot_end: form.slot_end || null,
         duration_minutes: Number(form.duration_minutes),
         total_marks: Number(form.total_marks),
         portion: form.portion.trim(),
@@ -973,7 +956,7 @@ export default function TestBatchTestManagement() {
                 Test Batch – Post Test / Schedule
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Schedule or update a Test Batch test. Students can register only between the configured application open and close dates.
+                Schedule or update a Test Batch test. Students will choose their test date and slot during registration within the configured application window.
               </p>
             </div>
             <button
@@ -1030,26 +1013,6 @@ export default function TestBatchTestManagement() {
               </label>
 
               <label className="text-sm text-gray-600">
-                Test Date
-                <input
-                  type="date"
-                  value={scheduleForm.test_date}
-                  onChange={(e) => updateSchedule("test_date", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                />
-              </label>
-
-              <label className="text-sm text-gray-600">
-                Test Writing / Submission Date
-                <input
-                  type="date"
-                  value={scheduleForm.writing_date}
-                  onChange={(e) => updateSchedule("writing_date", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                />
-              </label>
-
-              <label className="text-sm text-gray-600">
                 Total Marks
                 <input
                   type="number"
@@ -1083,26 +1046,6 @@ export default function TestBatchTestManagement() {
                   <option value="Active">Active</option>
                   <option value="Cancelled">Cancelled</option>
                 </select>
-              </label>
-
-              <label className="text-sm text-gray-600">
-                Test Slot Start
-                <input
-                  type="time"
-                  value={scheduleForm.slot_start}
-                  onChange={(e) => updateSchedule("slot_start", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                />
-              </label>
-
-              <label className="text-sm text-gray-600">
-                Test Slot End
-                <input
-                  type="time"
-                  value={scheduleForm.slot_end}
-                  onChange={(e) => updateSchedule("slot_end", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                />
               </label>
 
               <label className="text-sm text-gray-600">
