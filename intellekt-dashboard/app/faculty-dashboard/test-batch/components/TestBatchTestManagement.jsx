@@ -70,7 +70,25 @@ export default function TestBatchTestManagement() {
 
   const [tests, setTests] = useState([]);
   const [eligibleTests, setEligibleTests] = useState([]);
+  const [testSeries, setTestSeries] = useState([]);
   const [section, setSection] = useState("");
+
+  const [scheduleForm, setScheduleForm] = useState({
+    test_code: "",
+    test_series_id: "",
+    subject_name: "",
+    test_date: "",
+    writing_date: "",
+    slot_start: "",
+    slot_end: "",
+    duration_minutes: "",
+    total_marks: "",
+    portion: "",
+    chapter: "",
+    application_open_date: "",
+    application_close_date: "",
+    status: "Scheduled",
+  });
 
   const [selectedMarkTest, setSelectedMarkTest] = useState("");
   const [markTest, setMarkTest] = useState(null);
@@ -139,6 +157,144 @@ export default function TestBatchTestManagement() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadTestSeries() {
+    try {
+      const data = await api(
+        "/test-batch/series?adminId=" + encodeURIComponent(adminId)
+      );
+      setTestSeries(data.series || []);
+    } catch (err) {
+      setTestSeries([]);
+      setError(err.message);
+    }
+  }
+
+  function resetScheduleForm() {
+    setScheduleForm({
+      test_code: "",
+      test_series_id: "",
+      subject_name: "",
+      test_date: "",
+      writing_date: "",
+      slot_start: "",
+      slot_end: "",
+      duration_minutes: "",
+      total_marks: "",
+      portion: "",
+      chapter: "",
+      application_open_date: "",
+      application_close_date: "",
+      status: "Scheduled",
+    });
+  }
+
+  function updateSchedule(field, value) {
+    setScheduleForm((current) => ({ ...current, [field]: value }));
+    setError("");
+    setMessage("");
+  }
+
+  function openPostTestScheduler(test = null) {
+    if (test) {
+      const dateOnly = (value) => String(value || "").slice(0, 10);
+      setScheduleForm({
+        id: test.id,
+        test_code: test.test_code || "",
+        test_series_id: String(test.test_series_id || ""),
+        subject_name: test.subject_name || "",
+        test_date: dateOnly(test.test_date),
+        writing_date: dateOnly(test.writing_date),
+        slot_start: test.slot_start || "",
+        slot_end: test.slot_end || "",
+        duration_minutes: test.duration_minutes || "",
+        total_marks: test.total_marks || "",
+        portion: test.portion || "",
+        chapter: test.chapter || "",
+        application_open_date: dateOnly(test.application_open_date),
+        application_close_date: dateOnly(test.application_close_date),
+        status: test.status || "Scheduled",
+      });
+    } else {
+      resetScheduleForm();
+    }
+
+    setSection("schedule");
+    setError("");
+    setMessage("");
+  }
+
+  async function saveScheduledTest(event) {
+    event.preventDefault();
+
+    const form = scheduleForm;
+    if (!form.test_code.trim()) return setError("Enter test code.");
+    if (!form.test_series_id) return setError("Select Test Batch / Series.");
+    if (!form.subject_name.trim()) return setError("Enter subject.");
+    if (!form.test_date) return setError("Select test date.");
+    if (!form.writing_date) return setError("Select writing date.");
+    if (!form.total_marks || Number(form.total_marks) <= 0) return setError("Enter valid total marks.");
+    if (!form.duration_minutes || Number(form.duration_minutes) <= 0) return setError("Enter valid duration.");
+    if (!form.application_open_date) return setError("Select Apply for Test open date.");
+    if (!form.application_close_date) return setError("Select Apply for Test close date.");
+
+    if (form.application_close_date > form.test_date) {
+      return setError("Apply for Test close date must be on or before the test date.");
+    }
+
+    if (form.writing_date < form.test_date) {
+      return setError("Writing date cannot be before the test date.");
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const editing = Boolean(scheduleForm.id);
+      const payload = {
+        adminId,
+        test_code: form.test_code.trim().toUpperCase(),
+        test_series_id: Number(form.test_series_id),
+        subject_name: form.subject_name.trim(),
+        test_date: form.test_date,
+        writing_date: form.writing_date,
+        slot_start: form.slot_start || null,
+        slot_end: form.slot_end || null,
+        duration_minutes: Number(form.duration_minutes),
+        total_marks: Number(form.total_marks),
+        portion: form.portion.trim(),
+        chapter: form.chapter.trim(),
+        application_open_date: form.application_open_date,
+        application_close_date: form.application_close_date,
+        status: form.status || "Scheduled",
+      };
+
+      const response = await api(
+        editing
+          ? "/test-batch/tests/" + encodeURIComponent(form.id)
+          : "/test-batch/tests",
+        {
+          method: editing ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      await loadTests();
+      await loadEligibleTests();
+      resetScheduleForm();
+      setSection("list");
+      setMessage(
+        editing
+          ? "Test Batch Post Test schedule updated successfully."
+          : "Test Batch Post Test scheduled successfully."
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -215,6 +371,7 @@ export default function TestBatchTestManagement() {
 
     loadTests();
     loadEligibleTests();
+    loadTestSeries();
   }, [adminId, authorized, search]);
 
   useEffect(() => {
@@ -582,26 +739,7 @@ export default function TestBatchTestManagement() {
 
   function openSettings(test) {
     setEditingTest(test);
-
-    const dateOnly = (value) => String(value || "").slice(0, 10);
-
-    setSettingsForm({
-      status: test.status || "Scheduled",
-      total_marks: test.total_marks || "",
-      test_date: dateOnly(test.test_date),
-      writing_date: dateOnly(test.writing_date),
-      slot_start: test.slot_start || "",
-      slot_end: test.slot_end || "",
-      duration_minutes: test.duration_minutes || "",
-      portion: test.portion || "",
-      chapter: test.chapter || "",
-      application_open_date: dateOnly(test.application_open_date),
-      application_close_date: dateOnly(test.application_close_date),
-    });
-
-    setSection("settings");
-    setError("");
-    setMessage("");
+    openPostTestScheduler(test);
   }
 
   function updateSettings(field, value) {
@@ -783,21 +921,14 @@ export default function TestBatchTestManagement() {
         </button>
 
         <button
-          onClick={() => {
-            setSection("post-test");
-            setSelectedPostTest("");
-            setPostTest(null);
-            setError("");
-            setMessage("");
-            loadPostTestTests();
-          }}
+          onClick={() => openPostTestScheduler()}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch – Post Test Settings
+            Test Batch – Post Test
           </h3>
           <p className="text-gray-600">
-            Configure the same post-test controls used by the regular Post Test workflow, adapted exclusively for Test Batch tests.
+            Schedule a Test Batch test with the test date, batch, subject, marks, portion, duration, slot and application dates.
           </p>
         </button>
 
@@ -828,6 +959,216 @@ export default function TestBatchTestManagement() {
         <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-4">
           {message}
         </div>
+      )}
+
+      {section === "schedule" && (
+        <Card>
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <h3 className="text-xl font-bold text-blue-800">
+                Test Batch – Post Test
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Create or update a scheduled test exclusively for Test Batch students.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSection("");
+                resetScheduleForm();
+              }}
+              className="px-4 py-2 bg-gray-100 rounded-lg"
+            >
+              Close
+            </button>
+          </div>
+
+          <form onSubmit={saveScheduledTest} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <label className="text-sm text-gray-600">
+                Test Code
+                <input
+                  value={scheduleForm.test_code}
+                  onChange={(e) =>
+                    updateSchedule("test_code", e.target.value.toUpperCase())
+                  }
+                  readOnly={Boolean(scheduleForm.id)}
+                  placeholder="Example: IAT001M50"
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Test Batch / Series
+                <select
+                  value={scheduleForm.test_series_id}
+                  onChange={(e) => updateSchedule("test_series_id", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                >
+                  <option value="">Select Test Batch</option>
+                  {testSeries.map((series) => (
+                    <option key={series.id} value={series.id}>
+                      {series.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Subject
+                <input
+                  value={scheduleForm.subject_name}
+                  onChange={(e) => updateSchedule("subject_name", e.target.value)}
+                  placeholder="Enter subject"
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Test Date
+                <input
+                  type="date"
+                  value={scheduleForm.test_date}
+                  onChange={(e) => updateSchedule("test_date", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Test Writing / Submission Date
+                <input
+                  type="date"
+                  value={scheduleForm.writing_date}
+                  onChange={(e) => updateSchedule("writing_date", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Total Marks
+                <input
+                  type="number"
+                  min="1"
+                  value={scheduleForm.total_marks}
+                  onChange={(e) => updateSchedule("total_marks", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Duration (minutes)
+                <input
+                  type="number"
+                  min="1"
+                  value={scheduleForm.duration_minutes}
+                  onChange={(e) => updateSchedule("duration_minutes", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Status
+                <select
+                  value={scheduleForm.status}
+                  onChange={(e) => updateSchedule("status", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                >
+                  <option value="Draft">Draft</option>
+                  <option value="Scheduled">Scheduled</option>
+                  <option value="Active">Active</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Test Slot Start
+                <input
+                  type="time"
+                  value={scheduleForm.slot_start}
+                  onChange={(e) => updateSchedule("slot_start", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Test Slot End
+                <input
+                  type="time"
+                  value={scheduleForm.slot_end}
+                  onChange={(e) => updateSchedule("slot_end", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Apply for Test – Open Date
+                <input
+                  type="date"
+                  value={scheduleForm.application_open_date}
+                  onChange={(e) => updateSchedule("application_open_date", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Apply for Test – Close Date
+                <input
+                  type="date"
+                  value={scheduleForm.application_close_date}
+                  onChange={(e) => updateSchedule("application_close_date", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600 md:col-span-2">
+                Portion
+                <textarea
+                  value={scheduleForm.portion}
+                  onChange={(e) => updateSchedule("portion", e.target.value)}
+                  rows={3}
+                  placeholder="Enter test portion"
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600 md:col-span-2">
+                Chapter
+                <input
+                  value={scheduleForm.chapter}
+                  onChange={(e) => updateSchedule("chapter", e.target.value)}
+                  placeholder="Enter chapter"
+                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                />
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={saving}
+                className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
+              >
+                {saving
+                  ? "Saving..."
+                  : scheduleForm.id
+                  ? "Update Test"
+                  : "Post Test"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetScheduleForm();
+                  setSection("");
+                }}
+                disabled={saving}
+                className="px-6 py-3 bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Card>
       )}
 
       {section === "mark-entry" && (
@@ -1163,389 +1504,6 @@ export default function TestBatchTestManagement() {
                 </tbody>
               </table>
             </div>
-          )}
-        </Card>
-      )}
-
-      {section === "post-test" && (
-        <Card>
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Post Test Settings
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Configure post-test operations only for completed or returned
-                Test Batch tests. Test details are shown read-only, while
-                post-test controls remain editable.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                setSection("");
-                setSelectedPostTest("");
-                setPostTest(null);
-              }}
-              className="px-4 py-2 bg-gray-100 rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mb-6">
-            <label className="text-sm text-gray-600">
-              Select Completed / Returned Test
-              <select
-                className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
-                value={selectedPostTest}
-                onChange={(event) => setSelectedPostTest(event.target.value)}
-              >
-                <option value="">Select Test</option>
-                {postTestTests.map((test) => (
-                  <option key={test.test_code} value={test.test_code}>
-                    {test.test_code} — {test.test_series_name} —{" "}
-                    {test.subject_name} — {formatDate(test.writing_date)} —{" "}
-                    {test.status}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {loadingPostTest ? (
-            <p className="text-gray-500">Loading post-test settings...</p>
-          ) : !postTest ? (
-            <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
-              Select a completed or returned test to configure its post-test
-              workflow.
-            </div>
-          ) : (
-            <form onSubmit={savePostTest} className="space-y-6">
-              <div className="bg-white">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Test Code
-                    </label>
-                    <input
-                      value={postTest.test_code || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Test Batch / Series
-                    </label>
-                    <input
-                      value={postTest.test_series_name || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Subject
-                    </label>
-                    <input
-                      value={postTest.subject_name || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Test Date
-                    </label>
-                    <input
-                      value={formatDate(postTest.test_date)}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Writing / Return Date
-                    </label>
-                    <input
-                      value={formatDate(postTest.writing_date)}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Total Marks
-                    </label>
-                    <input
-                      value={postTest.total_marks ?? ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Duration
-                    </label>
-                    <input
-                      value={
-                        postTest.duration_minutes
-                          ? postTest.duration_minutes + " mins"
-                          : ""
-                      }
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Test Slot
-                    </label>
-                    <input
-                      value={
-                        postTest.slot_start && postTest.slot_end
-                          ? String(postTest.slot_start).slice(0, 5) +
-                            " - " +
-                            String(postTest.slot_end).slice(0, 5)
-                          : "-"
-                      }
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Portion
-                    </label>
-                    <input
-                      value={postTest.portion || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Chapter
-                    </label>
-                    <input
-                      value={postTest.chapter || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Application Open Date
-                    </label>
-                    <input
-                      value={formatDate(postTest.application_open_date)}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Application Close Date
-                    </label>
-                    <input
-                      value={formatDate(postTest.application_close_date)}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Test Status
-                    </label>
-                    <input
-                      value={postTest.status || ""}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-blue-700 mb-2">
-                      Marks Status
-                    </label>
-                    <input
-                      value={postTest.marks_entry_status || "Pending"}
-                      readOnly
-                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t pt-6">
-                <h4 className="font-bold text-blue-800 mb-4">
-                  Post Test Details
-                </h4>
-                <p className="text-sm text-gray-500 mb-5">
-                  Configure the same kind of test-level controls used by the
-                  regular Post Test workflow, adapted for a completed Test
-                  Batch test. Existing test details remain read-only.
-                </p>
-
-              <div>
-                <h4 className="font-bold text-blue-800 mb-3">Mark Entry Options</h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.manual_mark_entry_enabled}
-                      onChange={(e) => updatePostTest("manual_mark_entry_enabled", e.target.checked)}
-                    />
-                    <span>Enable manual mark entry by admin</span>
-                  </label>
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.bulk_mark_upload_enabled}
-                      onChange={(e) => updatePostTest("bulk_mark_upload_enabled", e.target.checked)}
-                    />
-                    <span>Enable bulk CSV / Excel mark upload</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-blue-800 mb-3">Grading Settings</h4>
-                <div className="grid md:grid-cols-5 gap-4">
-                  <label className="text-sm text-gray-600">
-                    Passing Percentage
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      className="block w-full border rounded-lg px-3 py-2 mt-1"
-                      value={postTestForm.passing_percentage}
-                      onChange={(e) => updatePostTest("passing_percentage", e.target.value)}
-                    />
-                  </label>
-                  {["A", "B", "C", "D"].map((grade) => (
-                    <label key={grade} className="text-sm text-gray-600">
-                      Grade {grade} Minimum %
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        className="block w-full border rounded-lg px-3 py-2 mt-1"
-                        value={postTestForm.grade_boundaries[grade]}
-                        onChange={(e) => updateGrade(grade, e.target.value)}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-blue-800 mb-3">Result Publication</h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <label className="text-sm text-gray-600">
-                    Result Visibility
-                    <select
-                      className="block w-full border rounded-lg px-3 py-2 mt-1 bg-white"
-                      value={postTestForm.result_publication_mode}
-                      onChange={(e) => updatePostTest("result_publication_mode", e.target.value)}
-                    >
-                      <option value="approval">After admin approval</option>
-                      <option value="immediate">Visible immediately</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.show_detailed_breakdown}
-                      onChange={(e) => updatePostTest("show_detailed_breakdown", e.target.checked)}
-                    />
-                    <span>Show detailed breakdown / remarks to students</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-blue-800 mb-3">Post-Test Actions</h4>
-                <div className="grid md:grid-cols-3 gap-4">
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.reevaluation_enabled}
-                      onChange={(e) => updatePostTest("reevaluation_enabled", e.target.checked)}
-                    />
-                    <span>Allow re-evaluation / remark requests</span>
-                  </label>
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.lock_marks_after_final_submission}
-                      onChange={(e) => updatePostTest("lock_marks_after_final_submission", e.target.checked)}
-                    />
-                    <span>Lock marks after final submission</span>
-                  </label>
-                  <label className="flex items-center gap-3 border rounded-lg p-4">
-                    <input
-                      type="checkbox"
-                      checked={postTestForm.post_test_export_enabled}
-                      onChange={(e) => updatePostTest("post_test_export_enabled", e.target.checked)}
-                    />
-                    <span>Allow final marks / report export</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <div className="font-semibold text-blue-800 mb-1">Publication Status</div>
-                <div className="text-sm text-gray-600 mb-3">
-                  {postTest.result_publication_status}
-                  {postTest.result_published_at
-                    ? " — " + formatDate(postTest.result_published_at)
-                    : ""}
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    disabled={saving}
-                    className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                  >
-                    {saving ? "Saving..." : "Save Post Test Settings"}
-                  </button>
-                  {postTest.result_publication_mode === "approval" &&
-                    postTest.result_publication_status !== "Published" && (
-                      <button
-                        type="button"
-                        onClick={publishPostTestResults}
-                        disabled={saving}
-                        className="bg-green-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                      >
-                        Publish Results
-                      </button>
-                    )}
-                  {postTest.post_test_export_enabled && (
-                    <button
-                      type="button"
-                      onClick={exportPostTestReport}
-                      className="bg-gray-700 text-white px-6 py-3 rounded-lg"
-                    >
-                      Export Final Report
-                    </button>
-                  )}
-                </div>
-              </div>
-            </form>
           )}
         </Card>
       )}
