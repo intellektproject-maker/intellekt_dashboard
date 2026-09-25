@@ -63,13 +63,38 @@ function StudentsSection({ adminId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name:"", class:"", board:"", mode_of_education:"", phone:"", email:"", school_name:"", password:"", test_series_id:"" });
+  const [showForm, setShowForm] = useState(false);
+  const [nextRoll, setNextRoll] = useState("IAT001");
+  const [form, setForm] = useState({
+    name: "",
+    class: "",
+    board: "",
+    mode_of_education: "",
+    phone: "",
+    email: "",
+    school_name: "",
+    password: "",
+    test_series_id: ""
+  });
 
   async function loadSeries() {
     const d = await api("/test-batch/series?adminId=" + encodeURIComponent(adminId));
     setSeries(d.series || []);
-    setForm((f) => ({ ...f, test_series_id: f.test_series_id || (d.series?.[0] ? String(d.series[0].id) : "") }));
+    setForm((f) => ({
+      ...f,
+      test_series_id: f.test_series_id || (d.series?.[0] ? String(d.series[0].id) : "")
+    }));
   }
+
+  async function loadNextRoll() {
+    try {
+      const d = await api("/test-batch/students/next-roll?adminId=" + encodeURIComponent(adminId));
+      setNextRoll(d.roll_no || "IAT001");
+    } catch {
+      setNextRoll("IAT001");
+    }
+  }
+
   async function loadStudents() {
     setLoading(true);
     try {
@@ -79,75 +104,412 @@ function StudentsSection({ adminId }) {
       const d = await api("/test-batch/students?" + p.toString());
       setStudents(d.students || []);
       setError("");
-    } catch (e) { setError(e.message); } finally { setLoading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { loadSeries().catch((e) => setError(e.message)); }, [adminId]);
-  useEffect(() => { const t = setTimeout(loadStudents, 150); return () => clearTimeout(t); }, [adminId, search, seriesFilter]);
+
+  useEffect(() => {
+    Promise.all([loadSeries(), loadNextRoll()]).catch((e) => setError(e.message));
+  }, [adminId]);
+
+  useEffect(() => {
+    const t = setTimeout(loadStudents, 150);
+    return () => clearTimeout(t);
+  }, [adminId, search, seriesFilter]);
+
+  function emptyForm() {
+    return {
+      name: "",
+      class: "",
+      board: "",
+      mode_of_education: "",
+      phone: "",
+      email: "",
+      school_name: "",
+      password: "",
+      test_series_id: series[0] ? String(series[0].id) : ""
+    };
+  }
+
+  function openAddStudent() {
+    setEditing(null);
+    setForm(emptyForm());
+    setShowForm(true);
+    loadNextRoll();
+    setError("");
+  }
 
   function resetForm() {
     setEditing(null);
-    setForm({ name:"", class:"", board:"", mode_of_education:"", phone:"", email:"", school_name:"", password:"", test_series_id: series[0] ? String(series[0].id) : "" });
-  }
-  function editStudent(s) {
-    setEditing(s.roll_no);
-    setForm({ name:s.name || "", class:s.class || "", board:s.board || "", mode_of_education:s.mode_of_education || "", phone:s.phone || "", email:s.email || "", school_name:s.school_name || "", password:"", test_series_id:String(s.test_series_id || "") });
-    window.scrollTo({ top:0, behavior:"smooth" });
-  }
-  async function submit(e) {
-    e.preventDefault(); setSaving(true); setError("");
-    try {
-      if (!form.test_series_id) throw new Error("Select a test series");
-      const payload = { ...form, adminId, test_series_id:Number(form.test_series_id) };
-      if (!payload.password) delete payload.password;
-      if (editing) await api("/test-batch/students/" + encodeURIComponent(editing), { method:"PUT", body:JSON.stringify(payload) });
-      else await api("/test-batch/students", { method:"POST", body:JSON.stringify(payload) });
-      resetForm(); await loadStudents();
-    } catch (e) { setError(e.message); } finally { setSaving(false); }
-  }
-  async function removeStudent(rollNo) {
-    if (!window.confirm("Delete Test Batch student " + rollNo + "?")) return;
-    try { await api("/test-batch/students/" + encodeURIComponent(rollNo), { method:"DELETE", headers:{"x-admin-id":adminId} }); await loadStudents(); }
-    catch (e) { setError(e.message); }
+    setForm(emptyForm());
+    setShowForm(false);
   }
 
-  return <div className="mt-8 space-y-5">
-    <div className="border-t-4 border-blue-700 pt-6"><Header title="Test Batch Students" description="Separate student category. Regular Student records are not used by this section." /></div>
-    <Card>
-      <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <input className="border rounded-lg px-4 py-3" placeholder="Student Name *" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} required />
-        <input className="border rounded-lg px-4 py-3" placeholder="Class" value={form.class} onChange={(e)=>setForm({...form,class:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" placeholder="Board" value={form.board} onChange={(e)=>setForm({...form,board:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" placeholder="Mode of Education" value={form.mode_of_education} onChange={(e)=>setForm({...form,mode_of_education:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" placeholder="Phone" value={form.phone} onChange={(e)=>setForm({...form,phone:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" type="email" placeholder="Email" value={form.email} onChange={(e)=>setForm({...form,email:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" placeholder="School Name" value={form.school_name} onChange={(e)=>setForm({...form,school_name:e.target.value})} />
-        <input className="border rounded-lg px-4 py-3" type="password" placeholder={editing ? "New Password (optional)" : "Password (optional)"} value={form.password} onChange={(e)=>setForm({...form,password:e.target.value})} />
-        <select className="border rounded-lg px-4 py-3 bg-white" value={form.test_series_id} onChange={(e)=>setForm({...form,test_series_id:e.target.value})} required>
-          <option value="">Select Test Series *</option>{series.map((s)=><option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <div className="md:col-span-2 lg:col-span-3 flex flex-wrap gap-3">
-          <button disabled={saving} className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50">{saving ? "Saving..." : editing ? "Update Test Batch Student" : "Add Test Batch Student"}</button>
-          <button type="button" onClick={resetForm} className="bg-gray-200 hover:bg-gray-300 px-6 py-3 rounded-lg font-semibold">Reset</button>
-        </div>
-      </form>
-      <ErrorText error={error} />
-    </Card>
-    <Card>
-      <div className="flex flex-wrap gap-3 mb-5">
-        <input className="border rounded-lg px-4 py-2 flex-1 min-w-[220px]" placeholder="Search name or roll number" value={search} onChange={(e)=>setSearch(e.target.value)} />
-        <SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter} />
-        <button onClick={loadStudents} className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800">Refresh</button>
+  function editStudent(s) {
+    setEditing(s.roll_no);
+    setForm({
+      name: s.name || "",
+      class: s.class || "",
+      board: s.board || "",
+      mode_of_education: s.mode_of_education || "",
+      phone: s.phone || "",
+      email: s.email || "",
+      school_name: s.school_name || "",
+      password: "",
+      test_series_id: String(s.test_series_id || "")
+    });
+    setShowForm(true);
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+
+    try {
+      if (!form.name.trim()) throw new Error("Student name is required");
+      if (!form.test_series_id) throw new Error("Select a test series");
+      if (form.phone && !/^\d{10}$/.test(form.phone.trim())) {
+        throw new Error("Phone number must contain exactly 10 digits");
+      }
+
+      const payload = {
+        ...form,
+        adminId,
+        test_series_id: Number(form.test_series_id)
+      };
+
+      if (!payload.password) delete payload.password;
+
+      if (editing) {
+        await api("/test-batch/students/" + encodeURIComponent(editing), {
+          method: "PUT",
+          body: JSON.stringify(payload)
+        });
+      } else {
+        const result = await api("/test-batch/students", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        setNextRoll(result.roll_no || "IAT001");
+      }
+
+      resetForm();
+      await Promise.all([loadStudents(), loadNextRoll()]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeStudent(rollNo) {
+    if (!window.confirm("Delete Test Batch student " + rollNo + "?")) return;
+    try {
+      await api("/test-batch/students/" + encodeURIComponent(rollNo), {
+        method: "DELETE",
+        headers: { "x-admin-id": adminId }
+      });
+      await Promise.all([loadStudents(), loadNextRoll()]);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <div className="mt-8 space-y-5">
+      <div className="border-t-4 border-blue-700 pt-6">
+        <Header
+          title="Test Batch Students"
+          description="Dedicated student management for Test Batch. Regular Student records remain completely separate."
+        />
       </div>
-      {loading ? <Loading /> : students.length === 0 ? <p className="text-gray-500">No Test Batch students found.</p> :
-        <div className="overflow-x-auto"><table className="w-full min-w-[1100px] border-collapse">
-          <thead><tr className="bg-blue-700 text-white"><th className="text-left p-3">Roll No</th><th className="text-left p-3">Name</th><th className="text-left p-3">Class</th><th className="text-left p-3">Board</th><th className="text-left p-3">Test Series</th><th className="text-left p-3">Phone</th><th className="text-left p-3">Added</th><th className="text-left p-3">Actions</th></tr></thead>
-          <tbody>{students.map((s,i)=><tr key={s.roll_no} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}>
-            <td className="p-3 font-semibold">{s.roll_no}</td><td className="p-3">{s.name}</td><td className="p-3">{s.class || "-"}</td><td className="p-3">{s.board || "-"}</td><td className="p-3">{s.test_series_name}</td><td className="p-3">{s.phone || "-"}</td><td className="p-3">{formatDate(s.created_at)}</td>
-            <td className="p-3"><div className="flex gap-2"><button onClick={()=>editStudent(s)} className="bg-yellow-500 text-white px-3 py-1 rounded">Edit</button><button onClick={()=>removeStudent(s.roll_no)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></td>
-          </tr>)}</tbody>
-        </table></div>}
-    </Card>
-  </div>;
+
+      <Card>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">Test Batch Student Records</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Add students with the same profile information used in Regular Student management.
+              Roll numbers are generated automatically as IAT001, IAT002, IAT003...
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={openAddStudent}
+            className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold whitespace-nowrap"
+          >
+            Add Test Batch Student
+          </button>
+        </div>
+        <ErrorText error={error} />
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap gap-3 mb-5">
+          <input
+            className="border rounded-lg px-4 py-2 flex-1 min-w-[220px]"
+            placeholder="Search name or roll number"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter} />
+          <button
+            type="button"
+            onClick={loadStudents}
+            className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <Loading />
+        ) : students.length === 0 ? (
+          <p className="text-gray-500">No Test Batch students found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1200px] border-collapse">
+              <thead>
+                <tr className="bg-blue-700 text-white">
+                  <th className="text-left p-3">Roll No</th>
+                  <th className="text-left p-3">Name</th>
+                  <th className="text-left p-3">Class</th>
+                  <th className="text-left p-3">Board</th>
+                  <th className="text-left p-3">Mode</th>
+                  <th className="text-left p-3">Phone</th>
+                  <th className="text-left p-3">Email</th>
+                  <th className="text-left p-3">School</th>
+                  <th className="text-left p-3">Test Series</th>
+                  <th className="text-left p-3">Added</th>
+                  <th className="text-left p-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s, i) => (
+                  <tr
+                    key={s.roll_no}
+                    className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
+                  >
+                    <td className="p-3 font-semibold">{s.roll_no}</td>
+                    <td className="p-3">{s.name}</td>
+                    <td className="p-3">{s.class || "-"}</td>
+                    <td className="p-3">{s.board || "-"}</td>
+                    <td className="p-3">{s.mode_of_education || "-"}</td>
+                    <td className="p-3">{s.phone || "-"}</td>
+                    <td className="p-3">{s.email || "-"}</td>
+                    <td className="p-3">{s.school_name || "-"}</td>
+                    <td className="p-3">{s.test_series_name}</td>
+                    <td className="p-3">{formatDate(s.created_at)}</td>
+                    <td className="p-3">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => editStudent(s)}
+                          className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeStudent(s.roll_no)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl p-5 md:p-8 w-full max-w-6xl my-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  {editing ? "Edit Test Batch Student" : "Add Test Batch Student"}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  This form writes only to the Test Batch student database.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number</label>
+                <input
+                  type="text"
+                  value={editing || nextRoll}
+                  disabled
+                  className="w-full border rounded-lg px-4 py-3 outline-none bg-gray-100 text-gray-700"
+                />
+                {!editing && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Automatically generated. You cannot manually change the IAT roll number.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Student Name *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Enter student name"
+                  required
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+                <input
+                  type="text"
+                  value={form.class}
+                  onChange={(e) => setForm({ ...form, class: e.target.value })}
+                  placeholder="11 or 12"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Board</label>
+                <select
+                  value={form.board}
+                  onChange={(e) => setForm({ ...form, board: e.target.value })}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select board</option>
+                  <option value="State Board">State Board</option>
+                  <option value="CBSE">CBSE</option>
+                  <option value="ICSE">ICSE</option>
+                  <option value="ISC">ISC</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Education</label>
+                <select
+                  value={form.mode_of_education}
+                  onChange={(e) => setForm({ ...form, mode_of_education: e.target.value })}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select mode</option>
+                  <option value="Online">Online</option>
+                  <option value="Offline">Offline</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="text"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="Enter 10 digit phone number"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="Enter email"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="text"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder={editing ? "Leave blank to keep current password" : "Optional - defaults to roll number"}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">School Name</label>
+                <input
+                  type="text"
+                  value={form.school_name}
+                  onChange={(e) => setForm({ ...form, school_name: e.target.value })}
+                  placeholder="Enter school name"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Series *</label>
+                <select
+                  value={form.test_series_id}
+                  onChange={(e) => setForm({ ...form, test_series_id: e.target.value })}
+                  required
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select Test Series</option>
+                  {series.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Choose the Test Series 10, 15 or 30 group for this student.
+                </p>
+              </div>
+
+              <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-60"
+                >
+                  {saving
+                    ? editing ? "Updating..." : "Saving..."
+                    : editing ? "Update Test Batch Student" : "Add Test Batch Student"}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+
+            <ErrorText error={error} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MarksSection({ adminId }) {
