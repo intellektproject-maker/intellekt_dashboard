@@ -5486,6 +5486,361 @@ app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req
   } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
 });
 
+
+/* =========================================================
+   TEST BATCH MARK ENTRY
+   Only completed/returned tests are eligible.
+   Marks are stored only in test_batch_marks.
+========================================================= */
+
+app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const { seriesId, search } = req.query;
+    const values = [];
+    let where = "WHERE t.status IN ('Completed','Returned')";
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND t.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (t.test_code ILIKE $' + values.length + ' OR t.subject_name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+      t.test_date,t.writing_date,t.slot_start,t.slot_end,t.total_marks,t.status,
+      t.marks_entry_status,t.marks_finalized_at
+      FROM test_batch_tests t
+      JOIN test_series s ON s.id=t.test_series_id
+      ` + where +
+      ` ORDER BY t.writing_date DESC,t.test_code ASC`,
+      values
+    );
+
+    res.json({ tests: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/tests error:', err);
+    res.status(500).json({ error: 'Failed to fetch completed Test Batch tests' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only completed or returned Test Batch tests are available for mark entry'
+      });
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         a.status AS attendance_status,
+         COALESCE(m.marks_obtained, '') AS marks_obtained,
+         COALESCE(m.comments, '') AS remarks,
+         m.updated_at AS marks_updated_at
+       FROM test_batch_students s
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=t.writing_date
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM(t.subject_name))
+       WHERE s.test_series_id=t.test_series_id
+         AND t.id=$1
+       ORDER BY s.roll_no ASC`,
+      [test.id]
+    );
+
+    res.json({ test, students: studentsResult.rows });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/mark-entry error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch mark entry' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'At least one mark record is required' });
+    }
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only completed or returned Test Batch tests can receive marks'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized') {
+      return res.status(400).json({
+        error: 'Marks for this test have already been finalized and are locked'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const rollNo = String(record.roll_no || '').trim().toUpperCase();
+      const rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
+      const remarks = String(record.remarks ?? record.comments ?? '').trim();
+
+      if (!/^IAT[0-9]{3,}$/.test(rollNo)) {
+        throw new Error('Invalid Test Batch roll number: ' + rollNo);
+      }
+
+      const eligible = await client.query(
+        `SELECT s.roll_no
+         FROM test_batch_students s
+         JOIN test_batch_attendance a
+           ON a.roll_no=s.roll_no
+          AND a.attendance_date=$2
+          AND a.status='Present'
+         WHERE s.roll_no=$1
+           AND s.test_series_id=$3
+         LIMIT 1`,
+        [rollNo, test.writing_date, test.test_series_id]
+      );
+
+      if (eligible.rows.length === 0) {
+        throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
+      }
+
+      if (!rawMarks) {
+        await client.query(
+          `DELETE FROM test_batch_marks
+           WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))
+             AND UPPER(TRIM(test_code))=UPPER(TRIM($2))
+             AND UPPER(TRIM(subject_name))=UPPER(TRIM($3))`,
+          [rollNo, code, test.subject_name]
+        );
+        continue;
+      }
+
+      const validation = validateTestBatchMarks(test.total_marks, rawMarks);
+      if (!validation.ok) {
+        throw new Error(rollNo + ': ' + validation.error);
+      }
+
+      await client.query(
+        `INSERT INTO test_batch_marks
+          (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT (roll_no,test_code,subject_name)
+         DO UPDATE SET
+           total_marks=EXCLUDED.total_marks,
+           marks_obtained=EXCLUDED.marks_obtained,
+           comments=EXCLUDED.comments,
+           updated_at=CURRENT_TIMESTAMP`,
+        [rollNo, code, test.subject_name, Number(test.total_marks), validation.obtained, remarks || null]
+      );
+    }
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ message: 'Test Batch marks saved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks error:', err);
+    res.status(400).json({ error: err.message || 'Failed to save Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only completed or returned Test Batch tests can be finalized'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized') {
+      return res.json({ message: 'Marks are already finalized' });
+    }
+
+    const result = await client.query(
+      `SELECT
+         s.roll_no,
+         COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
+       FROM test_batch_students s
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=$2
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($3))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($4))
+       WHERE s.test_series_id=$1
+       ORDER BY s.roll_no ASC`,
+      [test.test_series_id, test.writing_date, code, test.subject_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        error: 'No Test Batch students marked Present for this test'
+      });
+    }
+
+    const missing = result.rows.filter(row => !row.marks_obtained);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        error: 'Enter marks for all students before finalizing',
+        missing_roll_numbers: missing.map(row => row.roll_no)
+      });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Finalized',
+           marks_finalized_at=CURRENT_TIMESTAMP,
+           marks_finalized_by=$1,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$2`,
+      [req.testBatchAdminId, test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Test Batch marks finalized successfully',
+      marks_entry_status: 'Finalized'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks/finalize error:', err);
+    res.status(400).json({ error: err.message || 'Failed to finalize Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAdmin, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await client.query(
+      `SELECT id,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    if (testResult.rows[0].marks_entry_status === 'Finalized') {
+      return res.status(400).json({ error: 'Finalized marks cannot be reset' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `DELETE FROM test_batch_marks
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))`,
+      [code]
+    );
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Pending',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [testResult.rows[0].id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ message: 'Test Batch draft marks reset successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/tests/:testCode/marks/draft error:', err);
+    res.status(500).json({ error: 'Failed to reset Test Batch draft marks' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/test-batch/series', requireTestBatchAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
