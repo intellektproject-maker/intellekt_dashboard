@@ -1207,26 +1207,39 @@ export default function TestBatchTestManagement() {
             </div>
           ) : (
             <form onSubmit={savePostTest} className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Test Code</div>
-                  <div className="font-semibold">{postTest.test_code}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Test Batch</div>
-                  <div className="font-semibold">{postTest.test_series_name}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Subject</div>
-                  <div className="font-semibold">{postTest.subject_name}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Status</div>
-                  <div className="font-semibold">{postTest.status}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Marks Status</div>
-                  <div className="font-semibold">{postTest.marks_entry_status}</div>
+              <div className="bg-gray-50 border rounded-xl p-5">
+                <h4 className="font-bold text-blue-800 mb-4">
+                  Test Details
+                </h4>
+                <p className="text-sm text-gray-500 mb-4">
+                  These details are read-only because this test has already
+                  been conducted and returned. The layout follows the regular
+                  student Post Test structure while keeping all data isolated
+                  to the selected Test Batch.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {[
+                    ["Test Code", postTest.test_code],
+                    ["Test Batch", postTest.test_series_name],
+                    ["Subject", postTest.subject_name],
+                    ["Test Date", formatDate(postTest.test_date)],
+                    ["Writing / Return Date", formatDate(postTest.writing_date)],
+                    ["Total Marks", postTest.total_marks],
+                    ["Status", postTest.status],
+                    ["Marks Entry Status", postTest.marks_entry_status],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <label className="block text-sm font-semibold text-blue-700 mb-2">
+                        {label}
+                      </label>
+                      <input
+                        value={value ?? "-"}
+                        readOnly
+                        className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
 
