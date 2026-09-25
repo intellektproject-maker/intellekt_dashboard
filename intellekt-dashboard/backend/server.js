@@ -5614,12 +5614,50 @@ app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAdmin,
 
 app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req,res) => {
   try {
+    const testResult = await pool.query(
+      `SELECT passing_percentage,grade_boundaries,result_publication_status,
+              show_detailed_breakdown,post_test_export_enabled
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const config = testResult.rows[0];
     const result=await pool.query(
       'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
       'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
       'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
       [req.params.testCode]);
-    res.json({results:result.rows.map(marksComputedFields)});
+
+    const passing = Number(config.passing_percentage ?? 40);
+    const boundaries = config.grade_boundaries || {A:90,B:75,C:60,D:40};
+    const results = result.rows.map(row => {
+      const base = marksComputedFields(row);
+      if (base.result_status === 'Absent') return {...base, grade:null};
+      const percentage = Number(base.percentage || 0);
+      let grade = 'F';
+      for (const [label, minimum] of Object.entries(boundaries).sort((a,b)=>Number(b[1])-Number(a[1]))) {
+        if (percentage >= Number(minimum)) { grade = label; break; }
+      }
+      return {
+        ...base,
+        result_status: percentage >= passing ? 'Pass' : 'Fail',
+        grade,
+      };
+    });
+
+    res.json({
+      results,
+      settings: {
+        passing_percentage: passing,
+        grade_boundaries: boundaries,
+        result_publication_status: config.result_publication_status,
+        show_detailed_breakdown: config.show_detailed_breakdown,
+        post_test_export_enabled: config.post_test_export_enabled,
+      }
+    });
   } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
 });
 
@@ -5672,7 +5710,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
       `SELECT
          t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
          t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
-         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,t.manual_mark_entry_enabled,t.lock_marks_after_final_submission
        FROM test_batch_tests t
        JOIN test_series s ON s.id=t.test_series_id
        WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
@@ -5754,7 +5792,13 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
       });
     }
 
-    if (test.marks_entry_status === 'Finalized') {
+    if (test.manual_mark_entry_enabled === false) {
+      return res.status(400).json({
+        error: 'Manual mark entry is disabled for this Test Batch test. Use the configured bulk-upload workflow.'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized' && test.lock_marks_after_final_submission !== false) {
       return res.status(400).json({
         error: 'Marks for this test have already been finalized and are locked'
       });
