@@ -5410,6 +5410,20 @@ app.get('/test-batch/series', requireTestBatchAdmin, async (req, res) => {
   }
 });
 
+app.get('/test-batch/students/next-roll', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+      ['^IAT[0-9]+$']
+    );
+    const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+    res.json({ roll_no: 'IAT' + String(nextNumber).padStart(3, '0') });
+  } catch (err) {
+    console.error('GET /test-batch/students/next-roll error:', err);
+    res.status(500).json({ error: 'Failed to generate next Test Batch roll number' });
+  }
+});
+
 app.get('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
   try {
     const { search, seriesId } = req.query;
