@@ -5563,7 +5563,9 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
          COALESCE(m.marks_obtained, '') AS marks_obtained,
          COALESCE(m.comments, '') AS remarks,
          m.updated_at AS marks_updated_at
-       FROM test_batch_students s
+       FROM test_batch_tests t
+       JOIN test_batch_students s
+         ON s.test_series_id=t.test_series_id
        JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
         AND a.attendance_date=t.writing_date
@@ -5572,8 +5574,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
          ON m.roll_no=s.roll_no
         AND UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code))
         AND UPPER(TRIM(m.subject_name))=UPPER(TRIM(t.subject_name))
-       WHERE s.test_series_id=t.test_series_id
-         AND t.id=$1
+       WHERE t.id=$1
        ORDER BY s.roll_no ASC`,
       [test.id]
     );
