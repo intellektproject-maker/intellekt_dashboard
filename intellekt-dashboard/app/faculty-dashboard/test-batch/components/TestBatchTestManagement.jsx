@@ -106,6 +106,12 @@ export default function TestBatchTestManagement(){
   useEffect(()=>{if(section==="results")loadResults(resultTest)},[section,resultTest]);
 
   const filtered=useMemo(()=>tests.filter(t=>!search.trim()||String(t.test_code).toLowerCase().includes(search.trim().toLowerCase())||String(t.subject_name).toLowerCase().includes(search.trim().toLowerCase())),[tests,search]);
+  function exportTests(){
+    if(!filtered.length){alert("No Test Batch tests to export");return;}
+    const html='<table border="1"><tr><th>Test Code</th><th>Test Batch</th><th>Subject</th><th>Test Date</th><th>Writing Date</th><th>Slot</th><th>Total Marks</th><th>Status</th></tr>'+filtered.map(t=>'<tr><td>'+t.test_code+'</td><td>'+t.test_series_name+'</td><td>'+t.subject_name+'</td><td>'+formatDate(t.test_date)+'</td><td>'+formatDate(t.writing_date)+'</td><td>'+((t.slot_start||"-")+" - "+(t.slot_end||"-"))+'</td><td>'+t.total_marks+'</td><td>'+t.status+'</td></tr>').join("")+'</table>';
+    const blob=new Blob([html],{type:"application/vnd.ms-excel"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="test_batch_test_list.xls";a.click();URL.revokeObjectURL(url);
+  }
+
 
   if(!authorized)return null;
 
@@ -167,7 +173,7 @@ export default function TestBatchTestManagement(){
       <div className="flex flex-wrap gap-3 items-center mb-5">
         <h3 className="text-xl font-bold text-blue-800 mr-auto">Test Batch – Test List</h3>
         <input className="border rounded-lg px-4 py-2" placeholder="Search test code / subject" value={search} onChange={e=>setSearch(e.target.value)}/>
-        <button onClick={openCreate} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Create Test</button>
+        <button onClick={exportTests} className="bg-gray-700 text-white px-5 py-2 rounded-lg">Export</button><button onClick={openCreate} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Create Test</button>
       </div>
       {loading?<p className="text-gray-500">Loading...</p>:filtered.length===0?<p className="text-gray-500">No Test Batch tests found.</p>:
       <div className="overflow-x-auto"><table className="w-full min-w-[1200px]"><thead className="bg-blue-700 text-white"><tr><th className="p-3 text-left">Code</th><th className="p-3 text-left">Test Batch</th><th className="p-3 text-left">Subject</th><th className="p-3 text-left">Test Date</th><th className="p-3 text-left">Writing Date</th><th className="p-3 text-left">Slot</th><th className="p-3 text-left">Marks</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">Actions</th></tr></thead><tbody>{filtered.map((t,i)=><tr key={t.id} className={i%2===0?"bg-gray-50 border-b":"border-b"}><td className="p-3 font-semibold text-blue-700">{t.test_code}</td><td className="p-3">{t.test_series_name}</td><td className="p-3">{t.subject_name}</td><td className="p-3">{formatDate(t.test_date)}</td><td className="p-3">{formatDate(t.writing_date)}</td><td className="p-3">{t.slot_start||"-"} - {t.slot_end||"-"}</td><td className="p-3">{t.total_marks}</td><td className="p-3">{t.status}</td><td className="p-3 flex gap-2"><button onClick={()=>openEdit(t)} className="bg-yellow-500 text-white px-3 py-1 rounded">Edit</button><button onClick={()=>deleteTest(t)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button></td></tr>)}</tbody></table></div>}
