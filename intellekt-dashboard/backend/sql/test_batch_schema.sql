@@ -110,14 +110,82 @@ CREATE TABLE IF NOT EXISTS test_batch_tests (
   application_open_date DATE,
   application_close_date DATE,
   status VARCHAR(20) NOT NULL DEFAULT 'Scheduled'
-    CHECK (status IN ('Draft','Scheduled','Active','Completed','Cancelled')),
+    CHECK (status IN ('Draft','Scheduled','Active','Completed','Returned','Cancelled')),
+  marks_entry_status VARCHAR(20) NOT NULL DEFAULT 'Pending'
+    CHECK (marks_entry_status IN ('Pending','Draft','Finalized')),
+  marks_finalized_at TIMESTAMPTZ,
+  marks_finalized_by VARCHAR(50),
   created_by VARCHAR(50),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_test_batch_tests_created_by FOREIGN KEY (created_by)
+    REFERENCES faculty(faculty_id) ON DELETE SET NULL,
+  CONSTRAINT fk_test_batch_tests_marks_finalized_by FOREIGN KEY (marks_finalized_by)
     REFERENCES faculty(faculty_id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_test_batch_tests_series ON test_batch_tests(test_series_id);
 CREATE INDEX IF NOT EXISTS idx_test_batch_tests_writing_date ON test_batch_tests(writing_date);
 CREATE INDEX IF NOT EXISTS idx_test_batch_tests_status ON test_batch_tests(status);
+
+
+-- Allow existing Test Batch tests to use Returned status and support
+-- a draft/finalized marks-entry lifecycle.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'test_batch_tests_status_check'
+      AND conrelid = 'test_batch_tests'::regclass
+  ) THEN
+    ALTER TABLE test_batch_tests DROP CONSTRAINT test_batch_tests_status_check;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_test_batch_tests_status'
+  ) THEN
+    ALTER TABLE test_batch_tests
+      ADD CONSTRAINT chk_test_batch_tests_status
+      CHECK (status IN ('Draft','Scheduled','Active','Completed','Returned','Cancelled'));
+  END IF;
+END $$;
+
+ALTER TABLE test_batch_tests
+  ADD COLUMN IF NOT EXISTS marks_entry_status VARCHAR(20) NOT NULL DEFAULT 'Pending';
+
+ALTER TABLE test_batch_tests
+  ADD COLUMN IF NOT EXISTS marks_finalized_at TIMESTAMPTZ;
+
+ALTER TABLE test_batch_tests
+  ADD COLUMN IF NOT EXISTS marks_finalized_by VARCHAR(50);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_test_batch_tests_marks_entry_status'
+  ) THEN
+    ALTER TABLE test_batch_tests
+      ADD CONSTRAINT chk_test_batch_tests_marks_entry_status
+      CHECK (marks_entry_status IN ('Pending','Draft','Finalized'));
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name='faculty' AND column_name='faculty_id'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_test_batch_tests_marks_finalized_by'
+  ) THEN
+    ALTER TABLE test_batch_tests
+      ADD CONSTRAINT fk_test_batch_tests_marks_finalized_by
+      FOREIGN KEY (marks_finalized_by) REFERENCES faculty(faculty_id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
