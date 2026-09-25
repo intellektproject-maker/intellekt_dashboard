@@ -794,10 +794,10 @@ export default function TestBatchTestManagement() {
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch – Post Test
+            Test Batch – Post Test Settings
           </h3>
           <p className="text-gray-600">
-            Configure mark entry, grading, result publication, re-evaluation, locking and exports after a test is completed/returned.
+            Configure the same post-test controls used by the regular Post Test workflow, adapted exclusively for Test Batch tests.
           </p>
         </button>
 
@@ -1172,11 +1172,12 @@ export default function TestBatchTestManagement() {
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Post Test
+                Test Batch – Post Test Settings
               </h3>
               <p className="text-sm text-gray-500 mt-1">
                 Configure post-test operations only for completed or returned
-                Test Batch tests.
+                Test Batch tests. Test details are shown read-only, while
+                post-test controls remain editable.
               </p>
             </div>
             <button
@@ -1283,6 +1284,82 @@ export default function TestBatchTestManagement() {
                     </label>
                     <input
                       value={postTest.total_marks ?? ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Duration
+                    </label>
+                    <input
+                      value={
+                        postTest.duration_minutes
+                          ? postTest.duration_minutes + " mins"
+                          : ""
+                      }
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Test Slot
+                    </label>
+                    <input
+                      value={
+                        postTest.slot_start && postTest.slot_end
+                          ? String(postTest.slot_start).slice(0, 5) +
+                            " - " +
+                            String(postTest.slot_end).slice(0, 5)
+                          : "-"
+                      }
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Portion
+                    </label>
+                    <input
+                      value={postTest.portion || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Chapter
+                    </label>
+                    <input
+                      value={postTest.chapter || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Application Open Date
+                    </label>
+                    <input
+                      value={formatDate(postTest.application_open_date)}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Application Close Date
+                    </label>
+                    <input
+                      value={formatDate(postTest.application_close_date)}
                       readOnly
                       className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
                     />
