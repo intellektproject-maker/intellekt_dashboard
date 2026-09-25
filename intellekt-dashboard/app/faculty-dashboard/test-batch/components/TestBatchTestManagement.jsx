@@ -234,13 +234,26 @@ export default function TestBatchTestManagement() {
 
   async function loadPostTestTests() {
     try {
-      const data = await api(
-        "/test-batch/mark-entry/tests?adminId=" +
-          encodeURIComponent(adminId)
-      );
-      setPostTestTests(data.tests || []);
+      const [completedData, returnedData] = await Promise.all([
+        api(
+          "/test-batch/tests?adminId=" +
+            encodeURIComponent(adminId) +
+            "&status=Completed"
+        ),
+        api(
+          "/test-batch/tests?adminId=" +
+            encodeURIComponent(adminId) +
+            "&status=Returned"
+        ),
+      ]);
+
+      const combined = [...(completedData.tests || []), ...(returnedData.tests || [])]
+        .sort((a, b) => new Date(b.writing_date) - new Date(a.writing_date));
+
+      setPostTestTests(combined);
     } catch (err) {
-      setError(err.message);
+      setPostTestTests([]);
+      setError("Failed to fetch completed/returned Test Batch tests");
     }
   }
 
@@ -1207,41 +1220,107 @@ export default function TestBatchTestManagement() {
             </div>
           ) : (
             <form onSubmit={savePostTest} className="space-y-6">
-              <div className="bg-gray-50 border rounded-xl p-5">
-                <h4 className="font-bold text-blue-800 mb-4">
-                  Test Details
-                </h4>
-                <p className="text-sm text-gray-500 mb-4">
-                  These details are read-only because this test has already
-                  been conducted and returned. The layout follows the regular
-                  student Post Test structure while keeping all data isolated
-                  to the selected Test Batch.
-                </p>
-
+              <div className="bg-white">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {[
-                    ["Test Code", postTest.test_code],
-                    ["Test Batch", postTest.test_series_name],
-                    ["Subject", postTest.subject_name],
-                    ["Test Date", formatDate(postTest.test_date)],
-                    ["Writing / Return Date", formatDate(postTest.writing_date)],
-                    ["Total Marks", postTest.total_marks],
-                    ["Status", postTest.status],
-                    ["Marks Entry Status", postTest.marks_entry_status],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <label className="block text-sm font-semibold text-blue-700 mb-2">
-                        {label}
-                      </label>
-                      <input
-                        value={value ?? "-"}
-                        readOnly
-                        className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
-                      />
-                    </div>
-                  ))}
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Test Code
+                    </label>
+                    <input
+                      value={postTest.test_code || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Test Batch / Series
+                    </label>
+                    <input
+                      value={postTest.test_series_name || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Subject
+                    </label>
+                    <input
+                      value={postTest.subject_name || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Test Date
+                    </label>
+                    <input
+                      value={formatDate(postTest.test_date)}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Writing / Return Date
+                    </label>
+                    <input
+                      value={formatDate(postTest.writing_date)}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Total Marks
+                    </label>
+                    <input
+                      value={postTest.total_marks ?? ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Test Status
+                    </label>
+                    <input
+                      value={postTest.status || ""}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-700 mb-2">
+                      Marks Status
+                    </label>
+                    <input
+                      value={postTest.marks_entry_status || "Pending"}
+                      readOnly
+                      className="border rounded-lg px-4 py-3 text-gray-700 bg-gray-100 w-full"
+                    />
+                  </div>
                 </div>
               </div>
+
+              <div className="border-t pt-6">
+                <h4 className="font-bold text-blue-800 mb-4">
+                  Post Test Details
+                </h4>
+                <p className="text-sm text-gray-500 mb-5">
+                  Configure the same kind of test-level controls used by the
+                  regular Post Test workflow, adapted for a completed Test
+                  Batch test. Existing test details remain read-only.
+                </p>
 
               <div>
                 <h4 className="font-bold text-blue-800 mb-3">Mark Entry Options</h4>
