@@ -203,6 +203,12 @@ BEGIN
   END IF;
 END $$;
 
+-- Test Batch tests do not have a fixed test date or slot at scheduling time.
+-- Students choose their writing date and slot during registration.
+ALTER TABLE test_batch_tests
+  ALTER COLUMN test_date DROP NOT NULL,
+  ALTER COLUMN writing_date DROP NOT NULL;
+
 -- Test Batch registrations.
 -- Students can register only during application_open_date through
 -- application_close_date for a scheduled/active Test Batch test.
