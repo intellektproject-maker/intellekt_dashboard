@@ -558,27 +558,323 @@ function MarksSection({ adminId }) {
 }
 
 function AttendanceSection({ adminId }) {
-  const [series,setSeries]=useState([]),[rows,setRows]=useState([]),[report,setReport]=useState([]);
+  const [series,setSeries]=useState([]);
+  const [rows,setRows]=useState([]);
+  const [report,setReport]=useState([]);
   const today=new Date().toISOString().slice(0,10);
-  const [seriesFilter,setSeriesFilter]=useState(""),[search,setSearch]=useState(""),[date,setDate]=useState(today),[from,setFrom]=useState(today),[to,setTo]=useState(today);
-  const [mode,setMode]=useState("daily"),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState("");
-  async function loadSeries(){const d=await api("/test-batch/series?adminId="+encodeURIComponent(adminId));setSeries(d.series||[]);}
-  async function loadRows(){setLoading(true);try{const p=new URLSearchParams({adminId,date});if(seriesFilter)p.set("seriesId",seriesFilter);if(search.trim())p.set("search",search.trim());const d=await api("/test-batch/attendance?"+p.toString());setRows(d.attendance||[]);setError("")}catch(e){setError(e.message)}finally{setLoading(false)}}
-  async function loadReport(){try{const p=new URLSearchParams({adminId,from,to});if(seriesFilter)p.set("seriesId",seriesFilter);if(search.trim())p.set("search",search.trim());const d=await api("/test-batch/attendance-report?"+p.toString());setReport(d.attendance||[])}catch(e){setError(e.message)}}
-  useEffect(()=>{loadSeries().catch(e=>setError(e.message))},[adminId]);
-  useEffect(()=>{const t=setTimeout(loadRows,100);return()=>clearTimeout(t)},[adminId,date,seriesFilter,search]);
-  useEffect(()=>{const t=setTimeout(loadReport,150);return()=>clearTimeout(t)},[adminId,from,to,seriesFilter,search]);
-  function period(next){const end=new Date(date+"T00:00:00"),start=new Date(end);if(next==="weekly")start.setDate(end.getDate()-6);if(next==="monthly")start.setDate(1);const iso=d=>d.toISOString().slice(0,10);setMode(next);setFrom(iso(start));setTo(iso(end));}
-  function setStatus(roll,status){setRows(prev=>prev.map(r=>r.roll_no===roll?{...r,status}:r))}
-  async function saveAll(){const records=rows.filter(r=>r.status==="Present"||r.status==="Absent").map(r=>({roll_no:r.roll_no,status:r.status}));if(!records.length){setError("Select Present or Absent for at least one student.");return}setSaving(true);try{await api("/test-batch/attendance",{method:"POST",body:JSON.stringify({adminId,attendanceDate:date,records})});await Promise.all([loadRows(),loadReport()])}catch(e){setError(e.message)}finally{setSaving(false)}}
-  async function editStatus(id,status){if(!status)return;try{await api("/test-batch/attendance/"+id,{method:"PUT",body:JSON.stringify({adminId,status})});await Promise.all([loadRows(),loadReport()])}catch(e){setError(e.message)}}
-  const stats=useMemo(()=>{const p=report.filter(r=>r.status==="Present").length,a=report.filter(r=>r.status==="Absent").length,t=p+a;return{p,a,t,percentage:t?p/t*100:0}},[report]);
+  const [seriesFilter,setSeriesFilter]=useState("");
+  const [search,setSearch]=useState("");
+  const [date,setDate]=useState(today);
+  const [from,setFrom]=useState(today);
+  const [to,setTo]=useState(today);
+  const [mode,setMode]=useState("daily");
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+
+  async function loadSeries(){
+    const d=await api("/test-batch/series?adminId="+encodeURIComponent(adminId));
+    setSeries(d.series||[]);
+  }
+
+  async function loadRows(){
+    setLoading(true);
+    try{
+      const p=new URLSearchParams({adminId,date});
+      if(seriesFilter)p.set("seriesId",seriesFilter);
+      if(search.trim())p.set("search",search.trim());
+
+      const d=await api("/test-batch/attendance?"+p.toString());
+      setRows(d.attendance||[]);
+      setError("");
+    }catch(e){
+      setError(e.message);
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  async function loadReport(){
+    try{
+      const p=new URLSearchParams({adminId,from,to});
+      if(seriesFilter)p.set("seriesId",seriesFilter);
+      if(search.trim())p.set("search",search.trim());
+
+      const d=await api("/test-batch/attendance-report?"+p.toString());
+      setReport(d.attendance||[]);
+    }catch(e){
+      setError(e.message);
+    }
+  }
+
+  useEffect(()=>{
+    loadSeries().catch(e=>setError(e.message));
+  },[adminId]);
+
+  useEffect(()=>{
+    const t=setTimeout(loadRows,100);
+    return()=>clearTimeout(t);
+  },[adminId,date,seriesFilter,search]);
+
+  useEffect(()=>{
+    const t=setTimeout(loadReport,150);
+    return()=>clearTimeout(t);
+  },[adminId,from,to,seriesFilter,search]);
+
+  function period(next){
+    const end=new Date(date+"T00:00:00");
+    const start=new Date(end);
+    if(next==="weekly")start.setDate(end.getDate()-6);
+    if(next==="monthly")start.setDate(1);
+    const iso=d=>d.toISOString().slice(0,10);
+    setMode(next);
+    setFrom(iso(start));
+    setTo(iso(end));
+  }
+
+  function setStatus(roll,status){
+    setRows(prev=>prev.map(r=>r.roll_no===roll?{...r,status}:r));
+  }
+
+  async function saveAll(){
+    const records=rows
+      .filter(r=>r.status==="Present"||r.status==="Absent")
+      .map(r=>({roll_no:r.roll_no,status:r.status}));
+
+    if(!records.length){
+      setError("Select Present or Absent for at least one eligible student.");
+      return;
+    }
+
+    setSaving(true);
+    try{
+      await api("/test-batch/attendance",{
+        method:"POST",
+        body:JSON.stringify({adminId,attendanceDate:date,records})
+      });
+      await Promise.all([loadRows(),loadReport()]);
+      setError("");
+    }catch(e){
+      setError(e.message);
+    }finally{
+      setSaving(false);
+    }
+  }
+
+  async function editStatus(id,status){
+    if(!status)return;
+    try{
+      await api("/test-batch/attendance/"+id,{
+        method:"PUT",
+        body:JSON.stringify({adminId,status})
+      });
+      await Promise.all([loadRows(),loadReport()]);
+    }catch(e){
+      setError(e.message);
+    }
+  }
+
+  const stats=useMemo(()=>{
+    const p=report.filter(r=>r.status==="Present").length;
+    const a=report.filter(r=>r.status==="Absent").length;
+    const t=p+a;
+    return{p,a,t,percentage:t?p/t*100:0};
+  },[report]);
 
   return <div className="mt-8 space-y-5">
-    <div className="border-t-4 border-blue-700 pt-6"><Header title="Test Batch Attendance Management" description="Attendance is completely separate from Regular Student attendance." /></div>
-    <Card><div className="flex flex-wrap gap-3 items-center"><label className="text-sm font-medium">Marking date</label><input type="date" className="border rounded-lg px-3 py-2" value={date} onChange={e=>setDate(e.target.value)}/><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input className="border rounded-lg px-3 py-2 flex-1 min-w-[220px]" placeholder="Search roll number or name" value={search} onChange={e=>setSearch(e.target.value)}/><button onClick={saveAll} disabled={saving||loading} className="bg-blue-700 text-white px-5 py-2 rounded-lg disabled:opacity-50">{saving?"Saving...":"Save Attendance"}</button></div><ErrorText error={error}/></Card>
-    <Card>{loading?<Loading/>:rows.length===0?<p className="text-gray-500">No Test Batch students match the filters.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Roll No</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Series</th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">Edit</th></tr></thead><tbody>{rows.map((r,i)=><tr key={r.roll_no} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}><td className="p-3 font-semibold">{r.roll_no}</td><td className="p-3">{r.name}</td><td className="p-3">{r.test_series_name}</td><td className="p-3">{formatDate(r.attendance_date||date)}</td><td className="p-3"><select className="border rounded px-3 py-2" value={r.status||""} onChange={e=>setStatus(r.roll_no,e.target.value)}><option value="">Not Marked</option><option value="Present">Present</option><option value="Absent">Absent</option></select></td><td className="p-3">{r.id?<select className="border rounded px-3 py-1" value="" onChange={e=>editStatus(r.id,e.target.value)}><option value="">Edit Status</option><option value="Present">Present</option><option value="Absent">Absent</option></select>:"-"}</td></tr>)}</tbody></table></div>}</Card>
-    <Card><Header title="Attendance Reports" description="Daily, weekly, monthly and custom date-range reports."/><div className="flex flex-wrap gap-2 mb-4"><button onClick={()=>{setMode("daily");setFrom(date);setTo(date)}} className={mode==="daily"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}>Daily</button><button onClick={()=>period("weekly")} className={mode==="weekly"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}>Weekly</button><button onClick={()=>period("monthly")} className={mode==="monthly"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}>Monthly</button><input type="date" className="border rounded-lg px-3 py-2" value={from} onChange={e=>{setMode("custom");setFrom(e.target.value)}}/><input type="date" className="border rounded-lg px-3 py-2" value={to} onChange={e=>{setMode("custom");setTo(e.target.value)}}/></div><div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-5"><div className="bg-blue-50 rounded-xl p-4"><p className="text-sm text-gray-500">Records</p><p className="text-xl font-bold">{stats.t}</p></div><div className="bg-green-50 rounded-xl p-4"><p className="text-sm text-gray-500">Present</p><p className="text-xl font-bold text-green-700">{stats.p}</p></div><div className="bg-red-50 rounded-xl p-4"><p className="text-sm text-gray-500">Absent</p><p className="text-xl font-bold text-red-700">{stats.a}</p></div><div className="bg-gray-50 rounded-xl p-4"><p className="text-sm text-gray-500">Attendance %</p><p className="text-xl font-bold">{percent(stats.percentage)}%</p></div></div><div className="overflow-x-auto"><table className="w-full min-w-[900px]"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Roll No</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Series</th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">Marked By</th><th className="p-3 text-left">Edited By</th></tr></thead><tbody>{report.map((r,i)=><tr key={r.id} className={i%2===0?"bg-gray-50 border-b":"border-b"}><td className="p-3">{r.roll_no}</td><td className="p-3">{r.name}</td><td className="p-3">{r.test_series_name}</td><td className="p-3">{formatDate(r.attendance_date)}</td><td className="p-3">{r.status}</td><td className="p-3">{r.marked_by||"-"}</td><td className="p-3">{r.edited_by||"-"}</td></tr>)}</tbody></table></div></Card>
+    <div className="border-t-4 border-blue-700 pt-6">
+      <Header
+        title="Test Batch Attendance Management"
+        description="Only Test Batch students who have a registered test application for the selected date are included. Regular Student attendance remains separate."
+      />
+    </div>
+
+    <Card>
+      <div className="flex flex-wrap gap-3 items-center">
+        <label className="text-sm font-medium">Marking date</label>
+        <input
+          type="date"
+          className="border rounded-lg px-3 py-2"
+          value={date}
+          max={today}
+          onChange={e=>setDate(e.target.value)}
+        />
+        <SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/>
+        <input
+          className="border rounded-lg px-3 py-2 flex-1 min-w-[220px]"
+          placeholder="Search roll number or name"
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+        />
+        <button
+          onClick={saveAll}
+          disabled={saving||loading||rows.length===0}
+          className="bg-blue-700 text-white px-5 py-2 rounded-lg disabled:opacity-50"
+        >
+          {saving?"Saving...":"Save Attendance"}
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-500 mt-3">
+        Students without a test registration/application on {formatDate(date)} are completely excluded from this list.
+      </p>
+      <ErrorText error={error}/>
+    </Card>
+
+    <Card>
+      {loading ? (
+        <Loading />
+      ) : rows.length===0 ? (
+        <p className="text-gray-500">
+          No Test Batch students have a registered test application for this date.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] border-collapse">
+            <thead>
+              <tr className="bg-blue-700 text-white">
+                <th className="p-3 text-left">Roll No</th>
+                <th className="p-3 text-left">Name</th>
+                <th className="p-3 text-left">Series</th>
+                <th className="p-3 text-left">Date</th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-left">Edit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r,i)=>(
+                <tr key={r.roll_no} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}>
+                  <td className="p-3 font-semibold">{r.roll_no}</td>
+                  <td className="p-3">{r.name}</td>
+                  <td className="p-3">{r.test_series_name}</td>
+                  <td className="p-3">{formatDate(r.attendance_date||date)}</td>
+                  <td className="p-3">
+                    <select
+                      className="border rounded px-3 py-2"
+                      value={r.status||""}
+                      onChange={e=>setStatus(r.roll_no,e.target.value)}
+                    >
+                      <option value="">Not Marked</option>
+                      <option value="Present">Present</option>
+                      <option value="Absent">Absent</option>
+                    </select>
+                  </td>
+                  <td className="p-3">
+                    {r.id ? (
+                      <select
+                        className="border rounded px-3 py-1"
+                        value=""
+                        onChange={e=>editStatus(r.id,e.target.value)}
+                      >
+                        <option value="">Edit Status</option>
+                        <option value="Present">Present</option>
+                        <option value="Absent">Absent</option>
+                      </select>
+                    ) : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+
+    <Card>
+      <Header
+        title="Attendance Reports"
+        description="Reports include only Test Batch attendance records whose attendance date has a matching registered test application."
+      />
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button
+          onClick={()=>{setMode("daily");setFrom(date);setTo(date)}}
+          className={mode==="daily"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}
+        >
+          Daily
+        </button>
+        <button
+          onClick={()=>period("weekly")}
+          className={mode==="weekly"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}
+        >
+          Weekly
+        </button>
+        <button
+          onClick={()=>period("monthly")}
+          className={mode==="monthly"?"bg-blue-700 text-white px-4 py-2 rounded-lg":"bg-gray-100 px-4 py-2 rounded-lg"}
+        >
+          Monthly
+        </button>
+        <input
+          type="date"
+          className="border rounded-lg px-3 py-2"
+          value={from}
+          max={today}
+          onChange={e=>{setMode("custom");setFrom(e.target.value)}}
+        />
+        <input
+          type="date"
+          className="border rounded-lg px-3 py-2"
+          value={to}
+          max={today}
+          onChange={e=>{setMode("custom");setTo(e.target.value)}}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-5">
+        <div className="bg-blue-50 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Records</p>
+          <p className="text-xl font-bold">{stats.t}</p>
+        </div>
+        <div className="bg-green-50 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Present</p>
+          <p className="text-xl font-bold text-green-700">{stats.p}</p>
+        </div>
+        <div className="bg-red-50 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Absent</p>
+          <p className="text-xl font-bold text-red-700">{stats.a}</p>
+        </div>
+        <div className="bg-gray-50 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Attendance %</p>
+          <p className="text-xl font-bold">{percent(stats.percentage)}%</p>
+        </div>
+      </div>
+
+      {report.length===0 ? (
+        <p className="text-gray-500">
+          No eligible Test Batch attendance records found for the selected date range.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="bg-blue-700 text-white">
+                <th className="p-3 text-left">Roll No</th>
+                <th className="p-3 text-left">Name</th>
+                <th className="p-3 text-left">Series</th>
+                <th className="p-3 text-left">Date</th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-left">Marked By</th>
+                <th className="p-3 text-left">Edited By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.map((r,i)=>(
+                <tr key={r.id} className={i%2===0?"bg-gray-50 border-b":"border-b"}>
+                  <td className="p-3">{r.roll_no}</td>
+                  <td className="p-3">{r.name}</td>
+                  <td className="p-3">{r.test_series_name}</td>
+                  <td className="p-3">{formatDate(r.attendance_date)}</td>
+                  <td className="p-3">{r.status}</td>
+                  <td className="p-3">{r.marked_by||"-"}</td>
+                  <td className="p-3">{r.edited_by||"-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   </div>;
 }
 
