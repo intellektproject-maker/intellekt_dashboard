@@ -203,6 +203,29 @@ BEGIN
   END IF;
 END $$;
 
+-- Test Batch registrations.
+-- Students can register only during application_open_date through
+-- application_close_date for a scheduled/active Test Batch test.
+CREATE TABLE IF NOT EXISTS test_batch_registrations (
+  id BIGSERIAL PRIMARY KEY,
+  test_code VARCHAR(100) NOT NULL REFERENCES test_batch_tests(test_code) ON DELETE CASCADE,
+  roll_no VARCHAR(50) NOT NULL REFERENCES test_batch_students(roll_no) ON DELETE CASCADE,
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  writing_date DATE,
+  slot_start TIME,
+  slot_end TIME,
+  status VARCHAR(20) NOT NULL DEFAULT 'Registered'
+    CHECK (status IN ('Registered','Cancelled')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT uq_test_batch_registration UNIQUE (test_code, roll_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_test_batch_registrations_roll
+  ON test_batch_registrations(roll_no);
+
+CREATE INDEX IF NOT EXISTS idx_test_batch_registrations_test
+  ON test_batch_registrations(test_code);
+
 
 -- Post-test configuration for completed/returned Test Batch tests.
 ALTER TABLE test_batch_tests
