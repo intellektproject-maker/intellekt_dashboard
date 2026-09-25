@@ -5381,6 +5381,11 @@ async function validateTestBatchSeries(seriesId) {
   return result.rows[0] || null;
 }
 
+function validateTestBatchSubjects(subjects) {
+  const value = String(subjects || '').trim();
+  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+}
+
 function validateTestBatchMarks(totalMarks, obtained) {
   const total = Number(totalMarks);
   const raw = String(obtained ?? '').trim().toUpperCase();
@@ -5441,7 +5446,7 @@ app.get('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,' +
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
       's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
       'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
       where + ' ORDER BY s.roll_no ASC',
@@ -5461,12 +5466,15 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
   try {
     const {
       name, class: className, board, mode_of_education,
-      phone, email, school_name, password, test_series_id
+      phone, email, school_name, password, test_series_id, subjects
     } = req.body || {};
 
-    if (!name || !test_series_id) {
-      return res.status(400).json({ error:'Student name and test series are required' });
+    if (!name || !className || !test_series_id || !subjects) {
+      return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
     }
+
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
 
     if (!await validateTestBatchSeries(test_series_id)) {
       return res.status(400).json({ error:'Invalid Test Series' });
@@ -5481,8 +5489,8 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
 
     await client.query(
       'INSERT INTO test_batch_students ' +
-      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,password,must_reset_password,test_series_id,created_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,$10,$11)',
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12)',
       [
         rollNo,
         String(name).trim(),
@@ -5492,6 +5500,7 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
         phone ? String(phone).trim() : null,
         email ? String(email).trim() : null,
         school_name ? String(school_name).trim() : null,
+        validSubjects,
         finalPassword,
         Number(test_series_id),
         req.testBatchAdminId
@@ -5518,10 +5527,12 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req, res)
     const oldRoll = String(req.params.roll_no).toUpperCase().trim();
     const {
       name, class: className, board, mode_of_education,
-      phone, email, school_name, password, test_series_id
+      phone, email, school_name, password, test_series_id, subjects
     } = req.body || {};
 
-    if (!name || !test_series_id) return res.status(400).json({ error:'Student name and test series are required' });
+    if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
     if (!await validateTestBatchSeries(test_series_id)) return res.status(400).json({ error:'Invalid Test Series' });
 
     await client.query('BEGIN');
@@ -5544,19 +5555,20 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req, res)
       phone ? String(phone).trim() : null,
       email ? String(email).trim() : null,
       school_name ? String(school_name).trim() : null,
+      validSubjects,
       Number(test_series_id)
     ];
 
     let query =
       'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
-      'phone=$5,email=$6,school_name=$7,test_series_id=$8,updated_at=CURRENT_TIMESTAMP';
+      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,updated_at=CURRENT_TIMESTAMP';
 
     if (password && String(password).trim()) {
       values.push(String(password).trim(), oldRoll);
-      query += ',password=$9,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$10 RETURNING roll_no';
+      query += ',password=$10,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$11 RETURNING roll_no';
     } else {
       values.push(oldRoll);
-      query += ' WHERE UPPER(TRIM(roll_no))=$9 RETURNING roll_no';
+      query += ' WHERE UPPER(TRIM(roll_no))=$10 RETURNING roll_no';
     }
 
     const result = await client.query(query, values);
@@ -5990,7 +6002,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
     if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
 
     const studentResult=await pool.query(
-      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,' +
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
       's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
       'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
       [roll]
