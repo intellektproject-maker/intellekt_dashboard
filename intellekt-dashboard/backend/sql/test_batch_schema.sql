@@ -91,3 +91,33 @@ BEGIN
       ON DELETE SET NULL;
   END IF;
 END $$;
+
+
+-- Test Batch test management. Completely separate from the Regular Student tests table.
+CREATE TABLE IF NOT EXISTS test_batch_tests (
+  id BIGSERIAL PRIMARY KEY,
+  test_code VARCHAR(100) NOT NULL UNIQUE,
+  test_series_id SMALLINT NOT NULL REFERENCES test_series(id) ON DELETE RESTRICT,
+  subject_name VARCHAR(150) NOT NULL,
+  test_date DATE NOT NULL,
+  writing_date DATE NOT NULL,
+  slot_start TIME,
+  slot_end TIME,
+  duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+  total_marks NUMERIC(10,2) NOT NULL CHECK (total_marks > 0),
+  portion TEXT,
+  chapter TEXT,
+  application_open_date DATE,
+  application_close_date DATE,
+  status VARCHAR(20) NOT NULL DEFAULT 'Scheduled'
+    CHECK (status IN ('Draft','Scheduled','Active','Completed','Cancelled')),
+  created_by VARCHAR(50),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_test_batch_tests_created_by FOREIGN KEY (created_by)
+    REFERENCES faculty(faculty_id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_test_batch_tests_series ON test_batch_tests(test_series_id);
+CREATE INDEX IF NOT EXISTS idx_test_batch_tests_writing_date ON test_batch_tests(writing_date);
+CREATE INDEX IF NOT EXISTS idx_test_batch_tests_status ON test_batch_tests(status);
