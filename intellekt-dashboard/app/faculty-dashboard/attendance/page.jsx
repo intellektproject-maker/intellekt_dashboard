@@ -48,6 +48,21 @@ function AttendanceContent() {
             View, edit and download attendance report.
           </p>
         </div>
+        {/* Test Batch Attendance */}
+        <div
+          onClick={() =>
+            router.push("/faculty-dashboard/test-batch?section=attendance&id=" + facultyId)
+          }
+          className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 
+          hover:shadow-lg hover:scale-[1.02] transition duration-200 md:col-span-2"
+        >
+          <h2 className="text-lg font-semibold text-blue-700 mb-2">
+            Test Batch Attendance
+          </h2>
+          <p className="text-gray-600">
+            Mark and manage attendance only for Test Batch students who have a registered test application on the selected date.
+          </p>
+        </div>
       </div>
     </div>
   );
