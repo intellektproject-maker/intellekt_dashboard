@@ -5884,9 +5884,13 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
        FROM test_batch_tests t
        JOIN test_batch_students s
          ON s.test_series_id=t.test_series_id
+       JOIN test_batch_registrations r
+         ON r.test_code=t.test_code
+        AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+        AND r.status='Registered'
        JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
-        AND a.attendance_date=t.writing_date
+        AND a.attendance_date=r.writing_date
         AND a.status='Present'
        LEFT JOIN test_batch_marks m
          ON m.roll_no=s.roll_no
