@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS test_batch_students (
   class VARCHAR(50),
   board VARCHAR(50),
   mode_of_education VARCHAR(50),
+  subjects VARCHAR(20),
   phone VARCHAR(20),
   email VARCHAR(255),
   school_name VARCHAR(255),
@@ -56,6 +57,22 @@ CREATE TABLE IF NOT EXISTS test_batch_attendance (
   edited_at TIMESTAMPTZ,
   CONSTRAINT uq_test_batch_attendance UNIQUE (roll_no, attendance_date)
 );
+
+ALTER TABLE test_batch_students
+  ADD COLUMN IF NOT EXISTS subjects VARCHAR(20);
+
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_test_batch_students_subjects'
+  ) THEN
+    ALTER TABLE test_batch_students
+      ADD CONSTRAINT chk_test_batch_students_subjects
+      CHECK (subjects IS NULL OR subjects IN ('Mathematics', 'Physics', 'Both'));
+  END IF;
+END $;
 
 CREATE INDEX IF NOT EXISTS idx_test_batch_students_series ON test_batch_students(test_series_id);
 CREATE INDEX IF NOT EXISTS idx_test_batch_students_created ON test_batch_students(created_at DESC);
