@@ -74,7 +74,8 @@ function StudentsSection({ adminId }) {
     email: "",
     school_name: "",
     password: "",
-    test_series_id: ""
+    test_series_id: "",
+    subjects: ""
   });
 
   async function loadSeries() {
@@ -130,7 +131,8 @@ function StudentsSection({ adminId }) {
       email: "",
       school_name: "",
       password: "",
-      test_series_id: series[0] ? String(series[0].id) : ""
+      test_series_id: series[0] ? String(series[0].id) : "",
+      subjects: ""
     };
   }
 
@@ -159,7 +161,8 @@ function StudentsSection({ adminId }) {
       email: s.email || "",
       school_name: s.school_name || "",
       password: "",
-      test_series_id: String(s.test_series_id || "")
+      test_series_id: String(s.test_series_id || ""),
+      subjects: s.subjects || ""
     });
     setShowForm(true);
     setError("");
@@ -173,6 +176,8 @@ function StudentsSection({ adminId }) {
 
     try {
       if (!form.name.trim()) throw new Error("Student name is required");
+      if (!form.class) throw new Error("Select a class");
+      if (!form.subjects) throw new Error("Select at least one subject");
       if (!form.test_series_id) throw new Error("Select a test series");
       if (form.phone && !/^\d{10}$/.test(form.phone.trim())) {
         throw new Error("Phone number must contain exactly 10 digits");
@@ -382,14 +387,17 @@ function StudentsSection({ adminId }) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class *</label>
+                <select
                   value={form.class}
                   onChange={(e) => setForm({ ...form, class: e.target.value })}
-                  placeholder="11 or 12"
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
-                />
+                  required
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                >
+                  <option value="">Select class</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                </select>
               </div>
 
               <div>
@@ -464,6 +472,33 @@ function StudentsSection({ adminId }) {
                   placeholder="Enter school name"
                   className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enrolled Subjects *</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    ["Mathematics", "Mathematics"],
+                    ["Physics", "Physics"],
+                    ["Both", "Both"]
+                  ].map(([value, label]) => (
+                    <label
+                      key={value}
+                      className="border rounded-xl px-4 py-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="radio"
+                        name="test-batch-subjects"
+                        value={value}
+                        checked={form.subjects === value}
+                        onChange={(e) => setForm({ ...form, subjects: e.target.value })}
+                        required
+                        className="h-4 w-4"
+                      />
+                      <span className="text-base text-gray-700">{label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="md:col-span-2">
