@@ -115,6 +115,19 @@ CREATE TABLE IF NOT EXISTS test_batch_tests (
     CHECK (marks_entry_status IN ('Pending','Draft','Finalized')),
   marks_finalized_at TIMESTAMPTZ,
   marks_finalized_by VARCHAR(50),
+  manual_mark_entry_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bulk_mark_upload_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  passing_percentage NUMERIC(5,2) NOT NULL DEFAULT 40 CHECK (passing_percentage >= 0 AND passing_percentage <= 100),
+  grade_boundaries JSONB NOT NULL DEFAULT '{"A":90,"B":75,"C":60,"D":40}'::jsonb,
+  result_publication_mode VARCHAR(20) NOT NULL DEFAULT 'approval'
+    CHECK (result_publication_mode IN ('immediate','approval')),
+  show_detailed_breakdown BOOLEAN NOT NULL DEFAULT FALSE,
+  reevaluation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  lock_marks_after_final_submission BOOLEAN NOT NULL DEFAULT TRUE,
+  post_test_export_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  result_publication_status VARCHAR(20) NOT NULL DEFAULT 'Pending'
+    CHECK (result_publication_status IN ('Pending','Published')),
+  result_published_at TIMESTAMPTZ,
   created_by VARCHAR(50),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -187,5 +200,32 @@ BEGIN
       ADD CONSTRAINT fk_test_batch_tests_marks_finalized_by
       FOREIGN KEY (marks_finalized_by) REFERENCES faculty(faculty_id)
       ON DELETE SET NULL;
+  END IF;
+END $$;
+
+
+-- Post-test configuration for completed/returned Test Batch tests.
+ALTER TABLE test_batch_tests
+  ADD COLUMN IF NOT EXISTS manual_mark_entry_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS bulk_mark_upload_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS passing_percentage NUMERIC(5,2) NOT NULL DEFAULT 40,
+  ADD COLUMN IF NOT EXISTS grade_boundaries JSONB NOT NULL DEFAULT '{"A":90,"B":75,"C":60,"D":40}'::jsonb,
+  ADD COLUMN IF NOT EXISTS result_publication_mode VARCHAR(20) NOT NULL DEFAULT 'approval',
+  ADD COLUMN IF NOT EXISTS show_detailed_breakdown BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS reevaluation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS lock_marks_after_final_submission BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS post_test_export_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS result_publication_status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+  ADD COLUMN IF NOT EXISTS result_published_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='chk_test_batch_posttest_publication_mode') THEN
+    ALTER TABLE test_batch_tests ADD CONSTRAINT chk_test_batch_posttest_publication_mode
+      CHECK (result_publication_mode IN ('immediate','approval'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='chk_test_batch_posttest_publication_status') THEN
+    ALTER TABLE test_batch_tests ADD CONSTRAINT chk_test_batch_posttest_publication_status
+      CHECK (result_publication_status IN ('Pending','Published'));
   END IF;
 END $$;
