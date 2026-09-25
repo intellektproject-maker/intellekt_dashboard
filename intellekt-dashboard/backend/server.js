@@ -5504,7 +5504,7 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
          ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
        WHERE t.test_series_id=$2
          AND t.status IN ('Scheduled','Active')
-       ORDER BY t.test_date ASC,t.test_code ASC`,
+       ORDER BY t.application_open_date ASC,t.test_code ASC`,
       [rollNo, student.rows[0].test_series_id]
     );
     res.json({tests:result.rows});
@@ -5571,12 +5571,37 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
       return res.status(400).json({error:'Selected test date must be within the registration window'});
     }
 
+    const durationMinutes = Number(test.duration_minutes);
+    const slotStartMinutes = timeStringToMinutes(selectedSlotStart);
+    const slotEndMinutes = timeStringToMinutes(selectedSlotEnd);
+
+    if (
+      !Number.isFinite(slotStartMinutes) ||
+      !Number.isFinite(slotEndMinutes) ||
+      slotEndMinutes <= slotStartMinutes ||
+      slotEndMinutes - slotStartMinutes !== durationMinutes
+    ) {
+      return res.status(400).json({error:'Selected slot does not match the test duration'});
+    }
+
+    const fixedSlots = getFixedSlots(durationMinutes);
+    if (fixedSlots.length > 0 && !fixedSlots.some(
+      slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
+    )) {
+      return res.status(400).json({error:'Invalid Test Batch slot selected'});
+    }
+
     const registered = await pool.query(
       `INSERT INTO test_batch_registrations
        (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
        VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
        ON CONFLICT(test_code,roll_no)
-       DO UPDATE SET status='Registered',updated_at=CURRENT_TIMESTAMP
+       DO UPDATE SET
+         writing_date=EXCLUDED.writing_date,
+         slot_start=EXCLUDED.slot_start,
+         slot_end=EXCLUDED.slot_end,
+         status='Registered',
+         updated_at=CURRENT_TIMESTAMP
        RETURNING *`,
       [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
     );
@@ -5920,7 +5945,7 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
     }
 
     const testResult = await client.query(
-      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,marks_entry_status
        FROM test_batch_tests
        WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
        LIMIT 1`,
@@ -5965,14 +5990,18 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
       const eligible = await client.query(
         `SELECT s.roll_no
          FROM test_batch_students s
+         JOIN test_batch_registrations r
+           ON r.roll_no=s.roll_no
+          AND UPPER(TRIM(r.test_code))=UPPER(TRIM($2))
+          AND r.status='Registered'
          JOIN test_batch_attendance a
            ON a.roll_no=s.roll_no
-          AND a.attendance_date=$2
+          AND a.attendance_date=r.writing_date
           AND a.status='Present'
          WHERE s.roll_no=$1
            AND s.test_series_id=$3
          LIMIT 1`,
-        [rollNo, test.writing_date, test.test_series_id]
+        [rollNo, code, test.test_series_id]
       );
 
       if (eligible.rows.length === 0) {
