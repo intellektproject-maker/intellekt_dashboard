@@ -240,6 +240,10 @@ export default function TestBatchTestManagement() {
     if (!form.application_open_date) return setError("Select Apply for Test open date.");
     if (!form.application_close_date) return setError("Select Apply for Test close date.");
 
+    if (form.application_close_date < form.application_open_date) {
+      return setError("Apply for Test close date cannot be before the open date.");
+    }
+
     if (form.application_close_date > form.test_date) {
       return setError("Apply for Test close date must be on or before the test date.");
     }
@@ -966,10 +970,10 @@ export default function TestBatchTestManagement() {
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Post Test
+                Test Batch – Post Test / Schedule
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Create or update a scheduled test exclusively for Test Batch students.
+                Schedule or update a Test Batch test. Students can register only between the configured application open and close dates.
               </p>
             </div>
             <button
@@ -1479,18 +1483,10 @@ export default function TestBatchTestManagement() {
                       <td className="p-3">{test.marks_entry_status}</td>
                       <td className="p-3 flex gap-2">
                         <button
-                          onClick={() => {
-                            if (["Completed", "Returned"].includes(test.status)) {
-                              setSelectedPostTest(test.test_code);
-                              setSection("post-test");
-                              loadPostTest(test.test_code);
-                            } else {
-                              window.alert("Post Test settings are available only after the test is Completed or Returned.");
-                            }
-                          }}
+                          onClick={() => openPostTestScheduler(test)}
                           className="bg-yellow-500 text-white px-3 py-1 rounded"
                         >
-                          Edit
+                          Edit Schedule
                         </button>
                         <button
                           onClick={() => deleteTest(test)}
