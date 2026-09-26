@@ -887,7 +887,7 @@ export default function TestBatchTestManagement() {
           </h3>
           <p className="text-gray-600">
             Select a completed or returned test and enter marks for students
-            who appeared.
+            who appeared. Set the test status to Completed or Returned after the test is conducted.
           </p>
         </button>
 
@@ -915,7 +915,7 @@ export default function TestBatchTestManagement() {
             Test Batch – Post Test
           </h3>
           <p className="text-gray-600">
-            Schedule a Test Batch test with the test date, batch, subject, marks, portion, duration, slot and application dates.
+            Schedule a Test Batch test with the batch, subject, marks, portion, duration and application dates. Students choose their test date and slot during registration.
           </p>
         </button>
 
@@ -1044,6 +1044,8 @@ export default function TestBatchTestManagement() {
                   <option value="Draft">Draft</option>
                   <option value="Scheduled">Scheduled</option>
                   <option value="Active">Active</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Returned">Returned</option>
                   <option value="Cancelled">Cancelled</option>
                 </select>
               </label>
