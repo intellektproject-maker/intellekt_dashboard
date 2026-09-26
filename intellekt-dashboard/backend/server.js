@@ -5840,7 +5840,7 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) 
   try {
     const { seriesId, search } = req.query;
     const values = [];
-    let where = "WHERE t.status IN ('Completed','Returned')";
+    let where = "WHERE t.status IN ('Draft','Scheduled','Active','Completed','Returned')";
 
     if (seriesId) {
       values.push(Number(seriesId));
@@ -5853,20 +5853,28 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) 
     }
 
     const result = await pool.query(
-      `SELECT t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
-      t.test_date,t.writing_date,t.slot_start,t.slot_end,t.total_marks,t.status,
-      t.marks_entry_status,t.marks_finalized_at
-      FROM test_batch_tests t
-      JOIN test_series s ON s.id=t.test_series_id
-      ` + where +
-      ` ORDER BY t.writing_date DESC,t.test_code ASC`,
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,
+         COUNT(r.id) FILTER (WHERE r.status='Registered')::int AS registered_students
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code
+       ${where}
+       GROUP BY
+         t.id,t.test_code,t.test_series_id,s.name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+       ORDER BY t.application_open_date DESC,t.test_code ASC`,
       values
     );
 
     res.json({ tests: result.rows });
   } catch (err) {
     console.error('GET /test-batch/mark-entry/tests error:', err);
-    res.status(500).json({ error: 'Failed to fetch completed Test Batch tests' });
+    res.status(500).json({ error: 'Failed to fetch Test Batch posted tests' });
   }
 });
 
@@ -5878,7 +5886,9 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
       `SELECT
          t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
          t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
-         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,t.manual_mark_entry_enabled,t.lock_marks_after_final_submission
+         t.duration_minutes,t.total_marks,t.status,t.marks_entry_status,
+         t.marks_finalized_at,t.manual_mark_entry_enabled,
+         t.lock_marks_after_final_submission
        FROM test_batch_tests t
        JOIN test_series s ON s.id=t.test_series_id
        WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
@@ -5892,9 +5902,9 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
 
     const test = testResult.rows[0];
 
-    if (!['Completed', 'Returned'].includes(test.status)) {
+    if (!['Draft','Scheduled','Active','Completed','Returned'].includes(test.status)) {
       return res.status(400).json({
-        error: 'Only completed or returned Test Batch tests are available for mark entry'
+        error: 'This Test Batch test is not available for mark entry'
       });
     }
 
@@ -5902,28 +5912,30 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
       `SELECT
          s.roll_no,
          s.name,
+         s.class,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.status AS registration_status,
          a.status AS attendance_status,
          COALESCE(m.marks_obtained, '') AS marks_obtained,
          COALESCE(m.comments, '') AS remarks,
          m.updated_at AS marks_updated_at
-       FROM test_batch_tests t
-       JOIN test_batch_students s
-         ON s.test_series_id=t.test_series_id
+       FROM test_batch_students s
        JOIN test_batch_registrations r
-         ON r.test_code=t.test_code
+         ON r.test_code=$1
         AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
-        AND r.status='Registered'
-       JOIN test_batch_attendance a
+       LEFT JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
         AND a.attendance_date=r.writing_date
-        AND a.status='Present'
        LEFT JOIN test_batch_marks m
          ON m.roll_no=s.roll_no
-        AND UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code))
-        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM(t.subject_name))
-       WHERE t.id=$1
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3
        ORDER BY s.roll_no ASC`,
-      [test.id]
+      [code, test.subject_name, test.test_series_id]
     );
 
     res.json({ test, students: studentsResult.rows });
