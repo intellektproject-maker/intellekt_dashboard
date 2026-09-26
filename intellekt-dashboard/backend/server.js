@@ -6132,9 +6132,9 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
 
     const test = testResult.rows[0];
 
-    if (!['Completed', 'Returned'].includes(test.status)) {
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
       return res.status(400).json({
-        error: 'Only completed or returned Test Batch tests can be finalized'
+        error: 'Only posted Test Batch tests can be finalized'
       });
     }
 
