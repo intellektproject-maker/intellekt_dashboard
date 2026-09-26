@@ -1149,7 +1149,7 @@ export default function TestBatchTestManagement() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
             <div className="lg:col-span-2">
               <label className="text-sm text-gray-600">
-                Select Completed / Returned Test
+                Select Posted Test
                 <select
                   className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
                   value={selectedMarkTest}
@@ -1161,7 +1161,7 @@ export default function TestBatchTestManagement() {
                   {eligibleTests.map((test) => (
                     <option key={test.test_code} value={test.test_code}>
                       {test.test_code} — {test.test_series_name} —{" "}
-                      {test.subject_name} — {formatDate(test.writing_date)}
+                      {test.subject_name} — {test.status} — {test.registered_students ?? 0} students
                     </option>
                   ))}
                 </select>
@@ -1178,8 +1178,8 @@ export default function TestBatchTestManagement() {
 
           {!selectedMarkTest ? (
             <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
-              Select a completed or returned Test Batch test to load the
-              students who appeared.
+              Select a posted Test Batch test to load the students registered for that
+              test.
             </div>
           ) : loadingMarks ? (
             <p className="text-gray-500">Loading students...</p>
@@ -1203,9 +1203,9 @@ export default function TestBatchTestManagement() {
                   <div className="font-semibold">{markTest.subject_name}</div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">Writing Date</div>
+                  <div className="text-xs text-gray-500">Registered Students</div>
                   <div className="font-semibold">
-                    {formatDate(markTest.writing_date)}
+                    {students.length}
                   </div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
@@ -1221,8 +1221,7 @@ export default function TestBatchTestManagement() {
                 </div>
               ) : students.length === 0 ? (
                 <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
-                  No Test Batch students are marked Present for this test.
-                  Mark attendance first for students who appeared.
+                  No Test Batch students are registered for this test yet.
                 </div>
               ) : (
                 <>
@@ -1231,6 +1230,7 @@ export default function TestBatchTestManagement() {
                       <thead className="bg-blue-700 text-white">
                         <tr>
                           <th className="p-3 text-left">Student Name</th>
+                          <th className="p-3 text-left">Class</th>
                           <th className="p-3 text-left">Roll No</th>
                           <th className="p-3 text-left">Marks Obtained</th>
                           <th className="p-3 text-left">Max Marks</th>
@@ -1254,6 +1254,9 @@ export default function TestBatchTestManagement() {
                             >
                               <td className="p-3 font-medium">
                                 {student.name}
+                              </td>
+                              <td className="p-3">
+                                {student.class || "-"}
                               </td>
                               <td className="p-3 font-semibold text-blue-700">
                                 {student.roll_no}
