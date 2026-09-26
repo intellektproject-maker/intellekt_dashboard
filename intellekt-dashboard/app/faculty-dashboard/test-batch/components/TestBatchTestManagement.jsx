@@ -973,7 +973,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           <p className="text-gray-600">
             View, search, edit and export Test Batch tests.
           </p>
-        </button>
+        </a>
 
         <a
           href={
