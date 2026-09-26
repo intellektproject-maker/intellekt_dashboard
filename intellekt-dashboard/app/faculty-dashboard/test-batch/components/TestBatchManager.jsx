@@ -1015,109 +1015,51 @@ function StudentDashboardSection({ rollNo }) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <DashboardActionCard
-          icon="▣"
-          title="Marks"
-          value={marks.length ? `${marks.length} Test${marks.length === 1 ? "" : "s"}` : "No marks"}
-          subtitle="View your marks"
-          onClick={() => document.getElementById("test-batch-marks")?.scrollIntoView({ behavior: "smooth" })}
-        />
-        <DashboardActionCard
-          icon="▤"
-          title="Test Registration"
-          value="Register"
-          subtitle="Register for available tests"
-          onClick={() => document.getElementById("test-registration")?.scrollIntoView({ behavior: "smooth" })}
-        />
-        <DashboardActionCard
-          icon="▦"
-          title="Test Schedule"
-          value="Open"
-          subtitle="View tests and schedule"
-          onClick={() => document.getElementById("test-schedule")?.scrollIntoView({ behavior: "smooth" })}
-        />
-      </div>
-
-      <div id="test-batch-marks">
-        <Card>
-          <Header
-            title="Marks"
-            description="Your Test Batch marks only. Regular Student marks are not shown here."
-          />
-
-        {marks.length === 0 ? (
-          <p className="text-gray-500">No marks available yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] border-collapse">
-              <thead>
-                <tr className="bg-blue-700 text-white">
-                  <th className="p-3 text-left">Test</th>
-                  <th className="p-3 text-left">Subject</th>
-                  <th className="p-3 text-left">Marks</th>
-                  <th className="p-3 text-left">Total</th>
-                  <th className="p-3 text-left">Percentage</th>
-                  <th className="p-3 text-left">Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {marks.map((m, i) => (
-                  <tr
-                    key={m.id}
-                    className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
-                  >
-                    <td className="p-3 font-semibold">{m.test_code}</td>
-                    <td className="p-3">{m.subject_name}</td>
-                    <td className="p-3">{m.marks_obtained}</td>
-                    <td className="p-3">{m.total_marks}</td>
-                    <td className="p-3">{percent(m.percentage)}%</td>
-                    <td className="p-3">{m.result_status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        </Card>
-      </div>
-
-      <div id="test-registration" className="border-t-4 border-blue-700 pt-6">
-        <Header
-          title="Test Registration"
-          description="Register only for tests available to your Test Batch and Test Series."
-        />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div id="test-batch-marks">
+          <Card className="h-full">
+            <Header
+              title="Marks"
+              description="Your Test Batch marks only."
+            />
+            {marks.length === 0 ? (
+              <p className="text-gray-500">No marks available yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[650px] border-collapse">
+                  <thead>
+                    <tr className="bg-blue-700 text-white">
+                      <th className="p-3 text-left">Test</th>
+                      <th className="p-3 text-left">Subject</th>
+                      <th className="p-3 text-left">Marks</th>
+                      <th className="p-3 text-left">Total</th>
+                      <th className="p-3 text-left">%</th>
+                      <th className="p-3 text-left">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marks.map((m, i) => (
+                      <tr
+                        key={m.id}
+                        className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
+                      >
+                        <td className="p-3 font-semibold">{m.test_code}</td>
+                        <td className="p-3">{m.subject_name}</td>
+                        <td className="p-3">{m.marks_obtained}</td>
+                        <td className="p-3">{m.total_marks}</td>
+                        <td className="p-3">{percent(m.percentage)}%</td>
+                        <td className="p-3">{m.result_status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
 
       <ErrorText error={error} />
-    </div>
-  );
-}
-
-function DashboardActionCard({ icon, title, value, subtitle, onClick }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-5 md:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-700 text-xl font-semibold">
-          {icon}
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <span>Open</span>
-          <span className="w-3 h-3 rounded-full bg-red-600" />
-        </div>
-      </div>
-
-      <h3 className="text-xl font-bold text-gray-900 mt-5">{title}</h3>
-      <p className="text-2xl font-bold text-blue-700 mt-2">{value}</p>
-      <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
-
-      <button
-        type="button"
-        onClick={onClick}
-        className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900"
-      >
-        Open
-      </button>
     </div>
   );
 }
