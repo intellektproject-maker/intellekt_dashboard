@@ -961,13 +961,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           </p>
         </Link>
 
-        <button
-          onClick={() => {
-            setSection("list");
-            setError("");
-            setMessage("");
-          }}
-          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
+        <Link
+          href={
+            "/faculty-dashboard/test-batch/test-list?id=" +
+            encodeURIComponent(adminId)
+          }
+          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
             Test Batch – Test List
@@ -977,9 +976,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           </p>
         </button>
 
-        <button
-          onClick={() => openPostTestScheduler()}
-          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
+        <Link
+          href={
+            "/faculty-dashboard/test-batch/post-test?id=" +
+            encodeURIComponent(adminId)
+          }
+          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
             Test Batch – Post Test
@@ -989,15 +991,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           </p>
         </button>
 
-        <button
-          onClick={() => {
-            setSection("registered-students");
-            setRegisteredStudentTest("");
-            setRegisteredStudents([]);
-            setError("");
-            setMessage("");
-          }}
-          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
+        <Link
+          href={
+            "/faculty-dashboard/test-batch/registered-students?id=" +
+            encodeURIComponent(adminId)
+          }
+          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
             Test Batch – Registered Students
