@@ -941,7 +941,8 @@ export default function TestBatchTestManagement() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      {!section && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <button
           type="button"
           onClick={() => {
@@ -959,8 +960,8 @@ export default function TestBatchTestManagement() {
             Test Batch – Enter Marks
           </h3>
           <p className="text-gray-600">
-            Select a completed or returned test and enter marks for students
-            who appeared. Set the test status to Completed or Returned after the test is conducted.
+            Select a posted Test Batch test and enter marks for students who registered.
+            Save and finalize marks after the test is conducted.
           </p>
         </button>
 
@@ -1010,7 +1011,8 @@ export default function TestBatchTestManagement() {
             their selected test date and slot.
           </p>
         </button>
-      </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
