@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -944,28 +945,21 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
       {section === "" && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <button
-          type="button"
-          onClick={() => {
-            if (adminId) {
-              router.push(
-                "/faculty-dashboard/test-batch/enter-marks?id=" +
-                  encodeURIComponent(adminId)
-              );
-            } else {
-              router.push("/faculty-dashboard/test-batch/enter-marks");
-            }
-          }}
-          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
+        <Link
+          href={
+            "/faculty-dashboard/test-batch/enter-marks?id=" +
+            encodeURIComponent(adminId)
+          }
+          className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
             Test Batch – Enter Marks
           </h3>
           <p className="text-gray-600">
-            Select a posted Test Batch test and enter marks for students who registered.
-            Save and finalize marks after the test is conducted.
+            Select a posted Test Batch test and enter marks for students who
+            registered. Save and finalize marks after the test is conducted.
           </p>
-        </button>
+        </Link>
 
         <button
           onClick={() => {
