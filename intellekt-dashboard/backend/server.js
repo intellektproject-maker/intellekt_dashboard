@@ -5613,26 +5613,6 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
   }
 });
 
-app.delete('/test-batch/tests/:testCode/register/:rollNo', async (req,res) => {
-  try {
-    const testCode=String(req.params.testCode || '').trim().toUpperCase();
-    const rollNo=String(req.params.rollNo || '').trim().toUpperCase();
-    const result=await pool.query(
-      `UPDATE test_batch_registrations
-       SET status='Cancelled',updated_at=CURRENT_TIMESTAMP
-       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
-         AND UPPER(TRIM(roll_no))=UPPER(TRIM($2))
-       RETURNING *`,
-      [testCode,rollNo]
-    );
-    if(!result.rows.length)return res.status(404).json({error:'Registration not found'});
-    res.json({message:'Test Batch registration cancelled',registration:result.rows[0]});
-  } catch(err) {
-    console.error('DELETE /test-batch/tests/:testCode/register/:rollNo error:',err);
-    res.status(500).json({error:'Failed to cancel Test Batch registration'});
-  }
-});
-
 app.delete('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
   try {
     const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
