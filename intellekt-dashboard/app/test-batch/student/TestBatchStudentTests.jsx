@@ -250,18 +250,15 @@ export default function TestBatchStudentTests({ rollNo }) {
   );
 
   return (
-    <div className="space-y-5">
-      <div id="test-schedule" className="border-t-4 border-blue-700 pt-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <Card className="h-full" id="test-registration">
         <h2 className="text-xl md:text-2xl font-bold text-blue-800">
-          Test Batch – Test Schedule
+          Test Registration
         </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Select your preferred test date and available slot during the
-          registration period. Regular Student tests are not shown here.
+        <p className="text-sm text-gray-500 mt-1 mb-5">
+          Register for tests available to your Test Batch and Test Series.
         </p>
-      </div>
 
-      <Card>
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
             {error}
@@ -269,16 +266,12 @@ export default function TestBatchStudentTests({ rollNo }) {
         )}
 
         {loading ? (
-          <p className="text-gray-500">Loading Test Batch tests...</p>
-        ) : tests.length === 0 ? (
-          <p className="text-gray-500">
-            No Test Batch tests are currently available for your Test Series.
-          </p>
+          <p className="text-gray-500">Loading available tests...</p>
+        ) : availableTests.length === 0 ? (
+          <p className="text-gray-500">No tests are currently available for registration.</p>
         ) : (
           <div className="space-y-4">
-            {tests.map((test) => {
-              const registered =
-                test.is_registered === true || test.is_registered === "true";
+            {availableTests.map((test) => {
               const dates = buildDates(
                 test.application_open_date,
                 test.application_close_date
@@ -288,89 +281,83 @@ export default function TestBatchStudentTests({ rollNo }) {
                 startOfDay(new Date()) > startOfDay(test.application_close_date);
 
               return (
-                <div
-                  key={test.test_code}
-                  className="border border-gray-200 rounded-xl p-5"
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold text-blue-700">
-                        {test.test_code}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-2 text-sm text-gray-600">
-                        <p>
-                          <span className="font-medium">Subject:</span>{" "}
-                          {test.subject_name || "-"}
-                        </p>
-                        <p>
-                          <span className="font-medium">Test Series:</span>{" "}
-                          {test.test_series_name || "-"}
-                        </p>
-                        <p>
-                          <span className="font-medium">Duration:</span>{" "}
-                          {test.duration_minutes} mins
-                        </p>
-                        <p>
-                          <span className="font-medium">Total Marks:</span>{" "}
-                          {test.total_marks}
-                        </p>
-                        <p>
-                          <span className="font-medium">Registration Opens:</span>{" "}
-                          {formatDate(test.application_open_date)}
-                        </p>
-                        <p>
-                          <span className="font-medium">Registration Closes:</span>{" "}
-                          {formatDate(test.application_close_date)}
-                        </p>
-                      </div>
+                <div key={test.test_code} className="border border-gray-200 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold text-blue-700">{test.test_code}</h3>
+                  <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 mt-2">
+                    <p><span className="font-medium">Subject:</span> {test.subject_name || "-"}</p>
+                    <p><span className="font-medium">Test Series:</span> {test.test_series_name || "-"}</p>
+                    <p><span className="font-medium">Duration:</span> {test.duration_minutes} mins</p>
+                    <p><span className="font-medium">Total Marks:</span> {test.total_marks}</p>
+                    <p><span className="font-medium">Registration:</span> {formatDate(test.application_open_date)} - {formatDate(test.application_close_date)}</p>
+                  </div>
+                  {test.portion && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      <span className="font-medium">Portion:</span> {test.portion}
+                    </p>
+                  )}
+                  {test.chapter && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium">Chapter:</span> {test.chapter}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => openRegistration(test)}
+                    disabled={registrationClosed || !dates.length}
+                    className="mt-4 w-full bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-50"
+                  >
+                    Register
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
-                      {test.portion && (
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Portion:</span>{" "}
-                          {test.portion}
-                        </p>
-                      )}
+      <Card className="h-full" id="test-schedule">
+        <h2 className="text-xl md:text-2xl font-bold text-blue-800">
+          Test Batch – Test Schedule
+        </h2>
+        <p className="text-sm text-gray-500 mt-1 mb-5">
+          Your confirmed Test Batch tests and assigned dates and slots.
+        </p>
 
-                      {test.chapter && (
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Chapter:</span>{" "}
-                          {test.chapter}
-                        </p>
-                      )}
+        {loading ? (
+          <p className="text-gray-500">Loading schedule...</p>
+        ) : registeredTests.length === 0 ? (
+          <p className="text-gray-500">No tests have been registered yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {registeredTests.map((test) => (
+              <div key={test.test_code} className="border border-gray-200 rounded-xl p-4">
+                <h3 className="text-lg font-semibold text-blue-700">{test.test_code}</h3>
+                <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 mt-2">
+                  <p><span className="font-medium">Subject:</span> {test.subject_name || "-"}</p>
+                  <p><span className="font-medium">Test Series:</span> {test.test_series_name || "-"}</p>
+                  <p><span className="font-medium">Duration:</span> {test.duration_minutes} mins</p>
+                  <p><span className="font-medium">Total Marks:</span> {test.total_marks}</p>
+                </div>
+                <div className="mt-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
+                  <p className="font-semibold">Registration confirmed</p>
+                  <p>Date: {formatDate(test.registered_writing_date)}</p>
+                  <p>
+                    Slot:{" "}
+                    {test.registered_slot_start && test.registered_slot_end
+                      ? `${test.registered_slot_start.slice(0, 5)} - ${test.registered_slot_end.slice(0, 5)}`
+                      : "-"}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    Date and slot cannot be changed after registration.
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
-                      {registered && (
-                        <div className="mt-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
-                          <p className="font-semibold">Registered</p>
-                          <p>
-                            Date:{" "}
-                            {formatDate(test.registered_writing_date)}
-                          </p>
-                          <p>
-                            Slot:{" "}
-                            {test.registered_slot_start &&
-                            test.registered_slot_end
-                              ? `${test.registered_slot_start.slice(0, 5)} - ${test.registered_slot_end.slice(0, 5)}`
-                              : "-"}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2 lg:min-w-[180px]">
-                      {registered ? (
-                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
-                          Registration confirmed.
-                          <br />
-                          Date and slot cannot be changed after registration.
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => openRegistration(test)}
-                          disabled={registrationClosed || !dates.length}
-                          className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-50"
-                        >
-                          Register
+                        Register
                         </button>
                       )}
                     </div>
