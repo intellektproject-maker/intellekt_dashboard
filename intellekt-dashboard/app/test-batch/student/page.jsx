@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import TestBatchManager from "../../faculty-dashboard/test-batch/components/TestBatchManager";
-import TestBatchStudentTests from "./TestBatchStudentTests";
 
 function TestBatchStudentPageInner() {
   const params = useSearchParams();
@@ -26,7 +25,6 @@ function TestBatchStudentPageInner() {
     <div className="min-h-screen bg-gray-100 p-4 md:p-10">
       <div className="max-w-7xl mx-auto space-y-8">
         <TestBatchManager section="student-dashboard" rollNo={roll} />
-        <TestBatchStudentTests rollNo={roll} />
       </div>
     </div>
   );
