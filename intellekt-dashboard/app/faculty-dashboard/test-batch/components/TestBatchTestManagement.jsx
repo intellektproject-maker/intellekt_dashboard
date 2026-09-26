@@ -1258,13 +1258,55 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 <select
                   className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
                   value={markSeriesFilter}
-                  onChange={(event) => {
-                    setMarkSeriesFilter(event.target.value);
+                  onChange={async (event) => {
+                    const seriesId = event.target.value;
+                    setMarkSeriesFilter(seriesId);
                     setSelectedMarkTest("");
                     setMarkTest(null);
                     setStudents([]);
                     setOriginalStudents([]);
                     setError("");
+                    setMessage("");
+
+                    if (!seriesId) return;
+
+                    const matchingTests = eligibleTests.filter(
+                      (test) => String(test.test_series_id) === String(seriesId)
+                    );
+
+                    if (matchingTests.length === 1) {
+                      const testCode = matchingTests[0].test_code;
+                      setSelectedMarkTest(testCode);
+                      await loadMarkEntry(testCode);
+                      return;
+                    }
+
+                    try {
+                      setLoadingMarks(true);
+                      const data = await api(
+                        "/test-batch/mark-entry/series/" +
+                          encodeURIComponent(seriesId) +
+                          "?adminId=" +
+                          encodeURIComponent(adminId)
+                      );
+                      setStudents(
+                        (data.students || []).map((student) => ({
+                          ...student,
+                          marks_obtained: "",
+                          remarks: "",
+                        }))
+                      );
+                      setOriginalStudents([]);
+                      setMessage(
+                        matchingTests.length
+                          ? "Students loaded for the selected Test Series. Select a Test Code to enter marks for a specific test."
+                          : "No posted tests found for the selected Test Series."
+                      );
+                    } catch (err) {
+                      setError(err.message);
+                    } finally {
+                      setLoadingMarks(false);
+                    }
                   }}
                 >
                   <option value="">All Test Series</option>
@@ -1314,13 +1356,39 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             </div>
           </div>
 
-          {!selectedMarkTest ? (
+          {!selectedMarkTest && !markSeriesFilter ? (
             <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
-              Select a posted Test Batch test to load the students registered for that
-              test.
+              Select a Test Series or Test Code to load students.
             </div>
           ) : loadingMarks ? (
             <p className="text-gray-500">Loading students...</p>
+          ) : !markTest && markSeriesFilter ? (
+            students.length === 0 ? (
+              <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
+                No registered students found for the selected Test Series.
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-blue-700 text-white">
+                    <tr>
+                      <th className="text-left px-4 py-3">Student Name</th>
+                      <th className="text-left px-4 py-3">Class</th>
+                      <th className="text-left px-4 py-3">Roll No</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {students.map((student) => (
+                      <tr key={student.roll_no} className="border-t">
+                        <td className="px-4 py-3">{student.name}</td>
+                        <td className="px-4 py-3">{student.class}</td>
+                        <td className="px-4 py-3">{student.roll_no}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : !markTest ? (
             <p className="text-gray-500">Unable to load the selected test.</p>
           ) : (
