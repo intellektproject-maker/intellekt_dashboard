@@ -923,10 +923,160 @@ function DashboardSection({ adminId }) {
 }
 
 function StudentDashboardSection({ rollNo }) {
-  const [data,setData]=useState(null),[error,setError]=useState("");
-  useEffect(()=>{api("/test-batch/student/"+encodeURIComponent(rollNo)).then(setData).catch(e=>setError(e.message))},[rollNo]);
-  if(!data)return <Card><Loading/><ErrorText error={error}/></Card>;
-  return <div className="space-y-5"><Header title="Test Batch Student Dashboard" description="This dashboard belongs only to the Test Batch category."/><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><Card><p className="text-gray-500">Student</p><p className="text-xl font-bold text-blue-800 mt-1">{data.student.name}</p><p className="text-sm mt-1">{data.student.roll_no}</p></Card><Card><p className="text-gray-500">Test Series</p><p className="text-xl font-bold text-blue-800 mt-1">{data.student.test_series_name}</p></Card><Card><p className="text-gray-500">Attendance</p><p className="text-xl font-bold text-green-700 mt-1">{percent(data.attendancePercentage)}%</p></Card></div><Card><Header title="Marks Overview"/>{data.marks.length===0?<p className="text-gray-500">No marks available yet.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[800px]"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Test</th><th className="p-3 text-left">Subject</th><th className="p-3 text-left">Marks</th><th className="p-3 text-left">Total</th><th className="p-3 text-left">Percentage</th><th className="p-3 text-left">Result</th></tr></thead><tbody>{data.marks.map((m,i)=><tr key={m.id} className={i%2===0?"bg-gray-50 border-b":"border-b"}><td className="p-3">{m.test_code}</td><td className="p-3">{m.subject_name}</td><td className="p-3">{m.marks_obtained}</td><td className="p-3">{m.total_marks}</td><td className="p-3">{percent(m.percentage)}%</td><td className="p-3">{m.result_status}</td></tr>)}</tbody></table></div>}</Card><Card><Header title="Attendance Overview"/>{data.attendance.length===0?<p className="text-gray-500">No attendance records available yet.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[700px]"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Date</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">Marked By</th></tr></thead><tbody>{data.attendance.map(a=><tr key={a.id} className="border-b"><td className="p-3">{formatDate(a.attendance_date)}</td><td className="p-3">{a.status}</td><td className="p-3">{a.marked_by||"-"}</td></tr>)}</tbody></table></div>}</Card></div>;
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api("/test-batch/student/" + encodeURIComponent(rollNo))
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, [rollNo]);
+
+  if (!data) {
+    return (
+      <Card>
+        <Loading text="Loading your Test Batch dashboard..." />
+        <ErrorText error={error} />
+      </Card>
+    );
+  }
+
+  const student = data.student || {};
+  const marks = Array.isArray(data.marks) ? data.marks : [];
+
+  const numericMarks = marks
+    .map((m) => {
+      const obtained = Number(m.marks_obtained);
+      const total = Number(m.total_marks);
+      if (!Number.isFinite(obtained) || !Number.isFinite(total) || total <= 0) return null;
+      return { obtained, total };
+    })
+    .filter(Boolean);
+
+  const totalObtained = numericMarks.reduce((sum, m) => sum + m.obtained, 0);
+  const totalPossible = numericMarks.reduce((sum, m) => sum + m.total, 0);
+  const marksPercentage = totalPossible ? (totalObtained / totalPossible) * 100 : 0;
+
+  return (
+    <div className="space-y-7">
+      <div>
+        <h1 className="text-3xl md:text-4xl font-bold text-blue-800">
+          Test Batch Student Dashboard
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Welcome, <span className="font-semibold">{student.name || "-"}</span>
+        </p>
+      </div>
+
+      <Card>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-5 mb-6">
+          <div>
+            <p className="text-sm text-gray-500">Student Details</p>
+            <h2 className="text-2xl font-bold text-blue-800 mt-1">
+              {student.name || "-"}
+            </h2>
+          </div>
+          <div className="rounded-xl bg-blue-50 border border-blue-100 px-5 py-3">
+            <p className="text-xs text-gray-500">Roll Number</p>
+            <p className="text-xl font-bold text-blue-800">{student.roll_no || rollNo}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <Detail label="Class" value={student.class} />
+          <Detail label="Board" value={student.board} />
+          <Detail label="Mode of Education" value={student.mode_of_education} />
+          <Detail label="Phone" value={student.phone} />
+          <Detail label="Email" value={student.email} />
+          <Detail label="School Name" value={student.school_name} />
+          <Detail label="Enrolled Subjects" value={student.subjects} />
+          <Detail label="Test Series" value={student.test_series_name} />
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <p className="text-sm text-gray-500">Test Series</p>
+          <p className="text-xl font-bold text-blue-800 mt-2">
+            {student.test_series_name || "-"}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-gray-500">Enrolled Subjects</p>
+          <p className="text-xl font-bold text-blue-800 mt-2">
+            {student.subjects || "-"}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-gray-500">Marks Average</p>
+          <p className="text-3xl font-bold text-blue-800 mt-2">
+            {percent(marksPercentage)}%
+          </p>
+        </Card>
+      </div>
+
+      <Card>
+        <Header
+          title="Marks"
+          description="Your Test Batch marks only. Regular Student marks are not shown here."
+        />
+
+        {marks.length === 0 ? (
+          <p className="text-gray-500">No marks available yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[850px] border-collapse">
+              <thead>
+                <tr className="bg-blue-700 text-white">
+                  <th className="p-3 text-left">Test</th>
+                  <th className="p-3 text-left">Subject</th>
+                  <th className="p-3 text-left">Marks</th>
+                  <th className="p-3 text-left">Total</th>
+                  <th className="p-3 text-left">Percentage</th>
+                  <th className="p-3 text-left">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marks.map((m, i) => (
+                  <tr
+                    key={m.id}
+                    className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
+                  >
+                    <td className="p-3 font-semibold">{m.test_code}</td>
+                    <td className="p-3">{m.subject_name}</td>
+                    <td className="p-3">{m.marks_obtained}</td>
+                    <td className="p-3">{m.total_marks}</td>
+                    <td className="p-3">{percent(m.percentage)}%</td>
+                    <td className="p-3">{m.result_status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="border-t-4 border-blue-700 pt-6">
+        <Header
+          title="Test Registration"
+          description="Register only for tests available to your Test Batch and Test Series."
+        />
+      </div>
+
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
+function Detail({ label, value }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className="text-base font-semibold text-gray-800 mt-1 break-words">
+        {value || "-"}
+      </p>
+    </div>
+  );
 }
 
 export default function TestBatchManager({ section = "dashboard", rollNo = "" }) {
