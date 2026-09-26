@@ -989,7 +989,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           <p className="text-gray-600">
             Schedule a Test Batch test with the batch, subject, marks, portion, duration and application dates. Students choose their test date and slot during registration.
           </p>
-        </button>
+        </Link>
 
         <Link
           href={
@@ -1005,7 +1005,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             View students registered for each posted Test Batch test, including
             their selected test date and slot.
           </p>
-        </button>
+        </Link>
         </div>
       )}
 
