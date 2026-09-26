@@ -1079,9 +1079,10 @@ function StudentDashboardSection({ rollNo }) {
             </table>
           </div>
         )}
-      </Card>
+        </Card>
+      </div>
 
-      <div className="border-t-4 border-blue-700 pt-6">
+      <div id="test-registration" className="border-t-4 border-blue-700 pt-6">
         <Header
           title="Test Registration"
           description="Register only for tests available to your Test Batch and Test Series."
