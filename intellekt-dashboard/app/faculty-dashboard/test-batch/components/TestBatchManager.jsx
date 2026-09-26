@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import TestBatchStudentTests from "../../../test-batch/student/TestBatchStudentTests";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
@@ -1015,8 +1016,8 @@ function StudentDashboardSection({ rollNo }) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div id="test-batch-marks">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        <div id="test-batch-marks"> 
           <Card className="h-full">
             <Header
               title="Marks"
@@ -1057,6 +1058,8 @@ function StudentDashboardSection({ rollNo }) {
             )}
           </Card>
         </div>
+
+        <TestBatchStudentTests rollNo={rollNo} embedded />
       </div>
 
       <ErrorText error={error} />
