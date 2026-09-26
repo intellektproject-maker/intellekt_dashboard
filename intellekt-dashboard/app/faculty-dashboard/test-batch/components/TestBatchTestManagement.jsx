@@ -943,8 +943,13 @@ export default function TestBatchTestManagement() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <button
+          type="button"
           onClick={() => {
             setSection("mark-entry");
+            setSelectedMarkTest("");
+            setMarkTest(null);
+            setStudents([]);
+            setOriginalStudents([]);
             setError("");
             setMessage("");
           }}
