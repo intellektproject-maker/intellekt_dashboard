@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
@@ -64,14 +64,15 @@ function normalizeStudent(row) {
   };
 }
 
-export default function TestBatchTestManagement() {
+export default function TestBatchTestManagement({ initialSection = "", standalone = false } = {}) {
+  const router = useRouter();
   const params = useSearchParams();
   const adminId = (params.get("id") || "").toUpperCase().trim();
 
   const [tests, setTests] = useState([]);
   const [eligibleTests, setEligibleTests] = useState([]);
   const [testSeries, setTestSeries] = useState([]);
-  const [section, setSection] = useState("");
+  const [section, setSection] = useState(initialSection);
 
   const [scheduleForm, setScheduleForm] = useState({
     test_code: "",
@@ -946,13 +947,14 @@ export default function TestBatchTestManagement() {
         <button
           type="button"
           onClick={() => {
-            setSection("mark-entry");
-            setSelectedMarkTest("");
-            setMarkTest(null);
-            setStudents([]);
-            setOriginalStudents([]);
-            setError("");
-            setMessage("");
+            if (adminId) {
+              router.push(
+                "/faculty-dashboard/test-batch/enter-marks?id=" +
+                  encodeURIComponent(adminId)
+              );
+            } else {
+              router.push("/faculty-dashboard/test-batch/enter-marks");
+            }
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
         >
@@ -1211,6 +1213,14 @@ export default function TestBatchTestManagement() {
             </div>
             <button
               onClick={() => {
+                if (standalone) {
+                  router.push(
+                    "/faculty-dashboard/test?id=" +
+                      encodeURIComponent(adminId)
+                  );
+                  return;
+                }
+
                 setSection("");
                 setSelectedMarkTest("");
                 setMarkTest(null);
