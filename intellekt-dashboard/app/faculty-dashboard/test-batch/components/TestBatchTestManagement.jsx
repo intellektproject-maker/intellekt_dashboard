@@ -1035,6 +1035,13 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             <button
               type="button"
               onClick={() => {
+                if (standalone) {
+                  router.push(
+                    "/faculty-dashboard/test?id=" +
+                      encodeURIComponent(adminId)
+                  );
+                  return;
+                }
                 setSection("");
                 resetScheduleForm();
               }}
@@ -1465,6 +1472,20 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             <h3 className="text-xl font-bold text-blue-800 mr-auto">
               Test Batch – Test List
             </h3>
+            {standalone && (
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(
+                    "/faculty-dashboard/test?id=" +
+                      encodeURIComponent(adminId)
+                  )
+                }
+                className="px-4 py-2 bg-gray-100 rounded-lg"
+              >
+                Close
+              </button>
+            )}
             <input
               className="border rounded-lg px-4 py-2"
               placeholder="Search test code / subject / batch"
@@ -1554,6 +1575,13 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             </div>
             <button
               onClick={() => {
+                if (standalone) {
+                  router.push(
+                    "/faculty-dashboard/test?id=" +
+                      encodeURIComponent(adminId)
+                  );
+                  return;
+                }
                 setSection("");
                 setRegisteredStudentTest("");
                 setRegisteredStudents([]);
