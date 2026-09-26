@@ -92,6 +92,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   });
 
   const [selectedMarkTest, setSelectedMarkTest] = useState("");
+  const [markSeriesFilter, setMarkSeriesFilter] = useState("");
   const [markTest, setMarkTest] = useState(null);
   const [students, setStudents] = useState([]);
   const [originalStudents, setOriginalStudents] = useState([]);
@@ -921,6 +922,13 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     );
   }, [tests, search]);
 
+  const filteredMarkTests = useMemo(() => {
+    if (!markSeriesFilter) return eligibleTests;
+    return eligibleTests.filter(
+      (test) => String(test.test_series_id) === String(markSeriesFilter)
+    );
+  }, [eligibleTests, markSeriesFilter]);
+
   const markStatusLabel = useMemo(() => {
     if (!markTest) return "";
     if (markTest.marks_entry_status === "Finalized") return "Finalized";
@@ -1244,7 +1252,32 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-            <div className="lg:col-span-3">
+            <div>
+              <label className="text-sm text-gray-600">
+                Test Series
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={markSeriesFilter}
+                  onChange={(event) => {
+                    setMarkSeriesFilter(event.target.value);
+                    setSelectedMarkTest("");
+                    setMarkTest(null);
+                    setStudents([]);
+                    setOriginalStudents([]);
+                    setError("");
+                  }}
+                >
+                  <option value="">All Test Series</option>
+                  {testSeries.map((series) => (
+                    <option key={series.id} value={series.id}>
+                      {series.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="lg:col-span-2">
               <label className="text-sm text-gray-600">
                 Test Code
                 <select
@@ -1259,12 +1292,11 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   }}
                 >
                   <option value="">
-                    {eligibleTests.length ? "Select Test Code" : "No posted tests found"}
+                    {filteredMarkTests.length ? "Select Test Code" : "No tests found"}
                   </option>
-                  {eligibleTests.map((test) => (
+                  {filteredMarkTests.map((test) => (
                     <option key={test.test_code} value={test.test_code}>
-                      {test.test_code} — {test.test_series_name || "Test Series"} —{" "}
-                      {test.subject_name} — {test.status}
+                      {test.test_code} — {test.subject_name} — {test.status}
                     </option>
                   ))}
                 </select>
