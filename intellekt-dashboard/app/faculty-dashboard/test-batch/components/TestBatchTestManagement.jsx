@@ -341,18 +341,48 @@ export default function TestBatchTestManagement() {
     setMessage("");
 
     try {
-      const data = await api(
+      // Load the registered students directly. This is the source of truth
+      // for Test Batch registration and does not depend on attendance.
+      const registeredData = await api(
         "/test-batch/tests/" +
           encodeURIComponent(testCode) +
-          "/mark-entry?adminId=" +
+          "/registered-students?adminId=" +
           encodeURIComponent(adminId)
       );
 
-      const loaded = (data.students || []).map(normalizeStudent);
+      let loadedStudents = (registeredData.students || []).map(normalizeStudent);
+      let loadedTest = registeredData.test || null;
 
-      setMarkTest(data.test || null);
-      setStudents(loaded);
-      setOriginalStudents(JSON.parse(JSON.stringify(loaded)));
+      // Enrich with existing marks/mark-entry metadata when available.
+      // A mark-entry error must not hide registered students.
+      try {
+        const markData = await api(
+          "/test-batch/tests/" +
+            encodeURIComponent(testCode) +
+            "/mark-entry?adminId=" +
+            encodeURIComponent(adminId)
+        );
+
+        loadedTest = markData.test || loadedTest;
+        const existingByRoll = new Map(
+          (markData.students || []).map((student) => [
+            student.roll_no,
+            normalizeStudent(student),
+          ])
+        );
+
+        loadedStudents = loadedStudents.map((student) => ({
+          ...student,
+          ...(existingByRoll.get(student.roll_no) || {}),
+        }));
+      } catch {
+        // Keep the registered-student list even if mark-entry metadata
+        // is unavailable.
+      }
+
+      setMarkTest(loadedTest);
+      setStudents(loadedStudents);
+      setOriginalStudents(JSON.parse(JSON.stringify(loadedStudents)));
     } catch (err) {
       setMarkTest(null);
       setStudents([]);
@@ -399,8 +429,10 @@ export default function TestBatchTestManagement() {
   }, [adminId, authorized, search]);
 
   useEffect(() => {
-    if (section === "mark-entry" && selectedMarkTest) {
-      loadMarkEntry(selectedMarkTest);
+    if (section === "mark-entry" && !selectedMarkTest) {
+      setMarkTest(null);
+      setStudents([]);
+      setOriginalStudents([]);
     }
   }, [section, selectedMarkTest]);
 
@@ -1166,9 +1198,8 @@ export default function TestBatchTestManagement() {
                 Test Batch – Enter Marks
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Posted Test Batch tests are available here with their registered
-                students. Marks can be entered after the test is completed or
-                returned, following the Test Batch attendance workflow.
+                Select a Test Batch test and click Load Students to view the
+                students who registered for that test.
               </p>
             </div>
             <button
@@ -1184,35 +1215,42 @@ export default function TestBatchTestManagement() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+            <div className="lg:col-span-3">
               <label className="text-sm text-gray-600">
-                Select Posted Test
+                Test Code
                 <select
                   className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
                   value={selectedMarkTest}
-                  onChange={(event) =>
-                    setSelectedMarkTest(event.target.value)
-                  }
+                  onChange={(event) => {
+                    setSelectedMarkTest(event.target.value);
+                    setMarkTest(null);
+                    setStudents([]);
+                    setOriginalStudents([]);
+                    setError("");
+                  }}
                 >
                   <option value="">
-                    {eligibleTests.length ? "Select Test" : "No posted tests found"}
+                    {eligibleTests.length ? "Select Test Code" : "No posted tests found"}
                   </option>
                   {eligibleTests.map((test) => (
                     <option key={test.test_code} value={test.test_code}>
                       {test.test_code} — {test.test_series_name || "Test Series"} —{" "}
-                      {test.subject_name} — {test.status} — {test.registered_students ?? 0} students
+                      {test.subject_name} — {test.status}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
 
-            <div className="bg-gray-50 border rounded-lg px-4 py-3">
-              <div className="text-xs text-gray-500">Marks Entry Status</div>
-              <div className="font-semibold text-blue-800 mt-1">
-                {markStatusLabel || "Select a test"}
-              </div>
+            <div className="flex items-end">
+              <button
+                onClick={() => loadMarkEntry(selectedMarkTest)}
+                disabled={!selectedMarkTest || loadingMarks}
+                className="w-full bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {loadingMarks ? "Loading..." : "Load Students"}
+              </button>
             </div>
           </div>
 
