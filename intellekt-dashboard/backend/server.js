@@ -5858,6 +5858,68 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) 
   }
 });
 
+app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,
+         t.test_code,
+         t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name,
+         t.duration_minutes,
+         t.total_marks,
+         t.status,
+         t.application_open_date,
+         t.application_close_date
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.registered_at,
+         r.status AS registration_status
+       FROM test_batch_registrations r
+       JOIN test_batch_students s
+         ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+       WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
+         AND r.status='Registered'
+         AND s.test_series_id=$2
+       ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
+      [code, test.test_series_id]
+    );
+
+    res.json({
+      test,
+      students: studentsResult.rows,
+      registered_students: studentsResult.rows.length
+    });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/registered-students error:', err);
+    res.status(500).json({ error: 'Failed to fetch registered Test Batch students' });
+  }
+});
+
 app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (req, res) => {
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
