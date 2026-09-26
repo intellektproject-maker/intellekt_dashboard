@@ -6601,7 +6601,7 @@ app.get('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
         ${where}
         AND EXISTS (
           SELECT 1
-          FROM test_registrations tr
+          FROM test_batch_registrations tr
           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
             AND tr.writing_date = $1
         )
@@ -6650,7 +6650,7 @@ app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
       // register for a test on the selected attendance date.
       const registration = await client.query(
         `SELECT 1
-         FROM test_registrations tr
+         FROM test_batch_registrations tr
          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
            AND tr.writing_date = $2
          LIMIT 1`,
@@ -6698,7 +6698,7 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
        WHERE a.id=$3
          AND EXISTS (
            SELECT 1
-           FROM test_registrations tr
+           FROM test_batch_registrations tr
            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
              AND tr.writing_date = a.attendance_date
          )
@@ -6757,7 +6757,7 @@ app.get('/test-batch/attendance-report', requireTestBatchAdmin, async (req,res) 
         ${where}
         AND EXISTS (
           SELECT 1
-          FROM test_registrations tr
+          FROM test_batch_registrations tr
           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
             AND tr.writing_date = a.attendance_date
         )
