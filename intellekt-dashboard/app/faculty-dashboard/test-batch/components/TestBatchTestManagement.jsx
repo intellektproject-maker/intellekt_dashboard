@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -945,7 +944,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
       {section === "" && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <Link
+        <a
           href={
             "/faculty-dashboard/test-batch/enter-marks?id=" +
             encodeURIComponent(adminId)
@@ -959,9 +958,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             Select a posted Test Batch test and enter marks for students who
             registered. Save and finalize marks after the test is conducted.
           </p>
-        </Link>
+        </a>
 
-        <Link
+        <a
           href={
             "/faculty-dashboard/test-batch/test-list?id=" +
             encodeURIComponent(adminId)
@@ -976,7 +975,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           </p>
         </button>
 
-        <Link
+        <a
           href={
             "/faculty-dashboard/test-batch/post-test?id=" +
             encodeURIComponent(adminId)
@@ -989,9 +988,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           <p className="text-gray-600">
             Schedule a Test Batch test with the batch, subject, marks, portion, duration and application dates. Students choose their test date and slot during registration.
           </p>
-        </Link>
+        </a>
 
-        <Link
+        <a
           href={
             "/faculty-dashboard/test-batch/registered-students?id=" +
             encodeURIComponent(adminId)
@@ -1005,7 +1004,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             View students registered for each posted Test Batch test, including
             their selected test date and slot.
           </p>
-        </Link>
+        </a>
         </div>
       )}
 
