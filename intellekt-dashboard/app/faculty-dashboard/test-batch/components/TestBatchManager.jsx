@@ -926,6 +926,7 @@ function DashboardSection({ adminId }) {
 function StudentDashboardSection({ rollNo }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [marksOpen, setMarksOpen] = useState(false);
 
   useEffect(() => {
     api("/test-batch/student/" + encodeURIComponent(rollNo))
@@ -1016,50 +1017,84 @@ function StudentDashboardSection({ rollNo }) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <div id="test-batch-marks"> 
-          <Card className="h-full">
-            <Header
-              title="Marks"
-              description="Your Test Batch marks only."
-            />
-            {marks.length === 0 ? (
-              <p className="text-gray-500">No marks available yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[650px] border-collapse">
-                  <thead>
-                    <tr className="bg-blue-700 text-white">
-                      <th className="p-3 text-left">Test</th>
-                      <th className="p-3 text-left">Subject</th>
-                      <th className="p-3 text-left">Marks</th>
-                      <th className="p-3 text-left">Total</th>
-                      <th className="p-3 text-left">%</th>
-                      <th className="p-3 text-left">Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {marks.map((m, i) => (
-                      <tr
-                        key={m.id}
-                        className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
-                      >
-                        <td className="p-3 font-semibold">{m.test_code}</td>
-                        <td className="p-3">{m.subject_name}</td>
-                        <td className="p-3">{m.marks_obtained}</td>
-                        <td className="p-3">{m.total_marks}</td>
-                        <td className="p-3">{percent(m.percentage)}%</td>
-                        <td className="p-3">{m.result_status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <button
+          type="button"
+          onClick={() => setMarksOpen(true)}
+          className="text-left bg-white rounded-2xl shadow-md border border-gray-200 p-5 md:p-6 hover:shadow-lg hover:border-blue-300 transition-all min-h-[150px]"
+        >
+          <p className="text-sm text-gray-500">Test Batch</p>
+          <h2 className="text-xl md:text-2xl font-bold text-blue-800 mt-1">
+            Marks
+          </h2>
+          <p className="text-sm text-gray-500 mt-2">
+            View your Test Batch marks and results.
+          </p>
+          <div className="mt-5 flex items-center justify-between">
+            <span className="text-sm font-semibold text-blue-700">
+              {marks.length} test{marks.length === 1 ? "" : "s"}
+            </span>
+            <span className="text-blue-700 font-semibold">Open</span>
+          </div>
+        </button>
 
-        <TestBatchStudentTests rollNo={rollNo} embedded />
+        <TestBatchStudentTests rollNo={rollNo} />
+
+        {marksOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b px-5 md:px-7 py-4 flex items-center justify-between z-10">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-blue-800">Marks</h2>
+                  <p className="text-sm text-gray-500 mt-1">Your Test Batch marks only.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMarksOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="p-5 md:p-7">
+                {marks.length === 0 ? (
+                  <p className="text-gray-500">No marks available yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[650px] border-collapse">
+                      <thead>
+                        <tr className="bg-blue-700 text-white">
+                          <th className="p-3 text-left">Test</th>
+                          <th className="p-3 text-left">Subject</th>
+                          <th className="p-3 text-left">Marks</th>
+                          <th className="p-3 text-left">Total</th>
+                          <th className="p-3 text-left">%</th>
+                          <th className="p-3 text-left">Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {marks.map((m, i) => (
+                          <tr
+                            key={m.id}
+                            className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
+                          >
+                            <td className="p-3 font-semibold">{m.test_code}</td>
+                            <td className="p-3">{m.subject_name}</td>
+                            <td className="p-3">{m.marks_obtained}</td>
+                            <td className="p-3">{m.total_marks}</td>
+                            <td className="p-3">{percent(m.percentage)}%</td>
+                            <td className="p-3">{m.result_status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <ErrorText error={error} />
