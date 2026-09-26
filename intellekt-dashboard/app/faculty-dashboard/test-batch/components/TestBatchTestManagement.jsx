@@ -287,32 +287,40 @@ export default function TestBatchTestManagement() {
 
   async function loadEligibleTests() {
     try {
-      const markEntryData = await api(
-        "/test-batch/mark-entry/tests?adminId=" +
-          encodeURIComponent(adminId)
-      );
-
-      const postedTests = Array.isArray(markEntryData.tests)
-        ? markEntryData.tests
-        : [];
-
-      if (postedTests.length > 0) {
-        setEligibleTests(postedTests);
-        return;
-      }
-
-      // Fallback to the main Test Batch test list when the mark-entry
-      // endpoint returns an empty list. This keeps every posted/scheduled
-      // Test Batch test selectable in Enter Marks.
+      // Always start from the main Test Batch list. This endpoint is also
+      // used by Test List, so every posted Test Batch test remains selectable
+      // even if the specialized mark-entry endpoint is temporarily stale.
       const testListData = await api(
         "/test-batch/tests?adminId=" + encodeURIComponent(adminId)
       );
 
-      const fallbackTests = (testListData.tests || []).filter(
+      const allTests = (testListData.tests || []).filter(
         (test) => test.status !== "Cancelled"
       );
 
-      setEligibleTests(fallbackTests);
+      // Enrich the list with registration counts when the mark-entry
+      // endpoint is available. The test itself must never disappear just
+      // because that enrichment request returns no rows.
+      try {
+        const markEntryData = await api(
+          "/test-batch/mark-entry/tests?adminId=" +
+            encodeURIComponent(adminId)
+        );
+
+        const markEntryByCode = new Map(
+          (markEntryData.tests || []).map((test) => [test.test_code, test])
+        );
+
+        setEligibleTests(
+          allTests.map((test) => ({
+            ...test,
+            registered_students:
+              markEntryByCode.get(test.test_code)?.registered_students ?? 0,
+          }))
+        );
+      } catch {
+        setEligibleTests(allTests);
+      }
     } catch (err) {
       setError(err.message);
       setEligibleTests([]);
@@ -1179,10 +1187,12 @@ export default function TestBatchTestManagement() {
                     setSelectedMarkTest(event.target.value)
                   }
                 >
-                  <option value="">Select Test</option>
+                  <option value="">
+                    {eligibleTests.length ? "Select Test" : "No posted tests found"}
+                  </option>
                   {eligibleTests.map((test) => (
                     <option key={test.test_code} value={test.test_code}>
-                      {test.test_code} — {test.test_series_name} —{" "}
+                      {test.test_code} — {test.test_series_name || "Test Series"} —{" "}
                       {test.subject_name} — {test.status} — {test.registered_students ?? 0} students
                     </option>
                   ))}
@@ -1318,25 +1328,3 @@ export default function TestBatchTestManagement() {
                                 />
                               </td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3 items-center mt-5">
-                    <button
-                      onClick={saveMarks}
-                      disabled={
-                        saving ||
-                        finalizing ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      {saving ? "Saving..." : "Save / Update Marks"}
-                    </button>
-
-                    <button
-                      onClick={resetUnsavedChanges}
-                      disabled={
