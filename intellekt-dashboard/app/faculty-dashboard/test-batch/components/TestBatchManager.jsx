@@ -963,7 +963,7 @@ function StudentDashboardSection({ rollNo }) {
     <div className="space-y-7">
       <div>
         <h1 className="text-3xl md:text-4xl font-bold text-blue-800">
-          Test Batch Student Dashboard
+          Student Dashboard
         </h1>
         <p className="text-gray-600 mt-2">
           Welcome, <span className="font-semibold">{student.name || "-"}</span>
@@ -988,9 +988,6 @@ function StudentDashboardSection({ rollNo }) {
           <Detail label="Class" value={student.class} />
           <Detail label="Board" value={student.board} />
           <Detail label="Mode of Education" value={student.mode_of_education} />
-          <Detail label="Phone" value={student.phone} />
-          <Detail label="Email" value={student.email} />
-          <Detail label="School Name" value={student.school_name} />
           <Detail label="Enrolled Subjects" value={student.subjects} />
           <Detail label="Test Series" value={student.test_series_name} />
         </div>
