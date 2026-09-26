@@ -5528,7 +5528,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
 
     const testResult = await pool.query(
       `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
-              application_open_date,application_close_date,status
+              duration_minutes,application_open_date,application_close_date,status
        FROM test_batch_tests
        WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
        LIMIT 1`,
