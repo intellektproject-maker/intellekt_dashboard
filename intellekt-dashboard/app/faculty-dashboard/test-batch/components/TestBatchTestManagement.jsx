@@ -110,8 +110,9 @@ export default function TestBatchTestManagement() {
     application_close_date: "",
   });
 
-  const [resultTest, setResultTest] = useState("");
-  const [results, setResults] = useState([]);
+  const [registeredStudentTest, setRegisteredStudentTest] = useState("");
+  const [registeredStudents, setRegisteredStudents] = useState([]);
+  const [loadingRegisteredStudents, setLoadingRegisteredStudents] = useState(false);
   const [postTestTests, setPostTestTests] = useState([]);
   const [selectedPostTest, setSelectedPostTest] = useState("");
   const [postTest, setPostTest] = useState(null);
@@ -362,24 +363,30 @@ export default function TestBatchTestManagement() {
     }
   }
 
-  async function loadResults(code) {
+  async function loadRegisteredStudents(code) {
     if (!code) {
-      setResults([]);
+      setRegisteredStudents([]);
       return;
     }
+
+    setLoadingRegisteredStudents(true);
+    setError("");
+    setMessage("");
 
     try {
       const data = await api(
         "/test-batch/tests/" +
           encodeURIComponent(code) +
-          "/results?adminId=" +
+          "/registered-students?adminId=" +
           encodeURIComponent(adminId)
       );
 
-      setResults(data.results || []);
-      setError("");
+      setRegisteredStudents(data.students || []);
     } catch (err) {
+      setRegisteredStudents([]);
       setError(err.message);
+    } finally {
+      setLoadingRegisteredStudents(false);
     }
   }
 
@@ -398,13 +405,13 @@ export default function TestBatchTestManagement() {
   }, [section, selectedMarkTest]);
 
   useEffect(() => {
-    if (section === "results") {
-      loadResults(resultTest);
+    if (section === "registered-students") {
+      loadRegisteredStudents(registeredStudentTest);
     }
     if (section === "post-test" && selectedPostTest) {
       loadPostTest(selectedPostTest);
     }
-  }, [section, resultTest, selectedPostTest]);
+  }, [section, registeredStudentTest, selectedPostTest]);
 
   async function loadPostTestTests() {
     try {
@@ -950,17 +957,20 @@ export default function TestBatchTestManagement() {
 
         <button
           onClick={() => {
-            setSection("results");
+            setSection("registered-students");
+            setRegisteredStudentTest("");
+            setRegisteredStudents([]);
             setError("");
             setMessage("");
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition"
         >
           <h3 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch – Results
+            Test Batch – Registered Students
           </h3>
           <p className="text-gray-600">
-            View saved marks for Test Batch students.
+            View students registered for each posted Test Batch test, including
+            their selected test date and slot.
           </p>
         </button>
       </div>
@@ -1482,102 +1492,115 @@ export default function TestBatchTestManagement() {
         </Card>
       )}
 
-      {section === "results" && (
+      {section === "registered-students" && (
         <Card>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Results
+                Test Batch – Registered Students
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Results are read from the isolated Test Batch marks table.
+                Select a posted Test Batch test to view only the students who
+                registered for that test and the date and slot they selected.
               </p>
             </div>
             <button
-              onClick={() => setSection("")}
+              onClick={() => {
+                setSection("");
+                setRegisteredStudentTest("");
+                setRegisteredStudents([]);
+              }}
               className="px-4 py-2 bg-gray-100 rounded-lg"
             >
               Close
             </button>
           </div>
 
-          <div className="flex gap-3 mb-5">
-            <select
-              className="border rounded-lg px-4 py-3 flex-1 bg-white"
-              value={resultTest}
-              onChange={(event) => setResultTest(event.target.value)}
-            >
-              <option value="">Select Test</option>
-              {tests.map((test) => (
-                <option key={test.test_code} value={test.test_code}>
-                  {test.test_code} — {test.test_series_name} —{" "}
-                  {test.subject_name}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <div className="lg:col-span-2">
+              <label className="text-sm text-gray-600">
+                Select Test
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={registeredStudentTest}
+                  onChange={(event) =>
+                    setRegisteredStudentTest(event.target.value)
+                  }
+                >
+                  <option value="">Select Test</option>
+                  {tests
+                    .filter((test) => test.status !== "Cancelled")
+                    .map((test) => (
+                      <option key={test.test_code} value={test.test_code}>
+                        {test.test_code} — {test.test_series_name} —{" "}
+                        {test.subject_name} — {test.status}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="bg-gray-50 border rounded-lg px-4 py-3">
+              <div className="text-xs text-gray-500">Registered Students</div>
+              <div className="font-semibold text-blue-800 mt-1">
+                {registeredStudents.length}
+              </div>
+            </div>
           </div>
 
-          {!resultTest ? (
-            <p className="text-gray-500">
-              Select a Test Batch test to view results.
-            </p>
-          ) : results.length === 0 ? (
-            <p className="text-gray-500">No marks found for this Test Batch test.</p>
+          {!registeredStudentTest ? (
+            <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
+              Select a Test Batch test to view its registered students.
+            </div>
+          ) : loadingRegisteredStudents ? (
+            <p className="text-gray-500">Loading registered students...</p>
+          ) : registeredStudents.length === 0 ? (
+            <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
+              No students have registered for this test yet.
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
+            <div className="overflow-x-auto border rounded-lg">
+              <table className="w-full min-w-[1000px]">
                 <thead className="bg-blue-700 text-white">
                   <tr>
+                    <th className="p-3 text-left">Student Name</th>
+                    <th className="p-3 text-left">Class</th>
                     <th className="p-3 text-left">Roll No</th>
-                    <th className="p-3 text-left">Student</th>
-                    <th className="p-3 text-left">Subject</th>
-                    <th className="p-3 text-left">Marks</th>
-                    <th className="p-3 text-left">Total</th>
-                    <th className="p-3 text-left">Result</th>
+                    <th className="p-3 text-left">Test Date</th>
+                    <th className="p-3 text-left">Test Slot</th>
+                    <th className="p-3 text-left">Registration Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((result, index) => {
-                    const absent =
-                      String(result.marks_obtained).toUpperCase() === "A";
-                    const percentage = absent
-                      ? null
-                      : (Number(result.marks_obtained) /
-                          Number(result.total_marks)) *
-                        100;
-
-                    return (
-                      <tr
-                        key={result.id}
-                        className={
-                          index % 2 === 0
-                            ? "bg-gray-50 border-b"
-                            : "border-b"
-                        }
-                      >
-                        <td className="p-3 font-semibold">
-                          {result.roll_no}
-                        </td>
-                        <td className="p-3">{result.name}</td>
-                        <td className="p-3">{result.subject_name}</td>
-                        <td className="p-3">{result.marks_obtained}</td>
-                        <td className="p-3">{result.total_marks}</td>
-                        <td className="p-3">
-                          {absent
-                            ? "Absent"
-                            : percentage >= 40
-                            ? "Pass"
-                            : "Fail"}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {registeredStudents.map((student, index) => (
+                    <tr
+                      key={student.roll_no}
+                      className={
+                        index % 2 === 0 ? "bg-gray-50 border-b" : "border-b"
+                      }
+                    >
+                      <td className="p-3 font-medium">{student.name}</td>
+                      <td className="p-3">{student.class || "-"}</td>
+                      <td className="p-3 font-semibold text-blue-700">
+                        {student.roll_no}
+                      </td>
+                      <td className="p-3">
+                        {formatDate(student.registered_writing_date)}
+                      </td>
+                      <td className="p-3">
+                        {student.registered_slot_start || "-"} –{" "}
+                        {student.registered_slot_end || "-"}
+                      </td>
+                      <td className="p-3">{student.registration_status}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
         </Card>
       )}
+
     </div>
   );
 }
