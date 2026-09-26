@@ -5920,6 +5920,65 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
   }
 });
 
+app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const seriesId = Number(req.params.seriesId);
+    if (!Number.isInteger(seriesId) || seriesId <= 0) {
+      return res.status(400).json({ error: 'Invalid Test Series' });
+    }
+
+    const seriesResult = await pool.query(
+      `SELECT id, name
+       FROM test_series
+       WHERE id=$1
+       LIMIT 1`,
+      [seriesId]
+    );
+
+    if (seriesResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Series not found' });
+    }
+
+    const testsResult = await pool.query(
+      `SELECT
+         t.id, t.test_code, t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name, t.duration_minutes, t.total_marks, t.status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE t.test_series_id=$1
+         AND t.status <> 'Cancelled'
+       ORDER BY t.created_at DESC, t.id DESC`,
+      [seriesId]
+    );
+
+    const studentsResult = await pool.query(
+      `SELECT DISTINCT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       WHERE s.test_series_id=$1
+         AND r.status='Registered'
+       ORDER BY s.roll_no ASC`,
+      [seriesId]
+    );
+
+    res.json({
+      series: seriesResult.rows[0],
+      tests: testsResult.rows,
+      students: studentsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/series/:seriesId error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch students for Test Series' });
+  }
+});
+
 app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (req, res) => {
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
