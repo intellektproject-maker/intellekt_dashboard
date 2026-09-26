@@ -249,125 +249,122 @@ export default function TestBatchStudentTests({ rollNo }) {
     [selectedTest]
   );
 
+  const registeredTests = tests.filter(
+    (test) => test.is_registered === true || test.is_registered === "true"
+  );
+  const availableTests = tests.filter(
+    (test) => !(test.is_registered === true || test.is_registered === "true")
+  );
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-      <Card className="h-full" id="test-registration">
-        <h2 className="text-xl md:text-2xl font-bold text-blue-800">
-          Test Registration
-        </h2>
-        <p className="text-sm text-gray-500 mt-1 mb-5">
-          Register for tests available to your Test Batch and Test Series.
-        </p>
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card className="h-full" id="test-registration">
+          <h2 className="text-xl md:text-2xl font-bold text-blue-800">
+            Test Registration
+          </h2>
+          <p className="text-sm text-gray-500 mt-1 mb-5">
+            Register only for tests available to your Test Batch and Test Series.
+          </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
+              {error}
+            </div>
+          )}
 
-        {loading ? (
-          <p className="text-gray-500">Loading available tests...</p>
-        ) : availableTests.length === 0 ? (
-          <p className="text-gray-500">No tests are currently available for registration.</p>
-        ) : (
-          <div className="space-y-4">
-            {availableTests.map((test) => {
-              const dates = buildDates(
-                test.application_open_date,
-                test.application_close_date
-              );
-              const registrationClosed =
-                dates.length === 0 ||
-                startOfDay(new Date()) > startOfDay(test.application_close_date);
+          {loading ? (
+            <p className="text-gray-500">Loading available tests...</p>
+          ) : availableTests.length === 0 ? (
+            <p className="text-gray-500">No tests are currently available for registration.</p>
+          ) : (
+            <div className="space-y-4">
+              {availableTests.map((test) => {
+                const dates = buildDates(
+                  test.application_open_date,
+                  test.application_close_date
+                );
+                const registrationClosed =
+                  dates.length === 0 ||
+                  startOfDay(new Date()) > startOfDay(test.application_close_date);
 
-              return (
-                <div key={test.test_code} className="border border-gray-200 rounded-xl p-4">
+                return (
+                  <div key={test.test_code} className="border border-gray-200 rounded-xl p-4">
+                    <h3 className="text-lg font-semibold text-blue-700">{test.test_code}</h3>
+                    <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 mt-2">
+                      <p><span className="font-medium">Subject:</span> {test.subject_name || "-"}</p>
+                      <p><span className="font-medium">Test Series:</span> {test.test_series_name || "-"}</p>
+                      <p><span className="font-medium">Duration:</span> {test.duration_minutes} mins</p>
+                      <p><span className="font-medium">Total Marks:</span> {test.total_marks}</p>
+                      <p><span className="font-medium">Registration:</span> {formatDate(test.application_open_date)} - {formatDate(test.application_close_date)}</p>
+                    </div>
+                    {test.portion && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        <span className="font-medium">Portion:</span> {test.portion}
+                      </p>
+                    )}
+                    {test.chapter && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        <span className="font-medium">Chapter:</span> {test.chapter}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openRegistration(test)}
+                      disabled={registrationClosed || !dates.length}
+                      className="mt-4 w-full bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-50"
+                    >
+                      Register
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card className="h-full" id="test-schedule">
+          <h2 className="text-xl md:text-2xl font-bold text-blue-800">
+            Test Batch – Test Schedule
+          </h2>
+          <p className="text-sm text-gray-500 mt-1 mb-5">
+            Your confirmed Test Batch tests and assigned dates and slots.
+          </p>
+
+          {loading ? (
+            <p className="text-gray-500">Loading schedule...</p>
+          ) : registeredTests.length === 0 ? (
+            <p className="text-gray-500">No tests have been registered yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {registeredTests.map((test) => (
+                <div key={test.test_code} className="border border-green-200 bg-green-50 rounded-xl p-4">
                   <h3 className="text-lg font-semibold text-blue-700">{test.test_code}</h3>
-                  <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 mt-2">
+                  <div className="grid grid-cols-1 gap-2 text-sm text-gray-700 mt-2">
                     <p><span className="font-medium">Subject:</span> {test.subject_name || "-"}</p>
                     <p><span className="font-medium">Test Series:</span> {test.test_series_name || "-"}</p>
                     <p><span className="font-medium">Duration:</span> {test.duration_minutes} mins</p>
                     <p><span className="font-medium">Total Marks:</span> {test.total_marks}</p>
-                    <p><span className="font-medium">Registration:</span> {formatDate(test.application_open_date)} - {formatDate(test.application_close_date)}</p>
                   </div>
-                  {test.portion && (
-                    <p className="text-sm text-gray-600 mt-2">
-                      <span className="font-medium">Portion:</span> {test.portion}
+                  <div className="mt-4 rounded-lg bg-white border border-green-200 px-4 py-3 text-sm text-green-800">
+                    <p className="font-semibold">Registration confirmed</p>
+                    <p>Date: {formatDate(test.registered_writing_date)}</p>
+                    <p>
+                      Slot:{" "}
+                      {test.registered_slot_start && test.registered_slot_end
+                        ? `${test.registered_slot_start.slice(0, 5)} - ${test.registered_slot_end.slice(0, 5)}`
+                        : "-"}
                     </p>
-                  )}
-                  {test.chapter && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      <span className="font-medium">Chapter:</span> {test.chapter}
+                    <p className="mt-1 text-xs">
+                      Date and slot cannot be changed after registration.
                     </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => openRegistration(test)}
-                    disabled={registrationClosed || !dates.length}
-                    className="mt-4 w-full bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-50"
-                  >
-                    Register
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      <Card className="h-full" id="test-schedule">
-        <h2 className="text-xl md:text-2xl font-bold text-blue-800">
-          Test Batch – Test Schedule
-        </h2>
-        <p className="text-sm text-gray-500 mt-1 mb-5">
-          Your confirmed Test Batch tests and assigned dates and slots.
-        </p>
-
-        {loading ? (
-          <p className="text-gray-500">Loading schedule...</p>
-        ) : registeredTests.length === 0 ? (
-          <p className="text-gray-500">No tests have been registered yet.</p>
-        ) : (
-          <div className="space-y-4">
-            {registeredTests.map((test) => (
-              <div key={test.test_code} className="border border-gray-200 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-blue-700">{test.test_code}</h3>
-                <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 mt-2">
-                  <p><span className="font-medium">Subject:</span> {test.subject_name || "-"}</p>
-                  <p><span className="font-medium">Test Series:</span> {test.test_series_name || "-"}</p>
-                  <p><span className="font-medium">Duration:</span> {test.duration_minutes} mins</p>
-                  <p><span className="font-medium">Total Marks:</span> {test.total_marks}</p>
-                </div>
-                <div className="mt-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
-                  <p className="font-semibold">Registration confirmed</p>
-                  <p>Date: {formatDate(test.registered_writing_date)}</p>
-                  <p>
-                    Slot:{" "}
-                    {test.registered_slot_start && test.registered_slot_end
-                      ? `${test.registered_slot_start.slice(0, 5)} - ${test.registered_slot_end.slice(0, 5)}`
-                      : "-"}
-                  </p>
-                  <p className="mt-1 text-xs">
-                    Date and slot cannot be changed after registration.
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-                        Register
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
 
       {selectedTest && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
@@ -444,6 +441,8 @@ export default function TestBatchStudentTests({ rollNo }) {
           </div>
         </div>
       )}
-    </div>
+    </>
+  );
+}    </div>
   );
 }
