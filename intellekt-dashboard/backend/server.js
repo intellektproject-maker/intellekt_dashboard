@@ -6012,9 +6012,9 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
 
     const test = testResult.rows[0];
 
-    if (!['Completed', 'Returned'].includes(test.status)) {
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
       return res.status(400).json({
-        error: 'Only completed or returned Test Batch tests can receive marks'
+        error: 'Only posted Test Batch tests can receive marks'
       });
     }
 
