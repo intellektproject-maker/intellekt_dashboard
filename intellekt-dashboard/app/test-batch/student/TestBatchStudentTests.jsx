@@ -251,7 +251,7 @@ export default function TestBatchStudentTests({ rollNo }) {
 
   return (
     <div className="space-y-5">
-      <div className="border-t-4 border-blue-700 pt-6">
+      <div id="test-schedule" className="border-t-4 border-blue-700 pt-6">
         <h2 className="text-xl md:text-2xl font-bold text-blue-800">
           Test Batch – Test Schedule
         </h2>
