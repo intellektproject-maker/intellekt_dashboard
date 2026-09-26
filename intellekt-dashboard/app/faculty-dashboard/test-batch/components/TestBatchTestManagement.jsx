@@ -287,13 +287,35 @@ export default function TestBatchTestManagement() {
 
   async function loadEligibleTests() {
     try {
-      const data = await api(
+      const markEntryData = await api(
         "/test-batch/mark-entry/tests?adminId=" +
           encodeURIComponent(adminId)
       );
-      setEligibleTests(data.tests || []);
+
+      const postedTests = Array.isArray(markEntryData.tests)
+        ? markEntryData.tests
+        : [];
+
+      if (postedTests.length > 0) {
+        setEligibleTests(postedTests);
+        return;
+      }
+
+      // Fallback to the main Test Batch test list when the mark-entry
+      // endpoint returns an empty list. This keeps every posted/scheduled
+      // Test Batch test selectable in Enter Marks.
+      const testListData = await api(
+        "/test-batch/tests?adminId=" + encodeURIComponent(adminId)
+      );
+
+      const fallbackTests = (testListData.tests || []).filter(
+        (test) => test.status !== "Cancelled"
+      );
+
+      setEligibleTests(fallbackTests);
     } catch (err) {
       setError(err.message);
+      setEligibleTests([]);
     }
   }
 
@@ -1128,9 +1150,9 @@ export default function TestBatchTestManagement() {
                 Test Batch – Enter Marks
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Only completed or returned tests are available. Students are
-                loaded only when their Test Batch attendance is marked Present
-                for the test writing date.
+                Posted Test Batch tests are available here with their registered
+                students. Marks can be entered after the test is completed or
+                returned, following the Test Batch attendance workflow.
               </p>
             </div>
             <button
@@ -1318,236 +1340,3 @@ export default function TestBatchTestManagement() {
                     <button
                       onClick={resetUnsavedChanges}
                       disabled={
-                        saving ||
-                        finalizing ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-gray-500 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      Revert Unsaved Changes
-                    </button>
-
-                    <button
-                      onClick={resetSavedDraft}
-                      disabled={
-                        resetting ||
-                        saving ||
-                        finalizing ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-orange-600 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      {resetting ? "Resetting..." : "Reset Saved Draft"}
-                    </button>
-
-                    <button
-                      onClick={finalizeMarks}
-                      disabled={
-                        saving ||
-                        finalizing ||
-                        resetting ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-green-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      {finalizing ? "Finalizing..." : "Finalize Marks"}
-                    </button>
-
-                    {markTest.marks_entry_status === "Finalized" && (
-                      <span className="text-sm font-semibold text-green-700">
-                        Finalized and locked
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-gray-500 mt-3">
-                    Leave a marks field blank to clear that saved draft mark.
-                    Enter A for an absent result if required by the mark sheet.
-                  </p>
-                </>
-              )}
-            </>
-          )}
-        </Card>
-      )}
-
-      {section === "list" && (
-        <Card>
-          <div className="flex flex-wrap gap-3 items-center mb-5">
-            <h3 className="text-xl font-bold text-blue-800 mr-auto">
-              Test Batch – Test List
-            </h3>
-            <input
-              className="border rounded-lg px-4 py-2"
-              placeholder="Search test code / subject / batch"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <button
-              onClick={exportTests}
-              className="bg-gray-700 text-white px-5 py-2 rounded-lg"
-            >
-              Export
-            </button>
-          </div>
-
-          {loading ? (
-            <p className="text-gray-500">Loading...</p>
-          ) : filteredTests.length === 0 ? (
-            <p className="text-gray-500">No Test Batch tests found.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1200px]">
-                <thead className="bg-blue-700 text-white">
-                  <tr>
-                    <th className="p-3 text-left">Code</th>
-                    <th className="p-3 text-left">Test Batch</th>
-                    <th className="p-3 text-left">Subject</th>
-                    <th className="p-3 text-left">Test Date</th>
-                    <th className="p-3 text-left">Writing Date</th>
-                    <th className="p-3 text-left">Marks</th>
-                    <th className="p-3 text-left">Status</th>
-                    <th className="p-3 text-left">Marks Status</th>
-                    <th className="p-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTests.map((test, index) => (
-                    <tr
-                      key={test.id}
-                      className={
-                        index % 2 === 0 ? "bg-gray-50 border-b" : "border-b"
-                      }
-                    >
-                      <td className="p-3 font-semibold text-blue-700">
-                        {test.test_code}
-                      </td>
-                      <td className="p-3">{test.test_series_name}</td>
-                      <td className="p-3">{test.subject_name}</td>
-                      <td className="p-3">{formatDate(test.test_date)}</td>
-                      <td className="p-3">{formatDate(test.writing_date)}</td>
-                      <td className="p-3">{test.total_marks}</td>
-                      <td className="p-3">{test.status}</td>
-                      <td className="p-3">{test.marks_entry_status}</td>
-                      <td className="p-3 flex gap-2">
-                        <button
-                          onClick={() => openPostTestScheduler(test)}
-                          className="bg-yellow-500 text-white px-3 py-1 rounded"
-                        >
-                          Edit Schedule
-                        </button>
-                        <button
-                          onClick={() => deleteTest(test)}
-                          className="bg-red-600 text-white px-3 py-1 rounded"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {section === "results" && (
-        <Card>
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <h3 className="text-xl font-bold text-blue-800">
-                Test Batch – Results
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Results are read from the isolated Test Batch marks table.
-              </p>
-            </div>
-            <button
-              onClick={() => setSection("")}
-              className="px-4 py-2 bg-gray-100 rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="flex gap-3 mb-5">
-            <select
-              className="border rounded-lg px-4 py-3 flex-1 bg-white"
-              value={resultTest}
-              onChange={(event) => setResultTest(event.target.value)}
-            >
-              <option value="">Select Test</option>
-              {tests.map((test) => (
-                <option key={test.test_code} value={test.test_code}>
-                  {test.test_code} — {test.test_series_name} —{" "}
-                  {test.subject_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {!resultTest ? (
-            <p className="text-gray-500">
-              Select a Test Batch test to view results.
-            </p>
-          ) : results.length === 0 ? (
-            <p className="text-gray-500">No marks found for this Test Batch test.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
-                <thead className="bg-blue-700 text-white">
-                  <tr>
-                    <th className="p-3 text-left">Roll No</th>
-                    <th className="p-3 text-left">Student</th>
-                    <th className="p-3 text-left">Subject</th>
-                    <th className="p-3 text-left">Marks</th>
-                    <th className="p-3 text-left">Total</th>
-                    <th className="p-3 text-left">Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((result, index) => {
-                    const absent =
-                      String(result.marks_obtained).toUpperCase() === "A";
-                    const percentage = absent
-                      ? null
-                      : (Number(result.marks_obtained) /
-                          Number(result.total_marks)) *
-                        100;
-
-                    return (
-                      <tr
-                        key={result.id}
-                        className={
-                          index % 2 === 0
-                            ? "bg-gray-50 border-b"
-                            : "border-b"
-                        }
-                      >
-                        <td className="p-3 font-semibold">
-                          {result.roll_no}
-                        </td>
-                        <td className="p-3">{result.name}</td>
-                        <td className="p-3">{result.subject_name}</td>
-                        <td className="p-3">{result.marks_obtained}</td>
-                        <td className="p-3">{result.total_marks}</td>
-                        <td className="p-3">
-                          {absent
-                            ? "Absent"
-                            : percentage >= 40
-                            ? "Pass"
-                            : "Fail"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      )}
-    </div>
-  );
-}
