@@ -1136,22 +1136,6 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
               </label>
 
               <label className="text-sm text-gray-600">
-                Status
-                <select
-                  value={scheduleForm.status}
-                  onChange={(e) => updateSchedule("status", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
-                >
-                  <option value="Draft">Draft</option>
-                  <option value="Scheduled">Scheduled</option>
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Returned">Returned</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </label>
-
-              <label className="text-sm text-gray-600">
                 Apply for Test – Open Date
                 <input
                   type="date"
