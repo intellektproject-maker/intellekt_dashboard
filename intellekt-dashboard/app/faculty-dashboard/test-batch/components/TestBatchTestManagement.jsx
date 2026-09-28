@@ -1524,44 +1524,6 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       {saving ? "Saving..." : "Save / Update Marks"}
                     </button>
 
-                    <button
-                      onClick={resetUnsavedChanges}
-                      disabled={
-                        saving ||
-                        finalizing ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-gray-500 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      Revert Unsaved Changes
-                    </button>
-
-                    <button
-                      onClick={resetSavedDraft}
-                      disabled={
-                        resetting ||
-                        saving ||
-                        finalizing ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-orange-600 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      {resetting ? "Resetting..." : "Reset Saved Draft"}
-                    </button>
-
-                    <button
-                      onClick={finalizeMarks}
-                      disabled={
-                        saving ||
-                        finalizing ||
-                        resetting ||
-                        markTest.marks_entry_status === "Finalized"
-                      }
-                      className="bg-green-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
-                    >
-                      {finalizing ? "Finalizing..." : "Finalize Marks"}
-                    </button>
-
                     {markTest.marks_entry_status === "Finalized" && (
                       <span className="text-sm font-semibold text-green-700">
                         Finalized and locked
