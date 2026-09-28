@@ -670,8 +670,49 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     setError("");
   }
 
+  async function editMarks() {
+    if (!markTest || markTest.marks_entry_status !== "Finalized") return;
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await api(
+        "/test-batch/tests/" +
+          encodeURIComponent(markTest.test_code) +
+          "/marks/edit",
+        {
+          method: "POST",
+          body: JSON.stringify({ adminId }),
+        }
+      );
+
+      await loadMarkEntry(markTest.test_code);
+      await loadTests();
+      await loadEligibleTests();
+      setMessage("Marks are now unlocked for editing. Click Save / Finalize Marks after making the changes.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveMarks() {
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
+
+    const missing = students.filter(
+      (student) => !String(student.marks_obtained || "").trim()
+    );
+
+    if (missing.length) {
+      setError(
+        "Enter marks for all appeared students before saving/finalizing: " +
+          missing.map((student) => student.roll_no).join(", ")
+      );
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -698,7 +739,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage("Test Batch marks saved successfully. You can still update them before finalization.");
+      setMessage("Test Batch marks saved and finalized successfully. Click Edit Marks to make changes.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1496,6 +1537,16 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   </div>
 
                   <div className="flex flex-wrap gap-3 items-center mt-5">
+                    {markTest.marks_entry_status === "Finalized" && (
+                      <button
+                        onClick={editMarks}
+                        disabled={saving}
+                        className="bg-yellow-500 text-white px-6 py-3 rounded-lg disabled:opacity-50"
+                      >
+                        {saving ? "Unlocking..." : "Edit Marks"}
+                      </button>
+                    )}
+
                     <button
                       onClick={saveMarks}
                       disabled={
@@ -1505,7 +1556,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       }
                       className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
                     >
-                      {saving ? "Saving..." : "Save / Update Marks"}
+                      {saving
+                        ? "Saving..."
+                        : "Save / Finalize Marks"}
                     </button>
 
                     {markTest.marks_entry_status === "Finalized" && (
