@@ -66,12 +66,21 @@ function normalizeStudent(row) {
 
 function parseTestBatchCode(value) {
   const code = String(value || "").trim().toUpperCase();
-  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})$/);
+
+  // Format:
+  // S12M35C01
+  // S = State Board, C = CBSE, I = ISC
+  // 12 = Class
+  // M = Mathematics, P = Physics
+  // 35 = Total Marks
+  // C01 = Chapter 01
+  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d{2})$/);
 
   if (!match) return null;
 
-  const [, boardCode, classCode, subjectCode, marksCode] = match;
+  const [, boardCode, classCode, subjectCode, marksCode, chapterCode] = match;
   const totalMarks = Number(marksCode);
+  const chapterNumber = Number(chapterCode);
 
   let duration = "";
   if ([35, 40, 50].includes(totalMarks)) duration = 90;
@@ -88,6 +97,7 @@ function parseTestBatchCode(value) {
     subject: subjectCode === "M" ? "Mathematics" : "Physics",
     totalMarks,
     duration,
+    chapter: String(chapterNumber).padStart(2, "0"),
   };
 }
 
@@ -234,6 +244,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
               subject_name: parsed.subject,
               total_marks: String(parsed.totalMarks),
               duration_minutes: parsed.duration ? String(parsed.duration) : "",
+              chapter: parsed.chapter,
             }
           : {}),
       }));
@@ -1166,7 +1177,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   value={scheduleForm.test_code}
                   onChange={(e) => updateSchedule("test_code", e.target.value)}
                   readOnly={Boolean(scheduleForm.id)}
-                  placeholder="Example: S12M35"
+                  placeholder="Example: S12M35C01"
                   className="block w-full border rounded-lg px-4 py-3 mt-1 uppercase"
                 />
                 {parseTestBatchCode(scheduleForm.test_code) && (
