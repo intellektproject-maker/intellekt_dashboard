@@ -956,7 +956,19 @@ function StudentDashboardSection({ rollNo }) {
           ? ["Mathematics"]
           : [];
 
-  const marksBySubject = enrolledSubjects.map((subject) => ({
+  // Group marks by the subject selected when the Test Batch test was posted.
+  // This keeps Physics and Mathematics marks completely separated.
+  const subjectsWithMarks = marks
+    .map((mark) => String(mark.subject_name || "").trim())
+    .filter(Boolean);
+
+  const displaySubjects = [...new Set([...enrolledSubjects, ...subjectsWithMarks])].filter(
+    (subject) =>
+      subject.toLowerCase() === "physics" ||
+      subject.toLowerCase() === "mathematics"
+  );
+
+  const marksBySubject = displaySubjects.map((subject) => ({
     subject,
     rows: marks.filter(
       (mark) =>
