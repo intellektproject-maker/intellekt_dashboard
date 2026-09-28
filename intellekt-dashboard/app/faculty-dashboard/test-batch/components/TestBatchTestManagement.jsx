@@ -73,8 +73,8 @@ function parseTestBatchCode(value) {
   // 12 = Class
   // M = Mathematics, P = Physics
   // 35 = Total Marks
-  // C01 = Chapter 01
-  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d{2})$/);
+  // C1, C01, C10, etc. = Chapter number
+  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d+)$/);
 
   if (!match) return null;
 
