@@ -5530,12 +5530,20 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
        WHERE t.test_series_id=$2
          AND t.status IN ('Scheduled','Active')
          AND (
-           $3::text IS NULL
-           OR LOWER(REPLACE(REPLACE(COALESCE($3::text,''),' ',''),'_',''))
-              = LOWER(REPLACE(REPLACE(COALESCE(t.test_code,''),' ',''),'_',''))
-         )
+           CASE LEFT(UPPER(TRIM(t.test_code)), 1)
+             WHEN 'S' THEN 'stateboard'
+             WHEN 'C' THEN 'cbse'
+             WHEN 'I' THEN 'isc'
+           END
+         ) = LOWER(REPLACE(REPLACE(COALESCE($3::text,''),' ',''),'_',''))
+         AND SUBSTRING(UPPER(TRIM(t.test_code)) FROM 2 FOR 2) = TRIM(COALESCE($4::text,''))
        ORDER BY t.application_open_date ASC,t.test_code ASC`,
-      [rollNo, studentRow.test_series_id, req.query?.testCode ? String(req.query.testCode).trim().toUpperCase() : null]
+      [
+        rollNo,
+        studentRow.test_series_id,
+        studentRow.board || '',
+        studentRow.class || ''
+      ]
     );
     res.json({tests:result.rows});
   } catch(err) {
