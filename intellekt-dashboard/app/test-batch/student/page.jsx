@@ -76,13 +76,6 @@ function TestBatchStudentPageInner() {
             Profile
           </Link>
 
-          <Link
-            href={`/reset-password?id=${roll}&role=student`}
-            onClick={() => setMenuOpen(false)}
-            className="block rounded-lg px-3 py-2 text-base font-medium text-gray-800 hover:bg-gray-100"
-          >
-            Reset Password
-          </Link>
         </nav>
 
         <div className="absolute bottom-6 left-0 w-full px-6">
