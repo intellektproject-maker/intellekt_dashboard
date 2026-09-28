@@ -946,6 +946,25 @@ function StudentDashboardSection({ rollNo }) {
   const student = data.student || {};
   const marks = Array.isArray(data.marks) ? data.marks : [];
 
+  const subjectValue = String(student.subjects || "").trim().toLowerCase();
+  const enrolledSubjects =
+    subjectValue === "both"
+      ? ["Physics", "Mathematics"]
+      : subjectValue === "physics"
+        ? ["Physics"]
+        : subjectValue === "mathematics"
+          ? ["Mathematics"]
+          : [];
+
+  const marksBySubject = enrolledSubjects.map((subject) => ({
+    subject,
+    rows: marks.filter(
+      (mark) =>
+        String(mark.subject_name || "").trim().toLowerCase() ===
+        subject.toLowerCase()
+    ),
+  }));
+
   const numericMarks = marks
     .map((m) => {
       const obtained = Number(m.marks_obtained);
@@ -1058,34 +1077,52 @@ function StudentDashboardSection({ rollNo }) {
                 {marks.length === 0 ? (
                   <p className="text-gray-500">No marks available yet.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[650px] border-collapse">
-                      <thead>
-                        <tr className="bg-blue-700 text-white">
-                          <th className="p-3 text-left">Test</th>
-                          <th className="p-3 text-left">Subject</th>
-                          <th className="p-3 text-left">Marks</th>
-                          <th className="p-3 text-left">Total</th>
-                          <th className="p-3 text-left">%</th>
-                          <th className="p-3 text-left">Result</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {marks.map((m, i) => (
-                          <tr
-                            key={m.id}
-                            className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
-                          >
-                            <td className="p-3 font-semibold">{m.test_code}</td>
-                            <td className="p-3">{m.subject_name}</td>
-                            <td className="p-3">{m.marks_obtained}</td>
-                            <td className="p-3">{m.total_marks}</td>
-                            <td className="p-3">{percent(m.percentage)}%</td>
-                            <td className="p-3">{m.result_status}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-6">
+                    {marksBySubject.map(({ subject, rows }) => (
+                      <div key={subject}>
+                        <h3 className="text-lg font-bold text-blue-800 mb-3">
+                          {subject} Marks
+                        </h3>
+
+                        {rows.length === 0 ? (
+                          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                            No {subject.toLowerCase()} marks available yet.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[650px] border-collapse">
+                              <thead>
+                                <tr className="bg-blue-700 text-white">
+                                  <th className="p-3 text-left">Test</th>
+                                  <th className="p-3 text-left">Marks</th>
+                                  <th className="p-3 text-left">Total</th>
+                                  <th className="p-3 text-left">%</th>
+                                  <th className="p-3 text-left">Result</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rows.map((m, i) => (
+                                  <tr
+                                    key={m.id}
+                                    className={
+                                      i % 2 === 0
+                                        ? "bg-gray-50 border-b"
+                                        : "bg-white border-b"
+                                    }
+                                  >
+                                    <td className="p-3 font-semibold">{m.test_code}</td>
+                                    <td className="p-3">{m.marks_obtained}</td>
+                                    <td className="p-3">{m.total_marks}</td>
+                                    <td className="p-3">{percent(m.percentage)}%</td>
+                                    <td className="p-3">{m.result_status}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
