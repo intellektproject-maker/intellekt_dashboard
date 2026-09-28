@@ -65,7 +65,7 @@ function normalizeStudent(row) {
 }
 
 function parseTestBatchCode(value) {
-  const code = String(value || "").trim().toUpperCase();
+  const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
   // Format:
   // S12M35C01
@@ -127,6 +127,21 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     application_close_date: "",
     status: "Scheduled",
   });
+
+  // Automatically populate subject, total marks, duration and chapter
+  // whenever a complete Test Batch code is entered.
+  useEffect(() => {
+    const parsed = parseTestBatchCode(scheduleForm.test_code);
+    if (!parsed) return;
+
+    setScheduleForm((current) => ({
+      ...current,
+      subject_name: parsed.subject,
+      total_marks: String(parsed.totalMarks),
+      duration_minutes: parsed.duration ? String(parsed.duration) : "",
+      chapter: parsed.chapter,
+    }));
+  }, [scheduleForm.test_code]);
 
   const [selectedMarkTest, setSelectedMarkTest] = useState("");
   const [markSeriesFilter, setMarkSeriesFilter] = useState("");
@@ -233,7 +248,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   function updateSchedule(field, value) {
     if (field === "test_code") {
-      const code = String(value || "").toUpperCase();
+      const code = String(value || "")
+        .toUpperCase()
+        .replace(/\s+/g, "");
       const parsed = parseTestBatchCode(code);
 
       setScheduleForm((current) => ({
