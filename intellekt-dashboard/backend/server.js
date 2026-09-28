@@ -6046,6 +6046,35 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
   }
 });
 
+app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAdmin, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       RETURNING test_code,marks_entry_status`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    res.json({
+      message: 'Marks unlocked for editing',
+      marks_entry_status: result.rows[0].marks_entry_status
+    });
+  } catch (err) {
+    console.error('POST /test-batch/tests/:testCode/marks/edit error:', err);
+    res.status(400).json({ error: err.message || 'Failed to unlock marks for editing' });
+  }
+});
+
 app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req, res) => {
   const client = await pool.connect();
 
@@ -6151,17 +6180,50 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
       );
     }
 
+    const completed = await client.query(
+      `SELECT s.roll_no
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
+        AND r.status='Registered'
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=r.writing_date
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3
+         AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')
+       ORDER BY s.roll_no ASC`,
+      [code, test.subject_name, test.test_series_id]
+    );
+
+    if (completed.rows.length > 0) {
+      throw new Error(
+        'Enter marks for all appeared students before saving/finalizing: ' +
+        completed.rows.map(row => row.roll_no).join(', ')
+      );
+    }
+
     await client.query(
       `UPDATE test_batch_tests
-       SET marks_entry_status='Draft',
+       SET marks_entry_status='Finalized',
+           marks_finalized_at=CURRENT_TIMESTAMP,
+           marks_finalized_by=$1,
            updated_at=CURRENT_TIMESTAMP
-       WHERE id=$1`,
-      [test.id]
+       WHERE id=$2`,
+      [req.testBatchAdminId, test.id]
     );
 
     await client.query('COMMIT');
 
-    res.json({ message: 'Test Batch marks saved successfully' });
+    res.json({
+      message: 'Test Batch marks saved and finalized successfully',
+      marks_entry_status: 'Finalized'
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /test-batch/tests/:testCode/marks error:', err);
