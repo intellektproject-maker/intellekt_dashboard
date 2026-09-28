@@ -1102,12 +1102,15 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
               <label className="text-sm text-gray-600">
                 Subject
-                <input
+                <select
                   value={scheduleForm.subject_name}
                   onChange={(e) => updateSchedule("subject_name", e.target.value)}
-                  placeholder="Enter subject"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
-                />
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                >
+                  <option value="">Select Subject</option>
+                  <option value="Physics">Physics</option>
+                  <option value="Mathematics">Mathematics</option>
+                </select>
               </label>
 
               <label className="text-sm text-gray-600">
