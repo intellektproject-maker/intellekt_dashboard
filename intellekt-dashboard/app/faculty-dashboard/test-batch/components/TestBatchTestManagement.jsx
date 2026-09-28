@@ -1468,7 +1468,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                           <th className="p-3 text-left">Roll No</th>
                           <th className="p-3 text-left">Marks Obtained</th>
                           <th className="p-3 text-left">Max Marks</th>
-                          <th className="p-3 text-left">Remarks</th>
+                          <th className="p-3 text-left">Edit</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1514,20 +1514,14 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                               </td>
                               <td className="p-3">{markTest.total_marks}</td>
                               <td className="p-3">
-                                <input
-                                  type="text"
-                                  className="w-full border rounded-lg px-3 py-2 disabled:bg-gray-100"
-                                  placeholder="Remarks"
-                                  value={student.remarks}
-                                  disabled={locked}
-                                  onChange={(event) =>
-                                    updateStudent(
-                                      student.roll_no,
-                                      "remarks",
-                                      event.target.value
-                                    )
-                                  }
-                                />
+                                <button
+                                  type="button"
+                                  onClick={editMarks}
+                                  disabled={saving}
+                                  className="bg-yellow-500 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
                               </td>
                             </tr>
                           );
