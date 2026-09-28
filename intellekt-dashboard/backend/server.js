@@ -15,6 +15,28 @@ app.use(express.json());
 /* =========================================================
 	HELPERS
 ========================================================= */
+function parseTestBatchCode(testCode) {
+	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
+	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d+)$/);
+
+	if (!match) return null;
+
+	const [, boardCode, classCode, subjectCode, marksCode, chapterCode] = match;
+
+	return {
+		board:
+			boardCode === 'S'
+				? 'State Board'
+				: boardCode === 'C'
+					? 'CBSE'
+					: 'ISC',
+		className: classCode,
+		subject: subjectCode === 'M' ? 'Mathematics' : 'Physics',
+		totalMarks: Number(marksCode),
+		chapter: chapterCode
+	};
+}
+
 function formatTimeFromMinutes(totalMinutes) {
 	const hours24 = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
@@ -5484,10 +5506,13 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
   try {
     const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
     const student = await pool.query(
-      'SELECT roll_no,test_series_id FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      'SELECT roll_no,test_series_id,board,class FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
       [rollNo]
     );
     if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const parsedCode = parseTestBatchCode(req.query?.testCode || '');
+    const studentRow = student.rows[0];
 
     const result = await pool.query(
       `SELECT
@@ -5504,8 +5529,13 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
          ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
        WHERE t.test_series_id=$2
          AND t.status IN ('Scheduled','Active')
+         AND (
+           $3::text IS NULL
+           OR LOWER(REPLACE(REPLACE(COALESCE($3::text,''),' ',''),'_',''))
+              = LOWER(REPLACE(REPLACE(COALESCE(t.test_code,''),' ',''),'_',''))
+         )
        ORDER BY t.application_open_date ASC,t.test_code ASC`,
-      [rollNo, student.rows[0].test_series_id]
+      [rollNo, studentRow.test_series_id, req.query?.testCode ? String(req.query.testCode).trim().toUpperCase() : null]
     );
     res.json({tests:result.rows});
   } catch(err) {
@@ -5539,6 +5569,20 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     const test = testResult.rows[0];
     if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
       return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
+    }
+
+    const parsedTest = parseTestBatchCode(testCode);
+    if (!parsedTest) {
+      return res.status(400).json({error:'Invalid Test Batch test code format'});
+    }
+
+    const studentBoard = String(student.rows[0].board || '').replace(/\s+/g, '').toLowerCase();
+    const requiredBoard = String(parsedTest.board).replace(/\s+/g, '').toLowerCase();
+    const studentClass = String(student.rows[0].class || '').trim();
+    if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
+      return res.status(403).json({
+        error:'This test is not assigned to the student\'s board and class'
+      });
     }
 
     const selectedWritingDate = String(req.body?.writing_date || '').trim();
