@@ -64,6 +64,33 @@ function normalizeStudent(row) {
   };
 }
 
+function parseTestBatchCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})$/);
+
+  if (!match) return null;
+
+  const [, boardCode, classCode, subjectCode, marksCode] = match;
+  const totalMarks = Number(marksCode);
+
+  let duration = "";
+  if ([35, 40, 50].includes(totalMarks)) duration = 90;
+  if ([70, 80, 90].includes(totalMarks)) duration = 180;
+
+  return {
+    board:
+      boardCode === "S"
+        ? "State Board"
+        : boardCode === "C"
+          ? "CBSE"
+          : "ISC",
+    className: classCode,
+    subject: subjectCode === "M" ? "Mathematics" : "Physics",
+    totalMarks,
+    duration,
+  };
+}
+
 export default function TestBatchTestManagement({ initialSection = "", standalone = false } = {}) {
   const router = useRouter();
   const params = useSearchParams();
@@ -195,6 +222,27 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }
 
   function updateSchedule(field, value) {
+    if (field === "test_code") {
+      const code = String(value || "").toUpperCase();
+      const parsed = parseTestBatchCode(code);
+
+      setScheduleForm((current) => ({
+        ...current,
+        test_code: code,
+        ...(parsed
+          ? {
+              subject_name: parsed.subject,
+              total_marks: String(parsed.totalMarks),
+              duration_minutes: parsed.duration ? String(parsed.duration) : "",
+            }
+          : {}),
+      }));
+
+      setError("");
+      setMessage("");
+      return;
+    }
+
     setScheduleForm((current) => ({ ...current, [field]: value }));
     setError("");
     setMessage("");
@@ -1116,13 +1164,19 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 Test Code
                 <input
                   value={scheduleForm.test_code}
-                  onChange={(e) =>
-                    updateSchedule("test_code", e.target.value.toUpperCase())
-                  }
+                  onChange={(e) => updateSchedule("test_code", e.target.value)}
                   readOnly={Boolean(scheduleForm.id)}
-                  placeholder="Example: IAT001M50"
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                  placeholder="Example: S12M35"
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 uppercase"
                 />
+                {parseTestBatchCode(scheduleForm.test_code) && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {parseTestBatchCode(scheduleForm.test_code).board} • Class{" "}
+                    {parseTestBatchCode(scheduleForm.test_code).className} •{" "}
+                    {parseTestBatchCode(scheduleForm.test_code).subject} •{" "}
+                    {parseTestBatchCode(scheduleForm.test_code).totalMarks} marks
+                  </p>
+                )}
               </label>
 
               <label className="text-sm text-gray-600">
@@ -1146,7 +1200,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 <select
                   value={scheduleForm.subject_name}
                   onChange={(e) => updateSchedule("subject_name", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  disabled={Boolean(parseTestBatchCode(scheduleForm.test_code))}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white disabled:bg-gray-100"
                 >
                   <option value="">Select Subject</option>
                   <option value="Physics">Physics</option>
@@ -1161,7 +1216,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   min="1"
                   value={scheduleForm.total_marks}
                   onChange={(e) => updateSchedule("total_marks", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                  readOnly={Boolean(parseTestBatchCode(scheduleForm.test_code))}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 read-only:bg-gray-100"
                 />
               </label>
 
@@ -1172,7 +1228,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   min="1"
                   value={scheduleForm.duration_minutes}
                   onChange={(e) => updateSchedule("duration_minutes", e.target.value)}
-                  className="block w-full border rounded-lg px-4 py-3 mt-1"
+                  readOnly={Boolean(parseTestBatchCode(scheduleForm.test_code))}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 read-only:bg-gray-100"
                 />
               </label>
 
