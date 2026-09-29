@@ -170,6 +170,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [registeredStudentTest, setRegisteredStudentTest] = useState("");
   const [registeredBoardFilter, setRegisteredBoardFilter] = useState("");
   const [registeredClassFilter, setRegisteredClassFilter] = useState("");
+  const [registeredSeriesFilter, setRegisteredSeriesFilter] = useState("");
   const [registeredStudents, setRegisteredStudents] = useState([]);
   const [loadingRegisteredStudents, setLoadingRegisteredStudents] = useState(false);
   const [postTestTests, setPostTestTests] = useState([]);
@@ -1106,14 +1107,26 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       if (test.status === "Cancelled") return false;
       const parsed = getCodeDetails(test);
       if (!parsed) return false;
+
       const boardMatches =
         !registeredBoardFilter ||
         boardOptions.find((b) => b.code === registeredBoardFilter)?.name === parsed.board;
+
       const classMatches =
         !registeredClassFilter || parsed.className === registeredClassFilter;
-      return boardMatches && classMatches;
+
+      const seriesMatches =
+        !registeredSeriesFilter ||
+        String(test.test_series_id) === String(registeredSeriesFilter);
+
+      return boardMatches && classMatches && seriesMatches;
     });
-  }, [tests, registeredBoardFilter, registeredClassFilter]);
+  }, [
+    tests,
+    registeredBoardFilter,
+    registeredClassFilter,
+    registeredSeriesFilter,
+  ]);
 
   const registeredClassOptions = useMemo(() => {
     const classes = tests
@@ -1997,6 +2010,28 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   <option value="">All Classes</option>
                   {registeredClassOptions.map((className) => (
                     <option key={className} value={className}>Class {className}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-600">
+                Test Series
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={registeredSeriesFilter}
+                  onChange={(event) => {
+                    setRegisteredSeriesFilter(event.target.value);
+                    setRegisteredStudentTest("");
+                    setRegisteredStudents([]);
+                  }}
+                >
+                  <option value="">All Test Series</option>
+                  {testSeries.map((series) => (
+                    <option key={series.id} value={series.id}>
+                      {series.name}
+                    </option>
                   ))}
                 </select>
               </label>
