@@ -15,6 +15,14 @@ app.use(express.json());
 /* =========================================================
 	HELPERS
 ========================================================= */
+function normalizeTestBatchBoard(value) {
+	const board = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+	if (board === 's' || board === 'state' || board === 'stateboard') return 'stateboard';
+	if (board === 'c' || board === 'cbse') return 'cbse';
+	if (board === 'i' || board === 'isc') return 'isc';
+	return board;
+}
+
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
 	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d+)$/);
@@ -5444,7 +5452,7 @@ app.get('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
     const result=await pool.query(
       'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
       ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
-    res.json({tests:result.rows});
+    res.json({tests:filteredTests});
   } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
 });
 
@@ -5511,7 +5519,6 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
     );
     if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
 
-    const parsedCode = parseTestBatchCode(req.query?.testCode || '');
     const studentRow = student.rows[0];
 
     const result = await pool.query(
@@ -5529,22 +5536,21 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
          ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
        WHERE t.test_series_id=$2
          AND t.status IN ('Scheduled','Active')
-         AND (
-           CASE LEFT(UPPER(TRIM(t.test_code)), 1)
-             WHEN 'S' THEN 'stateboard'
-             WHEN 'C' THEN 'cbse'
-             WHEN 'I' THEN 'isc'
-           END
-         ) = LOWER(REPLACE(REPLACE(COALESCE($3::text,''),' ',''),'_',''))
-         AND SUBSTRING(UPPER(TRIM(t.test_code)) FROM 2 FOR 2) = TRIM(COALESCE($4::text,''))
        ORDER BY t.application_open_date ASC,t.test_code ASC`,
-      [
-        rollNo,
-        studentRow.test_series_id,
-        studentRow.board || '',
-        studentRow.class || ''
-      ]
+      [rollNo, studentRow.test_series_id]
     );
+
+    const studentBoard = normalizeTestBatchBoard(studentRow.board);
+    const studentClass = String(studentRow.class || '').trim();
+
+    const filteredTests = result.rows.filter((test) => {
+      const parsed = parseTestBatchCode(test.test_code);
+      if (!parsed) return false;
+
+      const testBoard = normalizeTestBatchBoard(parsed.board);
+      return testBoard === studentBoard && String(parsed.className) === studentClass;
+    });
+
     res.json({tests:result.rows});
   } catch(err) {
     console.error('GET /test-batch/student-tests/:rollNo error:',err);
@@ -5584,8 +5590,8 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
       return res.status(400).json({error:'Invalid Test Batch test code format'});
     }
 
-    const studentBoard = String(student.rows[0].board || '').replace(/\s+/g, '').toLowerCase();
-    const requiredBoard = String(parsedTest.board).replace(/\s+/g, '').toLowerCase();
+    const studentBoard = normalizeTestBatchBoard(student.rows[0].board);
+    const requiredBoard = normalizeTestBatchBoard(parsedTest.board);
     const studentClass = String(student.rows[0].class || '').trim();
     if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
       return res.status(403).json({
