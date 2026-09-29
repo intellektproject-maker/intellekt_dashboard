@@ -1032,19 +1032,6 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     URL.revokeObjectURL(url);
   }
 
-  const listFilteredTests = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) return tests;
-
-    return tests.filter(
-      (test) =>
-        String(test.test_code).toLowerCase().includes(term) ||
-        String(test.subject_name).toLowerCase().includes(term) ||
-        String(test.test_series_name).toLowerCase().includes(term)
-    );
-  }, [tests, search]);
-
   const boardOptions = [
     { code: "S", name: "State Board" },
     { code: "C", name: "CBSE" },
@@ -1108,17 +1095,26 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }, [tests, registeredBoardFilter]);
 
   const listFilteredTests = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
     return tests.filter((test) => {
       const parsed = getCodeDetails(test);
       if (!parsed) return false;
+
       const boardMatches =
         !listBoardFilter ||
         boardOptions.find((b) => b.code === listBoardFilter)?.name === parsed.board;
       const classMatches =
         !listClassFilter || parsed.className === listClassFilter;
-      return boardMatches && classMatches;
+      const searchMatches =
+        !term ||
+        String(test.test_code || "").toLowerCase().includes(term) ||
+        String(test.subject_name || "").toLowerCase().includes(term) ||
+        String(test.test_series_name || "").toLowerCase().includes(term);
+
+      return boardMatches && classMatches && searchMatches;
     });
-  }, [tests, listBoardFilter, listClassFilter]);
+  }, [tests, listBoardFilter, listClassFilter, search]);
 
   const listClassOptions = useMemo(() => {
     const classes = tests
