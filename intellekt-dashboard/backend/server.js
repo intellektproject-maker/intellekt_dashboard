@@ -5551,7 +5551,7 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
       return testBoard === studentBoard && String(parsed.className) === studentClass;
     });
 
-    res.json({tests:result.rows});
+    res.json({tests:filteredTests});
   } catch(err) {
     console.error('GET /test-batch/student-tests/:rollNo error:',err);
     res.status(500).json({error:'Failed to fetch Test Batch test schedule'});
@@ -5565,7 +5565,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     if (!rollNo) return res.status(400).json({error:'Roll number is required'});
 
     const student = await pool.query(
-      'SELECT roll_no,test_series_id FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      'SELECT roll_no,test_series_id,board,class FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
       [rollNo]
     );
     if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
