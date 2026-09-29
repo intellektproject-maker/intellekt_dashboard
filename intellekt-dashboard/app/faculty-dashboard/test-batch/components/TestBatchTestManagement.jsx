@@ -1772,7 +1772,10 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
                     if (!seriesId) return;
 
-                    const matchingTests = eligibleTests.filter(
+                    // Apply the selected Board/Class filters to the tests as well.
+                    // Do not load a State Board student/test while CBSE (or another
+                    // board) is selected.
+                    const matchingTests = filteredMarkTests.filter(
                       (test) => String(test.test_series_id) === String(seriesId)
                     );
 
@@ -1791,8 +1794,25 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                           "?adminId=" +
                           encodeURIComponent(adminId)
                       );
+
+                      const selectedBoardName =
+                        boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
+
+                      const filteredStudents = (data.students || []).filter((student) => {
+                        const boardMatches =
+                          !markBoardFilter ||
+                          String(student.board || "").trim().toLowerCase() ===
+                            selectedBoardName.trim().toLowerCase();
+
+                        const classMatches =
+                          !markClassFilter ||
+                          String(student.class || "").trim() === String(markClassFilter).trim();
+
+                        return boardMatches && classMatches;
+                      });
+
                       setStudents(
-                        (data.students || []).map((student) => ({
+                        filteredStudents.map((student) => ({
                           ...student,
                           marks_obtained: "",
                           remarks: "",
@@ -1802,7 +1822,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       setMessage(
                         matchingTests.length
                           ? "Students loaded for the selected Test Series. Select a Test Code to enter marks for a specific test."
-                          : "No posted tests found for the selected Test Series."
+                          : "No posted tests found for the selected Board, Class and Test Series."
                       );
                     } catch (err) {
                       setError(err.message);
