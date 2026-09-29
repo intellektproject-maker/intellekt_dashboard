@@ -108,6 +108,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   const [tests, setTests] = useState([]);
   const [eligibleTests, setEligibleTests] = useState([]);
+  const [admissionStudents, setAdmissionStudents] = useState([]);
   const [testSeries, setTestSeries] = useState([]);
   const [section, setSection] = useState(initialSection);
 
@@ -229,6 +230,18 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       setTestSeries(data.series || []);
     } catch (err) {
       setTestSeries([]);
+      setError(err.message);
+    }
+  }
+
+  async function loadAdmissionStudents() {
+    try {
+      const data = await api(
+        "/test-batch/students?adminId=" + encodeURIComponent(adminId)
+      );
+      setAdmissionStudents(data.students || []);
+    } catch (err) {
+      setAdmissionStudents([]);
       setError(err.message);
     }
   }
@@ -510,6 +523,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     loadTests();
     loadEligibleTests();
     loadTestSeries();
+    loadAdmissionStudents();
   }, [adminId, authorized, search]);
 
   useEffect(() => {
@@ -1051,22 +1065,38 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }, [eligibleTests, markSeriesFilter]);
 
   const markClassOptions = useMemo(() => {
-    const classes = markTestsBySeries
-      .map(getCodeDetails)
-      .filter((parsed) => parsed && (!markBoardFilter || parsed.board === boardOptions.find((b) => b.code === markBoardFilter)?.name))
-      .map((parsed) => parsed.className);
-    return [...new Set(classes)].sort();
-  }, [markTestsBySeries, markBoardFilter]);
+    // Classes come from the Test Batch admission records, not from a
+    // hard-coded list. Filter those admission records by the selected board.
+    const selectedBoardName =
+      boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
+
+    const classes = admissionStudents
+      .filter((student) => {
+        if (!selectedBoardName) return true;
+        return String(student.board || "").trim().toLowerCase() ===
+          selectedBoardName.trim().toLowerCase();
+      })
+      .map((student) => String(student.class || "").trim())
+      .filter(Boolean);
+
+    return [...new Set(classes)].sort((a, b) => Number(a) - Number(b));
+  }, [admissionStudents, markBoardFilter]);
 
   const filteredMarkTests = useMemo(() => {
+    const selectedBoardName =
+      boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
+
     return markTestsBySeries.filter((test) => {
       const parsed = getCodeDetails(test);
       if (!parsed) return false;
+
       const boardMatches =
         !markBoardFilter ||
-        boardOptions.find((b) => b.code === markBoardFilter)?.name === parsed.board;
+        parsed.board.trim().toLowerCase() === selectedBoardName.trim().toLowerCase();
+
       const classMatches =
         !markClassFilter || parsed.className === markClassFilter;
+
       return boardMatches && classMatches;
     });
   }, [markTestsBySeries, markBoardFilter, markClassFilter]);
