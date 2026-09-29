@@ -5452,7 +5452,7 @@ app.get('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
     const result=await pool.query(
       'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
       ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
-    res.json({tests:filteredTests});
+    res.json({tests:result.rows});
   } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
 });
 
