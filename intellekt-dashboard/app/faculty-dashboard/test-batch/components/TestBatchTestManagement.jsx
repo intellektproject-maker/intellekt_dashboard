@@ -145,6 +145,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   const [selectedMarkTest, setSelectedMarkTest] = useState("");
   const [markSeriesFilter, setMarkSeriesFilter] = useState("");
+  const [markBoardFilter, setMarkBoardFilter] = useState("");
+  const [markClassFilter, setMarkClassFilter] = useState("");
   const [markTest, setMarkTest] = useState(null);
   const [students, setStudents] = useState([]);
   const [originalStudents, setOriginalStudents] = useState([]);
@@ -165,6 +167,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   });
 
   const [registeredStudentTest, setRegisteredStudentTest] = useState("");
+  const [registeredBoardFilter, setRegisteredBoardFilter] = useState("");
+  const [registeredClassFilter, setRegisteredClassFilter] = useState("");
   const [registeredStudents, setRegisteredStudents] = useState([]);
   const [loadingRegisteredStudents, setLoadingRegisteredStudents] = useState(false);
   const [postTestTests, setPostTestTests] = useState([]);
@@ -185,6 +189,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
 
   const [search, setSearch] = useState("");
+  const [listBoardFilter, setListBoardFilter] = useState("");
+  const [listClassFilter, setListClassFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMarks, setLoadingMarks] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -980,12 +986,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }
 
   function exportTests() {
-    if (!filteredTests.length) {
+    if (!listFilteredTests.length) {
       window.alert("No Test Batch tests to export.");
       return;
     }
 
-    const rows = filteredTests
+    const rows = listFilteredTests
       .map(
         (test) =>
           "<tr>" +
@@ -1026,7 +1032,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     URL.revokeObjectURL(url);
   }
 
-  const filteredTests = useMemo(() => {
+  const listFilteredTests = useMemo(() => {
     const term = search.trim().toLowerCase();
 
     if (!term) return tests;
@@ -1039,12 +1045,88 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     );
   }, [tests, search]);
 
-  const filteredMarkTests = useMemo(() => {
-    if (!markSeriesFilter) return eligibleTests;
+  const boardOptions = [
+    { code: "S", name: "State Board" },
+    { code: "C", name: "CBSE" },
+    { code: "I", name: "ISC" },
+  ];
+
+  function getCodeDetails(test) {
+    return parseTestBatchCode(test?.test_code || "");
+  }
+
+  const markTestsBySeries = useMemo(() => {
     return eligibleTests.filter(
-      (test) => String(test.test_series_id) === String(markSeriesFilter)
+      (test) =>
+        !markSeriesFilter ||
+        String(test.test_series_id) === String(markSeriesFilter)
     );
   }, [eligibleTests, markSeriesFilter]);
+
+  const markClassOptions = useMemo(() => {
+    const classes = markTestsBySeries
+      .map(getCodeDetails)
+      .filter((parsed) => parsed && (!markBoardFilter || parsed.board === boardOptions.find((b) => b.code === markBoardFilter)?.name))
+      .map((parsed) => parsed.className);
+    return [...new Set(classes)].sort();
+  }, [markTestsBySeries, markBoardFilter]);
+
+  const filteredMarkTests = useMemo(() => {
+    return markTestsBySeries.filter((test) => {
+      const parsed = getCodeDetails(test);
+      if (!parsed) return false;
+      const boardMatches =
+        !markBoardFilter ||
+        boardOptions.find((b) => b.code === markBoardFilter)?.name === parsed.board;
+      const classMatches =
+        !markClassFilter || parsed.className === markClassFilter;
+      return boardMatches && classMatches;
+    });
+  }, [markTestsBySeries, markBoardFilter, markClassFilter]);
+
+  const registeredFilteredTests = useMemo(() => {
+    return tests.filter((test) => {
+      if (test.status === "Cancelled") return false;
+      const parsed = getCodeDetails(test);
+      if (!parsed) return false;
+      const boardMatches =
+        !registeredBoardFilter ||
+        boardOptions.find((b) => b.code === registeredBoardFilter)?.name === parsed.board;
+      const classMatches =
+        !registeredClassFilter || parsed.className === registeredClassFilter;
+      return boardMatches && classMatches;
+    });
+  }, [tests, registeredBoardFilter, registeredClassFilter]);
+
+  const registeredClassOptions = useMemo(() => {
+    const classes = tests
+      .filter((test) => test.status !== "Cancelled")
+      .map(getCodeDetails)
+      .filter((parsed) => parsed && (!registeredBoardFilter || parsed.board === boardOptions.find((b) => b.code === registeredBoardFilter)?.name))
+      .map((parsed) => parsed.className);
+    return [...new Set(classes)].sort();
+  }, [tests, registeredBoardFilter]);
+
+  const listFilteredTests = useMemo(() => {
+    return tests.filter((test) => {
+      const parsed = getCodeDetails(test);
+      if (!parsed) return false;
+      const boardMatches =
+        !listBoardFilter ||
+        boardOptions.find((b) => b.code === listBoardFilter)?.name === parsed.board;
+      const classMatches =
+        !listClassFilter || parsed.className === listClassFilter;
+      return boardMatches && classMatches;
+    });
+  }, [tests, listBoardFilter, listClassFilter]);
+
+  const listClassOptions = useMemo(() => {
+    const classes = tests
+      .map(getCodeDetails)
+      .filter((parsed) => parsed && (!listBoardFilter || parsed.board === boardOptions.find((b) => b.code === listBoardFilter)?.name))
+      .map((parsed) => parsed.className);
+    return [...new Set(classes)].sort();
+  }, [tests, listBoardFilter]);
 
   const markStatusLabel = useMemo(() => {
     if (!markTest) return "";
@@ -1364,7 +1446,52 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
+            <div>
+              <label className="text-sm text-gray-600">
+                Board
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={markBoardFilter}
+                  onChange={(event) => {
+                    setMarkBoardFilter(event.target.value);
+                    setMarkClassFilter("");
+                    setSelectedMarkTest("");
+                    setMarkTest(null);
+                    setStudents([]);
+                    setOriginalStudents([]);
+                  }}
+                >
+                  <option value="">All Boards</option>
+                  {boardOptions.map((board) => (
+                    <option key={board.code} value={board.code}>{board.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-600">
+                Class
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={markClassFilter}
+                  onChange={(event) => {
+                    setMarkClassFilter(event.target.value);
+                    setSelectedMarkTest("");
+                    setMarkTest(null);
+                    setStudents([]);
+                    setOriginalStudents([]);
+                  }}
+                >
+                  <option value="">All Classes</option>
+                  {markClassOptions.map((className) => (
+                    <option key={className} value={className}>Class {className}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <div>
               <label className="text-sm text-gray-600">
                 Test Series
@@ -1678,6 +1805,29 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 Close
               </button>
             )}
+            <select
+              className="border rounded-lg px-4 py-2 bg-white"
+              value={listBoardFilter}
+              onChange={(event) => {
+                setListBoardFilter(event.target.value);
+                setListClassFilter("");
+              }}
+            >
+              <option value="">All Boards</option>
+              {boardOptions.map((board) => (
+                <option key={board.code} value={board.code}>{board.name}</option>
+              ))}
+            </select>
+            <select
+              className="border rounded-lg px-4 py-2 bg-white"
+              value={listClassFilter}
+              onChange={(event) => setListClassFilter(event.target.value)}
+            >
+              <option value="">All Classes</option>
+              {listClassOptions.map((className) => (
+                <option key={className} value={className}>Class {className}</option>
+              ))}
+            </select>
             <input
               className="border rounded-lg px-4 py-2"
               placeholder="Search test code / subject / batch"
@@ -1694,7 +1844,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
           {loading ? (
             <p className="text-gray-500">Loading...</p>
-          ) : filteredTests.length === 0 ? (
+          ) : listFilteredTests.length === 0 ? (
             <p className="text-gray-500">No Test Batch tests found.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -1713,7 +1863,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTests.map((test, index) => (
+                  {listFilteredTests.map((test, index) => (
                     <tr
                       key={test.id}
                       className={
@@ -1784,7 +1934,48 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
+            <div>
+              <label className="text-sm text-gray-600">
+                Board
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={registeredBoardFilter}
+                  onChange={(event) => {
+                    setRegisteredBoardFilter(event.target.value);
+                    setRegisteredClassFilter("");
+                    setRegisteredStudentTest("");
+                    setRegisteredStudents([]);
+                  }}
+                >
+                  <option value="">All Boards</option>
+                  {boardOptions.map((board) => (
+                    <option key={board.code} value={board.code}>{board.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-600">
+                Class
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={registeredClassFilter}
+                  onChange={(event) => {
+                    setRegisteredClassFilter(event.target.value);
+                    setRegisteredStudentTest("");
+                    setRegisteredStudents([]);
+                  }}
+                >
+                  <option value="">All Classes</option>
+                  {registeredClassOptions.map((className) => (
+                    <option key={className} value={className}>Class {className}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <div className="lg:col-span-2">
               <label className="text-sm text-gray-600">
                 Select Test
@@ -1796,14 +1987,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   }
                 >
                   <option value="">Select Test</option>
-                  {tests
-                    .filter((test) => test.status !== "Cancelled")
-                    .map((test) => (
-                      <option key={test.test_code} value={test.test_code}>
-                        {test.test_code} — {test.test_series_name} —{" "}
-                        {test.subject_name} — {test.status}
-                      </option>
-                    ))}
+                  {registeredFilteredTests.map((test) => (
+                    <option key={test.test_code} value={test.test_code}>
+                      {test.test_code} — {test.test_series_name} —{" "}
+                      {test.subject_name} — {test.status}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
