@@ -491,6 +491,229 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     }
   }
 
+  function getSelectedRegisteredTest() {
+    return registeredFilteredTests.find(
+      (test) => String(test.test_code) === String(registeredStudentTest)
+    ) || null;
+  }
+
+  function downloadBlob(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function escapeExcelXml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  function exportRegisteredStudentsExcel() {
+    const test = getSelectedRegisteredTest();
+    if (!test || registeredStudents.length === 0) {
+      setError("Select a test with registered students before exporting.");
+      return;
+    }
+
+    const rows = registeredStudents.map((student) => ({
+      "Student Name": student.name || "",
+      Class: student.class || "",
+      "Roll No": student.roll_no || "",
+      "Test Date": formatDate(student.registered_writing_date),
+      "Test Slot": student.registered_slot_start && student.registered_slot_end
+        ? String(student.registered_slot_start) + " - " + String(student.registered_slot_end)
+        : "",
+      "Registration Status": student.registration_status || "",
+    }));
+
+    const metadata = [
+      ["Test Code", test.test_code || ""],
+      ["Test Series", test.test_series_name || ""],
+      ["Subject", test.subject_name || ""],
+      ["Board", getCodeDetails(test)?.board || ""],
+      ["Class", getCodeDetails(test)?.className || ""],
+      [],
+    ];
+
+    const header = Object.keys(rows[0]);
+    const xmlRows = [
+      ...metadata.map(
+        (row) =>
+          "<Row>" +
+          row
+            .map((value) => "<Cell><Data ss:Type=\"String\">" + escapeExcelXml(value) + "</Data></Cell>")
+            .join("") +
+          "</Row>"
+      ),
+      "<Row>" +
+        header
+          .map(
+            (value) =>
+              "<Cell ss:StyleID=\"Header\"><Data ss:Type=\"String\">" +
+              escapeExcelXml(value) +
+              "</Data></Cell>"
+          )
+          .join("") +
+        "</Row>",
+      ...rows.map(
+        (row) =>
+          "<Row>" +
+          header
+            .map(
+              (key) =>
+                "<Cell><Data ss:Type=\"String\">" +
+                escapeExcelXml(row[key]) +
+                "</Data></Cell>"
+            )
+            .join("") +
+          "</Row>"
+      ),
+    ].join("");
+
+    const xml =
+      '<?xml version="1.0"?>' +
+      '<?mso-application progid="Excel.Sheet"?>' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+      'xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+      'xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
+      'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+      "<Styles><Style ss:ID=\"Header\"><Font ss:Bold=\"1\"/></Style></Styles>" +
+      "<Worksheet ss:Name=\"Registered Students\"><Table>" +
+      xmlRows +
+      "</Table></Worksheet></Workbook>";
+
+    const safeCode = String(test.test_code || "registered-students").replace(/[^a-z0-9_-]/gi, "_");
+    downloadBlob(
+      xml,
+      "registered_students_" + safeCode + ".xls",
+      "application/vnd.ms-excel;charset=utf-8"
+    );
+  }
+
+  async function exportRegisteredStudentsPdf() {
+    const test = getSelectedRegisteredTest();
+    if (!test || registeredStudents.length === 0) {
+      setError("Select a test with registered students before exporting.");
+      return;
+    }
+
+    try {
+      setError("");
+      setMessage("");
+      const module = await import("html2pdf.js");
+      const html2pdf = module.default || module;
+      const parsed = getCodeDetails(test);
+
+      const container = document.createElement("div");
+      container.style.cssText =
+        "background:#fff;color:#111;padding:24px;font-family:Arial,sans-serif;width:1050px;";
+
+      const title = document.createElement("h1");
+      title.textContent = "Test Batch - Registered Students";
+      title.style.cssText = "font-size:22px;margin:0 0 14px;color:#173ea5;";
+      container.appendChild(title);
+
+      const info = document.createElement("div");
+      info.style.cssText =
+        "font-size:13px;line-height:1.8;margin-bottom:18px;";
+      info.innerHTML =
+        "<b>Test Code:</b> " + escapeHtml(test.test_code) +
+        " &nbsp;&nbsp; <b>Test Series:</b> " + escapeHtml(test.test_series_name) +
+        " &nbsp;&nbsp; <b>Subject:</b> " + escapeHtml(test.subject_name) +
+        "<br><b>Board:</b> " + escapeHtml(parsed?.board || "-") +
+        " &nbsp;&nbsp; <b>Class:</b> " + escapeHtml(parsed?.className || "-") +
+        " &nbsp;&nbsp; <b>Registered Students:</b> " + registeredStudents.length;
+      container.appendChild(info);
+
+      const table = document.createElement("table");
+      table.style.cssText = "width:100%;border-collapse:collapse;font-size:12px;";
+      const headers = [
+        "Student Name",
+        "Class",
+        "Roll No",
+        "Test Date",
+        "Test Slot",
+        "Registration Status",
+      ];
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      headers.forEach((header) => {
+        const th = document.createElement("th");
+        th.textContent = header;
+        th.style.cssText =
+          "background:#1d4ed8;color:#fff;padding:9px;border:1px solid #d1d5db;text-align:left;";
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      registeredStudents.forEach((student, index) => {
+        const row = document.createElement("tr");
+        const values = [
+          student.name || "-",
+          student.class || "-",
+          student.roll_no || "-",
+          formatDate(student.registered_writing_date),
+          student.registered_slot_start && student.registered_slot_end
+            ? String(student.registered_slot_start) + " - " + String(student.registered_slot_end)
+            : "-",
+          student.registration_status || "-",
+        ];
+        values.forEach((value) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          td.style.cssText =
+            "padding:8px;border:1px solid #d1d5db;background:" +
+            (index % 2 === 0 ? "#f8fafc" : "#fff") +
+            ";";
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+
+      document.body.appendChild(container);
+
+      const safeCode = String(test.test_code || "registered-students").replace(/[^a-z0-9_-]/gi, "_");
+      await html2pdf()
+        .set({
+          margin: 0.35,
+          filename: "registered_students_" + safeCode + ".pdf",
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "in", format: "a4", orientation: "landscape" },
+        })
+        .from(container)
+        .save();
+
+      container.remove();
+    } catch (err) {
+      setError(err.message || "Failed to export PDF.");
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   async function loadRegisteredStudents(code) {
     if (!code) {
       setRegisteredStudents([]);
@@ -2064,6 +2287,25 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 {registeredStudents.length}
               </div>
             </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 mb-6">
+            <button
+              type="button"
+              onClick={exportRegisteredStudentsPdf}
+              disabled={!registeredStudentTest || registeredStudents.length === 0 || loadingRegisteredStudents}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export PDF
+            </button>
+            <button
+              type="button"
+              onClick={exportRegisteredStudentsExcel}
+              disabled={!registeredStudentTest || registeredStudents.length === 0 || loadingRegisteredStudents}
+              className="px-4 py-2 rounded-lg bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export Excel
+            </button>
           </div>
 
           {!registeredStudentTest ? (
