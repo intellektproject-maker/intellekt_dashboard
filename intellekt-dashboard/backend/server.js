@@ -5428,7 +5428,15 @@ function validateTestBatchMarks(totalMarks, obtained) {
   if (!raw) return { ok:false, error:'Obtained marks are required' };
   if (raw === 'A') return { ok:true, obtained:'A' };
   const numeric = Number(raw);
-  if (!Number.isFinite(numeric) || numeric < 0 || numeric > total) return { ok:false, error:'Obtained marks must be between 0 and total marks, or A' };
+  if (!/^([0-9]+)(\\.[0-9]+)?$/.test(raw)) {
+    return { ok:false, error:'Obtained marks must be a valid number, or A' };
+  }
+  if (/^0+[0-9]/.test(raw)) {
+    return { ok:false, error:'Obtained marks cannot contain unnecessary leading zeros' };
+  }
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > total) {
+    return { ok:false, error:'Obtained marks must be between 0 and total marks, or A' };
+  }
   return { ok:true, obtained:String(numeric) };
 }
 
