@@ -61,6 +61,7 @@ function StudentsSection({ adminId }) {
   const [search, setSearch] = useState("");
   const [seriesFilter, setSeriesFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [availableClasses, setAvailableClasses] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const studentsPerPage = 10;
   const [loading, setLoading] = useState(true);
@@ -109,6 +110,10 @@ function StudentsSection({ adminId }) {
       if (classFilter) p.set("class", classFilter);
       const d = await api("/test-batch/students?" + p.toString());
       setStudents(d.students || []);
+      setAvailableClasses(Array.isArray(d.available_classes) ? d.available_classes : []);
+      if (classFilter && !(d.available_classes || []).includes(classFilter)) {
+        setClassFilter("");
+      }
       setError("");
     } catch (e) {
       setError(e.message);
@@ -283,8 +288,11 @@ function StudentsSection({ adminId }) {
             className="border rounded-lg px-3 py-2 bg-white"
           >
             <option value="">All Classes</option>
-            <option value="11">Class 11</option>
-            <option value="12">Class 12</option>
+            {availableClasses.map((className) => (
+              <option key={className} value={className}>
+                Class {className}
+              </option>
+            ))}
           </select>
           <button
             type="button"
