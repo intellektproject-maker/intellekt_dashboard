@@ -6472,7 +6472,18 @@ app.get('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
 
     if (seriesId) {
       values.push(Number(seriesId));
-      where += ' AND s.test_series_id = 
+      where += ' AND s.test_series_id = $' + values.length;
+    }
+
+    if (className) {
+      values.push(String(className).trim());
+      where += ' AND s.class = $' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
 
     const result = await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
