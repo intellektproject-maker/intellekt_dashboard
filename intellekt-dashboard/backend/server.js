@@ -78,6 +78,38 @@ function getFixedSlots(durationMinutes) {
 	return [];
 }
 
+function getTestBatchSlots(durationMinutes, dateStr) {
+  const duration = Number(durationMinutes);
+  const sunday = new Date(String(dateStr) + 'T00:00:00').getDay() === 0;
+
+  if (duration === 90) {
+    return sunday
+      ? [
+          { start: '07:00', end: '08:30' },
+          { start: '08:30', end: '10:00' },
+          { start: '10:00', end: '11:30' },
+          { start: '11:30', end: '13:00' }
+        ]
+      : [
+          { start: '17:30', end: '19:00' },
+          { start: '19:00', end: '20:30' }
+        ];
+  }
+
+  if (duration === 180) {
+    return sunday
+      ? [
+          { start: '07:00', end: '10:00' },
+          { start: '10:00', end: '13:00' }
+        ]
+      : [
+          { start: '17:30', end: '20:30' }
+        ];
+  }
+
+  return [];
+}
+
 function isSunday(dateStr) {
 	return new Date(dateStr).getDay() === 0;
 }
@@ -5650,11 +5682,28 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
       return res.status(400).json({error:'Selected slot does not match the test duration'});
     }
 
-    const fixedSlots = getFixedSlots(durationMinutes);
-    if (fixedSlots.length > 0 && !fixedSlots.some(
-      slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
-    )) {
-      return res.status(400).json({error:'Invalid Test Batch slot selected'});
+    // Test date must be at least 3 calendar days after the registration date.
+    const registrationToday = new Date();
+    registrationToday.setHours(0,0,0,0);
+    const minimumWritingDate = new Date(registrationToday);
+    minimumWritingDate.setDate(minimumWritingDate.getDate() + 3);
+
+    if (chosenDate < minimumWritingDate) {
+      return res.status(400).json({
+        error:'Test date must be at least 3 days after registration'
+      });
+    }
+
+    const fixedSlots = getTestBatchSlots(durationMinutes, selectedWritingDate);
+    if (
+      fixedSlots.length === 0 ||
+      !fixedSlots.some(
+        slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
+      )
+    ) {
+      return res.status(400).json({
+        error:'Invalid Test Batch slot for the selected date and test duration'
+      });
     }
 
     const registered = await pool.query(
