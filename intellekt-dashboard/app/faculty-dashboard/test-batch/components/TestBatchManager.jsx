@@ -60,6 +60,8 @@ function StudentsSection({ adminId }) {
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState("");
   const [seriesFilter, setSeriesFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const studentsPerPage = 10;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -118,6 +120,7 @@ function StudentsSection({ adminId }) {
   }, [adminId]);
 
   useEffect(() => {
+    setCurrentPage(1);
     const t = setTimeout(loadStudents, 150);
     return () => clearTimeout(t);
   }, [adminId, search, seriesFilter]);
@@ -227,6 +230,13 @@ function StudentsSection({ adminId }) {
     }
   }
 
+  const totalPages = Math.max(1, Math.ceil(students.length / studentsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedStudents = students.slice(
+    (safePage - 1) * studentsPerPage,
+    safePage * studentsPerPage
+  );
+
   return (
     <div className="mt-8 space-y-5">
       <div className="border-t-4 border-blue-700 pt-6">
@@ -297,7 +307,7 @@ function StudentsSection({ adminId }) {
                 </tr>
               </thead>
               <tbody>
-                {students.map((s, i) => (
+                {paginatedStudents.map((s, i) => (
                   <tr
                     key={s.roll_no}
                     className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
@@ -334,6 +344,47 @@ function StudentsSection({ adminId }) {
                 ))}
               </tbody>
             </table>
+
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 mt-5">
+                <p className="text-sm text-gray-500">
+                  Showing {(safePage - 1) * studentsPerPage + 1}-
+                  {Math.min(safePage * studentsPerPage, students.length)} of {students.length} students
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={safePage === 1}
+                    className="px-4 py-2 rounded-lg border bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                    <button
+                      key={page}
+                      type="button"
+                      onClick={() => setCurrentPage(page)}
+                      className={
+                        page === safePage
+                          ? "px-4 py-2 rounded-lg bg-blue-700 text-white"
+                          : "px-4 py-2 rounded-lg border bg-white"
+                      }
+                    >
+                      {page}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={safePage === totalPages}
+                    className="px-4 py-2 rounded-lg border bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -920,7 +971,7 @@ function DashboardSection({ adminId }) {
   useEffect(()=>{api("/test-batch/series?adminId="+encodeURIComponent(adminId)).then(d=>setSeries(d.series||[])).catch(e=>setError(e.message))},[adminId]);
   useEffect(()=>{load()},[adminId,seriesFilter,from,to]);
   if(!data)return <Card><Loading/><ErrorText error={error}/></Card>;
-  return <div className="space-y-5"><Header title="Test Batch Dashboard" description="Dedicated dashboard for Test Batch Students. Regular Student data is not included."/><Card><div className="flex flex-wrap gap-3"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input type="date" className="border rounded-lg px-3 py-2" value={from} onChange={e=>setFrom(e.target.value)}/><input type="date" className="border rounded-lg px-3 py-2" value={to} onChange={e=>setTo(e.target.value)}/><button onClick={load} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div></Card><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"><Card><p className="text-gray-500">Total Test Batch Students</p><p className="text-3xl font-bold text-blue-800 mt-2">{data.totalStudents}</p></Card><Card><p className="text-gray-500">Attendance %</p><p className="text-3xl font-bold text-green-700 mt-2">{percent(data.attendancePercentage)}%</p></Card><Card><p className="text-gray-500">Marks Average</p><p className="text-3xl font-bold text-blue-800 mt-2">{percent(data.marksPercentage)}%</p></Card><Card><p className="text-gray-500">Recent Additions</p><p className="text-3xl font-bold text-gray-800 mt-2">{data.recentStudents.length}</p></Card></div><Card><Header title="Students by Test Series"/><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{data.seriesCounts.map(s=><div key={s.id} className="border rounded-xl p-5"><p className="text-gray-500">{s.name}</p><p className="text-2xl font-bold text-blue-800 mt-1">{s.count}</p></div>)}</div></Card><Card><Header title="Recent Student Additions"/><div className="overflow-x-auto"><table className="w-full min-w-[700px]"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Roll No</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Series</th><th className="p-3 text-left">Added</th></tr></thead><tbody>{data.recentStudents.map((s,i)=><tr key={s.roll_no} className={i%2===0?"bg-gray-50 border-b":"border-b"}><td className="p-3 font-semibold">{s.roll_no}</td><td className="p-3">{s.name}</td><td className="p-3">{s.test_series_name}</td><td className="p-3">{formatDate(s.created_at)}</td></tr>)}</tbody></table></div></Card><ErrorText error={error}/></div>;
+  return <div className="space-y-5"><Header title="Test Batch Dashboard" description="Dedicated dashboard for Test Batch Students. Regular Student data is not included."/><Card><div className="flex flex-wrap gap-3"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input type="date" className="border rounded-lg px-3 py-2" value={from} onChange={e=>setFrom(e.target.value)}/><input type="date" className="border rounded-lg px-3 py-2" value={to} onChange={e=>setTo(e.target.value)}/><button onClick={load} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div></Card><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"><Card><p className="text-gray-500">Total Test Batch Students</p><p className="text-3xl font-bold text-blue-800 mt-2">{data.totalStudents}</p></Card><Card><p className="text-gray-500">Attendance %</p><p className="text-3xl font-bold text-green-700 mt-2">{percent(data.attendancePercentage)}%</p></Card><Card><p className="text-gray-500">Marks Average</p><p className="text-3xl font-bold text-blue-800 mt-2">{percent(data.marksPercentage)}%</p></Card><Card><p className="text-gray-500">Recent Additions</p><p className="text-3xl font-bold text-gray-800 mt-2">{data.recentStudents.length}</p></Card></div><Card><Header title="Students by Test Series"/><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{data.seriesCounts.map(s=><div key={s.id} className="border rounded-xl p-5"><p className="text-gray-500">{s.name}</p><p className="text-2xl font-bold text-blue-800 mt-1">{s.count}</p></div>)}</div></Card><ErrorText error={error}/></div>;
 }
 
 function StudentDashboardSection({ rollNo }) {
