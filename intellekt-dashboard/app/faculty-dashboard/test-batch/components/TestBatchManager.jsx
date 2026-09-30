@@ -856,8 +856,9 @@ function AttendanceSection({ adminId }) {
                   <td className="p-3">{formatDate(r.attendance_date||date)}</td>
                   <td className="p-3">
                     <select
-                      className="border rounded px-3 py-2"
+                      className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                       value={r.status||""}
+                      disabled={Boolean(r.id)}
                       onChange={e=>setStatus(r.roll_no,e.target.value)}
                     >
                       <option value="">Not Marked</option>
