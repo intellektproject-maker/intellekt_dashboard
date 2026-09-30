@@ -60,6 +60,7 @@ function StudentsSection({ adminId }) {
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState("");
   const [seriesFilter, setSeriesFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const studentsPerPage = 10;
   const [loading, setLoading] = useState(true);
@@ -105,6 +106,7 @@ function StudentsSection({ adminId }) {
       const p = new URLSearchParams({ adminId });
       if (search.trim()) p.set("search", search.trim());
       if (seriesFilter) p.set("seriesId", seriesFilter);
+      if (classFilter) p.set("class", classFilter);
       const d = await api("/test-batch/students?" + p.toString());
       setStudents(d.students || []);
       setError("");
@@ -123,7 +125,7 @@ function StudentsSection({ adminId }) {
     setCurrentPage(1);
     const t = setTimeout(loadStudents, 150);
     return () => clearTimeout(t);
-  }, [adminId, search, seriesFilter]);
+  }, [adminId, search, seriesFilter, classFilter]);
 
   function emptyForm() {
     return {
@@ -275,6 +277,15 @@ function StudentsSection({ adminId }) {
             onChange={(e) => setSearch(e.target.value)}
           />
           <SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter} />
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className="border rounded-lg px-3 py-2 bg-white"
+          >
+            <option value="">All Classes</option>
+            <option value="11">Class 11</option>
+            <option value="12">Class 12</option>
+          </select>
           <button
             type="button"
             onClick={loadStudents}
