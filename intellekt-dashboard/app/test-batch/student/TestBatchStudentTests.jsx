@@ -41,7 +41,14 @@ function buildDates(openValue, closeValue) {
   const open = startOfDay(openValue);
   const close = startOfDay(closeValue);
   const today = startOfDay(new Date());
-  const current = new Date(Math.max(open.getTime(), today.getTime()));
+
+  // A student must register at least 3 calendar days before the test date.
+  const earliestTestDate = new Date(today);
+  earliestTestDate.setDate(earliestTestDate.getDate() + 3);
+
+  const current = new Date(
+    Math.max(open.getTime(), earliestTestDate.getTime())
+  );
   const dates = [];
 
   while (current <= close) {
@@ -52,13 +59,12 @@ function buildDates(openValue, closeValue) {
   return dates;
 }
 
-function buildSlots(durationMinutes) {
+function buildSlots(durationMinutes, selectedDate) {
   const duration = Number(durationMinutes);
-  if (!Number.isFinite(duration) || duration <= 0) return [];
+  if (!Number.isFinite(duration) || duration <= 0 || !selectedDate) return [];
 
-  const slots = [];
-  let minutes = 7 * 60;
-  const endLimit = 13 * 60;
+  const day = new Date(`${selectedDate}T00:00:00`).getDay();
+  const sunday = day === 0;
 
   const fmt = (total) => {
     const h = Math.floor(total / 60);
@@ -66,17 +72,36 @@ function buildSlots(durationMinutes) {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  while (minutes + duration <= endLimit) {
-    const end = minutes + duration;
-    slots.push({
-      start: fmt(minutes),
-      end: fmt(end),
-      label: `${fmt(minutes)} - ${fmt(end)}`,
-    });
-    minutes = end;
+  const makeSlot = (start, end) => ({
+    start: fmt(start),
+    end: fmt(end),
+    label: `${fmt(start)} - ${fmt(end)}`,
+  });
+
+  if (duration === 90) {
+    return sunday
+      ? [
+          makeSlot(7 * 60, 8 * 60 + 30),
+          makeSlot(8 * 60 + 30, 10 * 60),
+          makeSlot(10 * 60, 11 * 60 + 30),
+          makeSlot(11 * 60 + 30, 13 * 60),
+        ]
+      : [
+          makeSlot(17 * 60 + 30, 19 * 60),
+          makeSlot(19 * 60, 20 * 60 + 30),
+        ];
   }
 
-  return slots;
+  if (duration === 180) {
+    return sunday
+      ? [
+          makeSlot(7 * 60, 10 * 60),
+          makeSlot(10 * 60, 13 * 60),
+        ]
+      : [makeSlot(17 * 60 + 30, 20 * 60 + 30)];
+  }
+
+  return [];
 }
 
 async function api(path, options = {}) {
@@ -194,12 +219,25 @@ export default function TestBatchStudentTests({ rollNo }) {
       return;
     }
 
-    const slot = buildSlots(selectedTest.duration_minutes).find(
+    const selected = startOfDay(`${selectedDate}T00:00:00`);
+    const today = startOfDay(new Date());
+    const minimumDate = new Date(today);
+    minimumDate.setDate(minimumDate.getDate() + 3);
+
+    if (selected < minimumDate) {
+      setError("You must register at least 3 days before the selected test date.");
+      return;
+    }
+
+    const slot = buildSlots(
+      selectedTest.duration_minutes,
+      selectedDate
+    ).find(
       (item) => `${item.start}__${item.end}` === selectedSlot
     );
 
     if (!slot) {
-      setError("Please select a valid test slot.");
+      setError("Please select a valid test slot for the selected date.");
       return;
     }
 
@@ -243,8 +281,11 @@ export default function TestBatchStudentTests({ rollNo }) {
   );
 
   const slots = useMemo(
-    () => (selectedTest ? buildSlots(selectedTest.duration_minutes) : []),
-    [selectedTest]
+    () =>
+      selectedTest
+        ? buildSlots(selectedTest.duration_minutes, selectedDate)
+        : [],
+    [selectedTest, selectedDate]
   );
 
   const registeredTests = tests.filter(
@@ -517,8 +558,8 @@ export default function TestBatchStudentTests({ rollNo }) {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              Available dates are limited to the configured registration
-              window. The test duration determines the available slots.
+              The test date must be at least 3 days after today. Weekday and Sunday
+              slots are different, and the test duration determines the available slots.
             </p>
 
             <div className="flex justify-end gap-3 mt-6">
