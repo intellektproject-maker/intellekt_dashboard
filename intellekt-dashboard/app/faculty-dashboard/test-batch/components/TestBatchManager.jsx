@@ -885,7 +885,7 @@ function AttendanceSection({ adminId }) {
         </div>
       )}
     </Card>
-
+  </div>;
 }
 
 function DashboardSection({ adminId }) {
