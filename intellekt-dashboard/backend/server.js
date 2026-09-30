@@ -6495,9 +6495,31 @@ app.get('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
 
     const classValues = [];
     let classWhere = 'WHERE 1=1';
+
     if (seriesId) {
       classValues.push(Number(seriesId));
-      classWhere += ' AND s.test_series_id = 
+      classWhere += ' AND s.test_series_id = $' + classValues.length;
+    }
+
+    if (search) {
+      classValues.push('%' + String(search).trim() + '%');
+      classWhere += ' AND (s.roll_no ILIKE $' + classValues.length + ' OR s.name ILIKE $' + classValues.length + ')';
+    }
+
+    const classResult = await pool.query(
+      'SELECT DISTINCT TRIM(s.class) AS class FROM test_batch_students s ' +
+      classWhere +
+      " AND s.class IS NOT NULL AND TRIM(s.class) <> '' " +
+      'ORDER BY TRIM(s.class) ASC',
+      classValues
+    );
+
+    res.json({
+      students: result.rows,
+      available_classes: classResult.rows
+        .map((row) => String(row.class).trim())
+        .filter(Boolean)
+    });
   } catch (err) {
     console.error('GET /test-batch/students error:', err);
     res.status(500).json({ error: 'Failed to fetch Test Batch students' });
