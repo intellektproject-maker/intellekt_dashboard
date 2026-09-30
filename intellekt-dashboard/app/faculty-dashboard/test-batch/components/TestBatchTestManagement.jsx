@@ -974,6 +974,63 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }
 
   function updateStudent(rollNo, field, value) {
+    if (field === "marks_obtained") {
+      let raw = String(value ?? "").toUpperCase().replace(/\s+/g, "");
+
+      // Allow blank while editing and A for absent.
+      if (raw === "" || raw === "A") {
+        setStudents((current) =>
+          current.map((student) =>
+            student.roll_no === rollNo
+              ? { ...student, [field]: raw }
+              : student
+          )
+        );
+        setError("");
+        setMessage("");
+        return;
+      }
+
+      // Marks must contain only digits with an optional decimal point.
+      if (!/^\d*\.?\d*$/.test(raw)) {
+        setError("Enter only numbers, or A for absent.");
+        return;
+      }
+
+      // Prevent unnecessary leading/double zeros:
+      // 00090 -> 90, 00 -> 0, 000.50 -> 0.50.
+      if (raw.includes(".")) {
+        const [whole, decimal] = raw.split(".");
+        const normalizedWhole = whole.replace(/^0+(?=\d)/, "") || "0";
+        raw = normalizedWhole + "." + decimal;
+      } else {
+        raw = raw.replace(/^0+(?=\d)/, "") || "0";
+      }
+
+      const maxMarks = Number(markTest?.total_marks);
+      const numeric = Number(raw);
+
+      if (Number.isFinite(maxMarks) && Number.isFinite(numeric) && numeric > maxMarks) {
+        setError(
+          "Marks cannot be greater than the maximum marks (" +
+            maxMarks +
+            ")."
+        );
+        return;
+      }
+
+      setStudents((current) =>
+        current.map((student) =>
+          student.roll_no === rollNo
+            ? { ...student, [field]: raw }
+            : student
+        )
+      );
+      setError("");
+      setMessage("");
+      return;
+    }
+
     setStudents((current) =>
       current.map((student) =>
         student.roll_no === rollNo
@@ -1993,6 +2050,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                                 <input
                                   type="text"
                                   inputMode="decimal"
+                                  maxLength={12}
                                   className="w-full max-w-[180px] border rounded-lg px-3 py-2 disabled:bg-gray-100"
                                   placeholder="Marks / A"
                                   value={student.marks_obtained}
