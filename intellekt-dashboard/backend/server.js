@@ -7136,7 +7136,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
       'FROM test_batch_attendance a ' +
       'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
       'AND EXISTS (' +
-      '  SELECT 1 FROM test_registrations tr ' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
       '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
       '    AND tr.writing_date=a.attendance_date' +
       ') ' +
