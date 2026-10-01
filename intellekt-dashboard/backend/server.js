@@ -7160,6 +7160,83 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
 });
 
 /* =========================================================
+   TEST BATCH MOBILE STUDENT MARKS / ATTENDANCE
+   These endpoints are read-only student endpoints used by
+   the Flutter Test Batch dashboard.
+========================================================= */
+app.get('/test-batch/marks/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT id,test_code,subject_name,total_marks,marks_obtained,comments,created_at ' +
+      'FROM test_batch_marks ' +
+      'WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) ' +
+      'ORDER BY created_at DESC,id DESC',
+      [roll]
+    );
+
+    return res.json(result.rows.map(marksComputedFields));
+  } catch (err) {
+    console.error('GET /test-batch/marks/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch marks' });
+  }
+});
+
+app.get('/test-batch/attendance/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const total = result.rows.length;
+    const present = result.rows.filter((row) => row.status === 'Present').length;
+
+    return res.json({
+      attendance: result.rows,
+      attendancePercentage: total ? (present / total) * 100 : 0
+    });
+  } catch (err) {
+    console.error('GET /test-batch/attendance/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch attendance' });
+  }
+});
+
+
+/* =========================================================
 	SERVER START
 	========================================================= */
 const PORT = process.env.PORT || 5050;
