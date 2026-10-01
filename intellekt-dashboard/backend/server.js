@@ -3,6 +3,8 @@ const cors = require('cors');
 const pool = require('./db');
 const crypto = require("node:crypto");
 const { makeEventKey, queueNotificationEvent } = require('./web-notification-outbox');
+const { sendToStudent } = require('./student-notification-service');
+const { createTestBatchPushWorker } = require('./test-batch-push-worker');
 const app = express();
 
 const {
@@ -7235,12 +7237,122 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
   }
 });
 
+/* =========================================================
+   STUDENT DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/device-token', async (req, res) => {
+  const { roll_no, token, platform = 'android' } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const student = await pool.query(
+      `SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = $1
+       UNION ALL
+       SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = $1
+       LIMIT 1`,
+      [rollNo]
+    );
+
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    await ensureStudentDeviceTokensTable();
+
+    await pool.query(
+      `INSERT INTO student_device_tokens
+        (student_id, device_token, platform, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (device_token)
+       DO UPDATE SET
+         student_id = EXCLUDED.student_id,
+         platform = EXCLUDED.platform,
+         updated_at = CURRENT_TIMESTAMP`,
+      [rollNo, deviceToken, devicePlatform]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('POST /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to register student notification device' });
+  }
+});
+
+app.delete('/device-token', async (req, res) => {
+  const { roll_no, token } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM student_device_tokens WHERE UPPER(TRIM(student_id)) = $1 AND device_token = $2',
+      [rollNo, deviceToken]
+    );
+
+    return res.json({ success: true, removed: result.rowCount || 0 });
+  } catch (error) {
+    console.error('DELETE /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to remove student notification device' });
+  }
+});
+
 
 /* =========================================================
 	SERVER START
 	========================================================= */
 const PORT = process.env.PORT || 5050;
 
-app.listen(PORT, '0.0.0.0', () => {
-	console.log(`Server running on port ${PORT}`);
+let testBatchPushWorker;
+
+async function ensureStudentDeviceTokensTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_device_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      student_id VARCHAR(100) NOT NULL,
+      device_token TEXT NOT NULL UNIQUE,
+      platform VARCHAR(20) NOT NULL DEFAULT 'android',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_student_device_tokens_student_id
+    ON student_device_tokens (UPPER(TRIM(student_id)))
+  `);
+}
+
+async function startServer() {
+  await ensureStudentDeviceTokensTable();
+
+  testBatchPushWorker = createTestBatchPushWorker({
+    pool,
+    sendToStudent,
+    sendToFaculty: require('./faculty-notification-service').sendToFaculty,
+  });
+  testBatchPushWorker.start();
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  if (testBatchPushWorker) testBatchPushWorker.stop();
 });
