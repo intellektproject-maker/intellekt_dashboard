@@ -7212,7 +7212,16 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
     }
 
     const result = await pool.query(
-      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at ' +
+      'SELECT a.id, ' +
+      '       a.attendance_date, ' +
+      '       a.status, ' +
+      '       a.marked_by, a.marked_at, a.edited_by, a.edited_at, ' +
+      '       (SELECT tr.test_code ' +
+      '          FROM test_batch_registrations tr ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST, tr.test_code ASC ' +
+      '         LIMIT 1) AS test_code ' +
       'FROM test_batch_attendance a ' +
       'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
       'AND EXISTS (' +
