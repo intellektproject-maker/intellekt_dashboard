@@ -7144,7 +7144,18 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
       '  SELECT t.test_code FROM test_batch_tests t ' +
       '  WHERE t.writing_date=a.attendance_date ' +
       '  ORDER BY t.test_code ASC LIMIT 1' +
-      ')) AS test_code ' +
+      ')) AS test_code, ' +
+      'COALESCE((' +
+      '  SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '  JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.subject_name FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS subject_name ' +
       'FROM test_batch_attendance a ' +
       'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
       'AND EXISTS (' +
