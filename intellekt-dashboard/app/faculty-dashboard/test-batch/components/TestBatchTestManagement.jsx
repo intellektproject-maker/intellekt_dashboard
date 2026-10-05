@@ -146,6 +146,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   const [selectedMarkTest, setSelectedMarkTest] = useState("");
   const [markSeriesFilter, setMarkSeriesFilter] = useState("");
+  const [markSubjectFilter, setMarkSubjectFilter] = useState("");
   const [markBoardFilter, setMarkBoardFilter] = useState("");
   const [markClassFilter, setMarkClassFilter] = useState("");
   const [markTest, setMarkTest] = useState(null);
@@ -1378,9 +1379,17 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       const classMatches =
         !markClassFilter || parsed.className === markClassFilter;
 
-      return boardMatches && classMatches;
+      const subjectMatches =
+        !markSubjectFilter || parsed.subject === markSubjectFilter;
+
+      return boardMatches && classMatches && subjectMatches;
     });
-  }, [markTestsBySeries, markBoardFilter, markClassFilter]);
+  }, [
+    markTestsBySeries,
+    markBoardFilter,
+    markClassFilter,
+    markSubjectFilter,
+  ]);
 
   const registeredFilteredTests = useMemo(() => {
     return tests.filter((test) => {
@@ -1775,6 +1784,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   onChange={(event) => {
                     setMarkBoardFilter(event.target.value);
                     setMarkClassFilter("");
+                    setMarkSubjectFilter("");
                     setSelectedMarkTest("");
                     setMarkTest(null);
                     setStudents([]);
@@ -1791,12 +1801,36 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
             <div>
               <label className="text-sm text-gray-600">
+                Subject
+                <select
+                  className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
+                  value={markSubjectFilter}
+                  onChange={(event) => {
+                    setMarkSubjectFilter(event.target.value);
+                    setSelectedMarkTest("");
+                    setMarkTest(null);
+                    setStudents([]);
+                    setOriginalStudents([]);
+                    setError("");
+                    setMessage("");
+                  }}
+                >
+                  <option value="">All Subjects</option>
+                  <option value="Mathematics">Mathematics</option>
+                  <option value="Physics">Physics</option>
+                </select>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-600">
                 Class
                 <select
                   className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white"
                   value={markClassFilter}
                   onChange={(event) => {
                     setMarkClassFilter(event.target.value);
+                    setMarkSubjectFilter(markSubjectFilter);
                     setSelectedMarkTest("");
                     setMarkTest(null);
                     setStudents([]);
