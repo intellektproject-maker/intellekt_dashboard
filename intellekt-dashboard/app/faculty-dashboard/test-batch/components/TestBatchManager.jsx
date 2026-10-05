@@ -797,7 +797,7 @@ function AttendanceSection({ adminId }) {
 
     <Card>
       <div className="flex flex-wrap gap-3 items-center">
-        <label className="text-sm font-medium">Marking date</label>
+        <label className="text-sm font-medium">Test Date</label>
         <input
           type="date"
           className="border rounded-lg px-3 py-2"
