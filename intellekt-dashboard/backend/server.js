@@ -7128,8 +7128,10 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
     if(studentResult.rows.length===0) return res.status(404).json({error:'Test Batch student not found'});
 
     const marksResult=await pool.query(
-      'SELECT id,test_code,subject_name,total_marks,marks_obtained,comments,created_at ' +
-      'FROM test_batch_marks WHERE roll_no=$1 ORDER BY created_at DESC,id DESC',
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE m.roll_no=$1 ORDER BY m.created_at DESC,m.id DESC',
       [roll]
     );
 
@@ -7203,10 +7205,11 @@ app.get('/test-batch/marks/:rollNo', async (req,res) => {
     }
 
     const result = await pool.query(
-      'SELECT id,test_code,subject_name,total_marks,marks_obtained,comments,created_at ' +
-      'FROM test_batch_marks ' +
-      'WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) ' +
-      'ORDER BY created_at DESC,id DESC',
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE UPPER(TRIM(m.roll_no))=UPPER(TRIM($1)) ' +
+      'ORDER BY m.created_at DESC,m.id DESC',
       [roll]
     );
 
