@@ -5577,8 +5577,11 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
        LEFT JOIN test_batch_registrations r
          ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
        WHERE t.test_series_id=$2
-         AND t.status IN ('Scheduled','Active')
-       ORDER BY t.application_open_date ASC,t.test_code ASC`,
+         AND t.status IN ('Scheduled','Active','Completed','Returned')
+       ORDER BY
+         CASE WHEN t.status IN ('Scheduled','Active') THEN 0 ELSE 1 END,
+         t.application_open_date ASC,
+         t.test_code ASC`,
       [rollNo, studentRow.test_series_id]
     );
 
