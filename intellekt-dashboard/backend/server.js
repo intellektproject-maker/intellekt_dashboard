@@ -5569,6 +5569,19 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
          t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
          t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,
          t.status,
+         CASE
+           WHEN t.status IN ('Completed','Returned') THEN true
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'present'
+             )
+             THEN true
+           ELSE false
+         END AS is_completed,
          CASE WHEN r.id IS NOT NULL AND r.status='Registered' THEN true ELSE false END AS is_registered,
          r.registered_at,r.writing_date AS registered_writing_date,
          r.slot_start AS registered_slot_start,r.slot_end AS registered_slot_end
