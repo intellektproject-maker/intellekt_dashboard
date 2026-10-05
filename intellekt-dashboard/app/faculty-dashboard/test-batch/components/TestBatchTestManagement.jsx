@@ -194,6 +194,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [search, setSearch] = useState("");
   const [listBoardFilter, setListBoardFilter] = useState("");
   const [listClassFilter, setListClassFilter] = useState("");
+  const [listSubjectFilter, setListSubjectFilter] = useState("");
+  const [listSeriesFilter, setListSeriesFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMarks, setLoadingMarks] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1438,23 +1440,41 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         boardOptions.find((b) => b.code === listBoardFilter)?.name === parsed.board;
       const classMatches =
         !listClassFilter || parsed.className === listClassFilter;
+      const subjectMatches =
+        !listSubjectFilter || parsed.subject === listSubjectFilter;
+      const seriesMatches =
+        !listSeriesFilter ||
+        String(test.test_series_id) === String(listSeriesFilter);
       const searchMatches =
         !term ||
         String(test.test_code || "").toLowerCase().includes(term) ||
         String(test.subject_name || "").toLowerCase().includes(term) ||
         String(test.test_series_name || "").toLowerCase().includes(term);
 
-      return boardMatches && classMatches && searchMatches;
+      return (
+        boardMatches &&
+        classMatches &&
+        subjectMatches &&
+        seriesMatches &&
+        searchMatches
+      );
     });
-  }, [tests, listBoardFilter, listClassFilter, search]);
+  }, [
+    tests,
+    listBoardFilter,
+    listClassFilter,
+    listSubjectFilter,
+    listSeriesFilter,
+    search,
+  ]);
 
   const listClassOptions = useMemo(() => {
     const classes = tests
       .map(getCodeDetails)
-      .filter((parsed) => parsed && (!listBoardFilter || parsed.board === boardOptions.find((b) => b.code === listBoardFilter)?.name))
+      .filter(Boolean)
       .map((parsed) => parsed.className);
-    return [...new Set(classes)].sort();
-  }, [tests, listBoardFilter]);
+    return [...new Set(classes)].sort((a, b) => Number(a) - Number(b));
+  }, [tests]);
 
   const markStatusLabel = useMemo(() => {
     if (!markTest) return "";
@@ -2179,47 +2199,102 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 Close
               </button>
             )}
+
+            <select
+              className="border rounded-lg px-4 py-2 bg-white"
+              value={listClassFilter}
+              onChange={(event) => {
+                setListClassFilter(event.target.value);
+                setSearch("");
+              }}
+            >
+              <option value="">Select Class</option>
+              {listClassOptions.map((className) => (
+                <option key={className} value={className}>
+                  Class {className}
+                </option>
+              ))}
+            </select>
+
             <select
               className="border rounded-lg px-4 py-2 bg-white"
               value={listBoardFilter}
               onChange={(event) => {
                 setListBoardFilter(event.target.value);
-                setListClassFilter("");
+                setSearch("");
               }}
             >
-              <option value="">All Boards</option>
+              <option value="">Select Board</option>
               {boardOptions.map((board) => (
-                <option key={board.code} value={board.code}>{board.name}</option>
+                <option key={board.code} value={board.code}>
+                  {board.name}
+                </option>
               ))}
             </select>
+
             <select
               className="border rounded-lg px-4 py-2 bg-white"
-              value={listClassFilter}
-              onChange={(event) => setListClassFilter(event.target.value)}
+              value={listSubjectFilter}
+              onChange={(event) => {
+                setListSubjectFilter(event.target.value);
+                setSearch("");
+              }}
             >
-              <option value="">All Classes</option>
-              {listClassOptions.map((className) => (
-                <option key={className} value={className}>Class {className}</option>
+              <option value="">Select Subject</option>
+              <option value="Mathematics">Mathematics</option>
+              <option value="Physics">Physics</option>
+            </select>
+
+            <select
+              className="border rounded-lg px-4 py-2 bg-white"
+              value={listSeriesFilter}
+              onChange={(event) => {
+                setListSeriesFilter(event.target.value);
+                setSearch("");
+              }}
+            >
+              <option value="">Select Test Series</option>
+              {testSeries.map((series) => (
+                <option key={series.id} value={series.id}>
+                  {series.name}
+                </option>
               ))}
             </select>
-            <input
-              className="border rounded-lg px-4 py-2"
-              placeholder="Search test code / subject / batch"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <button
-              onClick={exportTests}
-              className="bg-gray-700 text-white px-5 py-2 rounded-lg"
-            >
-              Export
-            </button>
+
+            {listClassFilter &&
+              listBoardFilter &&
+              listSubjectFilter &&
+              listSeriesFilter && (
+                <>
+                  <input
+                    className="border rounded-lg px-4 py-2"
+                    placeholder="Search test code"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  <button
+                    onClick={exportTests}
+                    className="bg-gray-700 text-white px-5 py-2 rounded-lg"
+                  >
+                    Export
+                  </button>
+                </>
+              )}
           </div>
 
-          {loading ? (
+          {!listClassFilter ||
+          !listBoardFilter ||
+          !listSubjectFilter ||
+          !listSeriesFilter ? (
+            <div className="border border-dashed rounded-lg p-10 text-center text-gray-500">
+              Select Class, Board, Subject and Test Series to display Test Batch tests.
+            </div>
+          ) : loading ? (
             <p className="text-gray-500">Loading...</p>
           ) : listFilteredTests.length === 0 ? (
-            <p className="text-gray-500">No Test Batch tests found.</p>
+            <p className="text-gray-500">
+              No Test Batch tests found for the selected filters.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1200px]">
@@ -2273,7 +2348,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 </tbody>
               </table>
             </div>
-          )}
+          )}}
         </Card>
       )}
 
