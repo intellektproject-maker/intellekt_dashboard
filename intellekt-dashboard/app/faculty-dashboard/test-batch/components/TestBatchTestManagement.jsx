@@ -1469,12 +1469,25 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   ]);
 
   const listClassOptions = useMemo(() => {
-    const classes = tests
-      .map(getCodeDetails)
-      .filter(Boolean)
-      .map((parsed) => parsed.className);
+    // Test Batch classes come from the Test Batch admission/student records.
+    // Do not depend on test-code parsing because the Test List must allow
+    // selecting the class before any test is displayed.
+    const selectedBoardName =
+      boardOptions.find((b) => b.code === listBoardFilter)?.name || "";
+
+    const classes = admissionStudents
+      .filter((student) => {
+        if (!selectedBoardName) return true;
+        return (
+          String(student.board || "").trim().toLowerCase() ===
+          selectedBoardName.trim().toLowerCase()
+        );
+      })
+      .map((student) => String(student.class || "").trim())
+      .filter(Boolean);
+
     return [...new Set(classes)].sort((a, b) => Number(a) - Number(b));
-  }, [tests]);
+  }, [admissionStudents, listBoardFilter]);
 
   const markStatusLabel = useMemo(() => {
     if (!markTest) return "";
