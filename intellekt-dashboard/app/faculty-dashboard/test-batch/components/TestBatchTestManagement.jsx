@@ -2348,7 +2348,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 </tbody>
               </table>
             </div>
-          )}}
+          )}
         </Card>
       )}
 
