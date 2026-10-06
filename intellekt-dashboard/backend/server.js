@@ -5450,9 +5450,12 @@ function validateTestBatchSubjects(subjects) {
   return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
 }
 
-function validateTestBatchSubjects(subjects) {
-  const value = String(subjects || '').trim();
-  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+function isTestBatchSubjectEligible(studentSubjects, testSubject) {
+  const subjects = String(studentSubjects || '').trim().toLowerCase();
+  const subject = String(testSubject || '').trim().toLowerCase();
+
+  if (!['mathematics', 'physics'].includes(subject)) return false;
+  return subjects === 'both' || subjects === subject;
 }
 
 function validateTestBatchMarks(totalMarks, obtained) {
@@ -5556,7 +5559,7 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
   try {
     const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
     const student = await pool.query(
-      'SELECT roll_no,test_series_id,board,class FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
       [rollNo]
     );
     if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
@@ -5606,7 +5609,15 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
       if (!parsed) return false;
 
       const testBoard = normalizeTestBatchBoard(parsed.board);
-      return testBoard === studentBoard && String(parsed.className) === studentClass;
+      const matchesBoardAndClass =
+        testBoard === studentBoard &&
+        String(parsed.className) === studentClass;
+
+      if (!matchesBoardAndClass) return false;
+
+      // Subject eligibility is an additional layer on top of the existing
+      // Test Series + board + class + status rules.
+      return isTestBatchSubjectEligible(studentRow.subjects, parsed.subject);
     });
 
     res.json({tests:filteredTests});
@@ -5623,7 +5634,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     if (!rollNo) return res.status(400).json({error:'Roll number is required'});
 
     const student = await pool.query(
-      'SELECT roll_no,test_series_id,board,class FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
       [rollNo]
     );
     if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
@@ -5654,6 +5665,12 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
       return res.status(403).json({
         error:'This test is not assigned to the student\'s board and class'
+      });
+    }
+
+    if (!isTestBatchSubjectEligible(student.rows[0].subjects, parsedTest.subject)) {
+      return res.status(403).json({
+        error:'This student is not registered for the test subject'
       });
     }
 
@@ -6038,6 +6055,10 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
        WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
          AND r.status='Registered'
          AND s.test_series_id=$2
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM(t.subject_name))
+         )
        ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
       [code, test.test_series_id]
     );
@@ -6168,6 +6189,10 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
         AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
         AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
        WHERE s.test_series_id=$3
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($2))
+         )
        ORDER BY s.roll_no ASC`,
       [code, test.subject_name, test.test_series_id]
     );
