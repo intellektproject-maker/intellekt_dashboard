@@ -74,7 +74,6 @@ function StudentsSection({ adminId }) {
     name: "",
     class: "",
     board: "",
-    mode_of_education: "",
     phone: "",
     email: "",
     school_name: "",
@@ -137,8 +136,7 @@ function StudentsSection({ adminId }) {
       name: "",
       class: "",
       board: "",
-      mode_of_education: "",
-      phone: "",
+        phone: "",
       email: "",
       school_name: "",
       password: "",
@@ -167,7 +165,6 @@ function StudentsSection({ adminId }) {
       name: s.name || "",
       class: s.class || "",
       board: s.board || "",
-      mode_of_education: s.mode_of_education || "",
       phone: s.phone || "",
       email: s.email || "",
       school_name: s.school_name || "",
@@ -316,7 +313,6 @@ function StudentsSection({ adminId }) {
                   <th className="text-left p-3">Name</th>
                   <th className="text-left p-3">Class</th>
                   <th className="text-left p-3">Board</th>
-                  <th className="text-left p-3">Mode</th>
                   <th className="text-left p-3">Phone</th>
                   <th className="text-left p-3">Email</th>
                   <th className="text-left p-3">School</th>
@@ -335,7 +331,6 @@ function StudentsSection({ adminId }) {
                     <td className="p-3">{s.name}</td>
                     <td className="p-3">{s.class || "-"}</td>
                     <td className="p-3">{s.board || "-"}</td>
-                    <td className="p-3">{s.mode_of_education || "-"}</td>
                     <td className="p-3">{s.phone || "-"}</td>
                     <td className="p-3">{s.email || "-"}</td>
                     <td className="p-3">{s.school_name || "-"}</td>
@@ -486,18 +481,6 @@ function StudentsSection({ adminId }) {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Education</label>
-                <select
-                  value={form.mode_of_education}
-                  onChange={(e) => setForm({ ...form, mode_of_education: e.target.value })}
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                >
-                  <option value="">Select mode</option>
-                  <option value="Online">Online</option>
-                  <option value="Offline">Offline</option>
-                </select>
-              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -896,7 +879,7 @@ function DashboardSection({ adminId }) {
   useEffect(()=>{api("/test-batch/series?adminId="+encodeURIComponent(adminId)).then(d=>setSeries(d.series||[])).catch(e=>setError(e.message))},[adminId]);
   useEffect(()=>{load()},[adminId,seriesFilter,from,to]);
   if(!data)return <Card><Loading/><ErrorText error={error}/></Card>;
-  return <div className="space-y-5"><Header title="Test Batch Dashboard" description="Dedicated dashboard for Test Batch Students. Regular Student data is not included."/><Card><div className="flex flex-wrap gap-3"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input type="date" className="border rounded-lg px-3 py-2" value={from} onChange={e=>setFrom(e.target.value)}/><input type="date" className="border rounded-lg px-3 py-2" value={to} onChange={e=>setTo(e.target.value)}/><button onClick={load} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div></Card><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Card><p className="text-gray-500">Total Test Batch Students</p><p className="text-3xl font-bold text-blue-800 mt-2">{data.totalStudents}</p></Card><Card><p className="text-gray-500">Attendance %</p><p className="text-3xl font-bold text-green-700 mt-2">{percent(data.attendancePercentage)}%</p></Card></div><Card><Header title="Students by Test Series"/><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{data.seriesCounts.map(s=><div key={s.id} className="border rounded-xl p-5"><p className="text-gray-500">{s.name}</p><p className="text-2xl font-bold text-blue-800 mt-1">{s.count}</p></div>)}</div></Card><ErrorText error={error}/></div>;
+  return <div className="space-y-5"><Header title="Test Batch Dashboard" description="Dedicated dashboard for Test Batch Students. Regular Student data is not included."/><Card><div className="flex flex-wrap gap-3"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input type="date" className="border rounded-lg px-3 py-2" value={from} onChange={e=>setFrom(e.target.value)}/><input type="date" className="border rounded-lg px-3 py-2" value={to} onChange={e=>setTo(e.target.value)}/><button onClick={load} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div></Card><Card><p className="text-gray-500 text-base">Total Test Batch Students</p><p className="text-4xl font-bold text-blue-800 mt-2">{data.totalStudents}</p></Card><ErrorText error={error}/></div>;
 }
 
 function StudentDashboardSection({ rollNo }) {
@@ -994,7 +977,6 @@ function StudentDashboardSection({ rollNo }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           <Detail label="Class" value={student.class} />
           <Detail label="Board" value={student.board} />
-          <Detail label="Mode of Education" value={student.mode_of_education} />
           <Detail label="Enrolled Subjects" value={student.subjects} />
           <Detail label="Test Series" value={student.test_series_name} />
         </div>
