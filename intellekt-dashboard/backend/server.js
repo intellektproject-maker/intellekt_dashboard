@@ -6057,10 +6057,10 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
          AND s.test_series_id=$2
          AND (
            LOWER(TRIM(s.subjects))='both'
-           OR LOWER(TRIM(s.subjects))=LOWER(TRIM(t.subject_name))
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($3))
          )
        ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
-      [code, test.test_series_id]
+      [code, test.test_series_id, test.subject_name]
     );
 
     res.json({
