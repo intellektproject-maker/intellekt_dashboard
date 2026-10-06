@@ -5573,6 +5573,18 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
          t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,
          t.status,
          CASE
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'absent'
+             )
+             THEN true
+           ELSE false
+         END AS is_lapsed,
+         CASE
            WHEN t.status IN ('Completed','Returned') THEN true
            WHEN r.id IS NOT NULL
              AND EXISTS (
