@@ -1,8 +1,8 @@
 'use strict';
 const DEFAULT_INTERVAL_MS=60000;
-function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,intervalMs=Number(process.env.TEST_BATCH_PUSH_INTERVAL_MS)||DEFAULT_INTERVAL_MS}){
+function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacultyNotification,intervalMs=Number(process.env.TEST_BATCH_PUSH_INTERVAL_MS)||DEFAULT_INTERVAL_MS}){
  if(!pool||typeof pool.query!=='function') throw new Error('Test Batch push worker requires PostgreSQL pool');
- if(typeof sendToStudent!=='function'||typeof sendToFaculty!=='function') throw new Error('Test Batch push worker requires push services');
+ if(typeof sendToStudent!=='function'||typeof sendToFaculty!=='function'||typeof createFacultyNotification!=='function') throw new Error('Test Batch push worker requires notification services');
  let timer=null,running=false,stopped=true;
  const timeZone=process.env.TEST_BATCH_NOTIFICATION_TIMEZONE||'Asia/Kolkata';
  const notificationHour=Number(process.env.TEST_BATCH_NOTIFICATION_HOUR||9);
@@ -12,8 +12,48 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,intervalMs=
  async function claim(type,testCode,roll,target){const r=await pool.query('INSERT INTO test_batch_push_reminder_runs(reminder_type,test_code,roll_no,target_date) VALUES($1,$2,$3,$4) ON CONFLICT(reminder_type,test_code,roll_no,target_date) DO NOTHING RETURNING reminder_type',[type,testCode,roll||'',target]);return r.rowCount>0;}
  async function admins(today){
   const target=dateShift(today,3);
-  const q=await pool.query(`SELECT test_code FROM test_batch_tests WHERE COALESCE(status,'Scheduled')<>'Cancelled' AND COALESCE(writing_date,test_date)=$1 ORDER BY test_code`,[target]);
-  for(const row of q.rows){const code=String(row.test_code||'').trim().toUpperCase();if(!code||!(await claim('admin_3_day',code,'',target)))continue;try{const r=await sendToFaculty(pool,['IG001','IG002'],{title:'Test Reminder',body:code+' is scheduled in 3 days.',data:{module_name:'test-batch-admin-test',test_code:code,reminder_type:'admin_3_day'}});console.log('[Test Batch Push] Admin '+code+': '+(r.sent||r.successCount||0)+' delivered');}catch(e){await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=\'\' AND target_date=$3',['admin_3_day',code,target]);console.error('[Test Batch Push] Admin failed:',e.message);}}
+  const q=await pool.query(
+   `SELECT DISTINCT r.test_code,r.roll_no
+    FROM test_batch_registrations r
+    JOIN test_batch_tests t
+      ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+    JOIN test_batch_students s
+      ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+    WHERE r.writing_date=$1
+      AND COALESCE(t.status,'Scheduled')<>'Cancelled'
+    ORDER BY r.test_code,r.roll_no`,
+   [target]
+  );
+  for(const row of q.rows){
+   const code=String(row.test_code||'').trim().toUpperCase();
+   const roll=String(row.roll_no||'').trim().toUpperCase();
+   if(!code||!roll||!(await claim('admin_3_day',code,roll,target)))continue;
+   const message=`Test Reminder — ${code} is scheduled by ${roll}.`;
+   try{
+    const results=await Promise.all(
+     ['IG001','IG002'].map(adminId=>createFacultyNotification(pool,{
+      facultyId:adminId,
+      moduleName:'test-batch',
+      title:'Test Reminder',
+      message,
+      data:{
+       module_name:'test-batch-admin-test',
+       test_code:code,
+       roll_no:roll,
+       reminder_type:'admin_3_day'
+      }
+     }))
+    );
+    const delivered=results.reduce((sum,item)=>sum+Number(item.sent||0),0);
+    console.log('[Test Batch Push] Admin reminder '+roll+'/'+code+': '+delivered+' push delivery result(s)');
+   }catch(e){
+    await pool.query(
+     'DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',
+     ['admin_3_day',code,roll,target]
+    );
+    console.error('[Test Batch Push] Admin failed:',e.message);
+   }
+  }
  }
  async function students(today){
   const target=dateShift(today,1);
