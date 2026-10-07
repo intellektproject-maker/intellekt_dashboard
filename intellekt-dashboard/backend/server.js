@@ -47,6 +47,24 @@ function parseTestBatchCode(testCode) {
 	};
 }
 
+function formatTestBatchRegistrationDateTime(value) {
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return String(value || '');
+	const parts = new Intl.DateTimeFormat('en-GB', {
+		timeZone: 'Asia/Kolkata',
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		hourCycle: 'h12'
+	}).formatToParts(date).reduce((result, part) => {
+		result[part.type] = part.value;
+		return result;
+	}, {});
+	return `${parts.day}/${parts.month}/${parts.year} at ${parts.hour}:${parts.minute} ${parts.dayPeriod}`;
+}
+
 function formatTimeFromMinutes(totalMinutes) {
 	const hours24 = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
@@ -5764,9 +5782,44 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
          slot_end=EXCLUDED.slot_end,
          status='Registered',
          updated_at=CURRENT_TIMESTAMP
-       RETURNING *`,
+       RETURNING *, (xmax = 0) AS is_new_registration`,
       [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
     );
+
+    const registration = registered.rows[0];
+
+    // Notify both Test Batch admins immediately for a newly created registration.
+    // Notification failures must never make a successful student registration fail.
+    if (registration?.is_new_registration === true) {
+      const registeredAt = formatTestBatchRegistrationDateTime(registration.registered_at);
+      const notificationMessage =
+        `${rollNo} has registered for ${testCode} on ${registeredAt}.`;
+
+      try {
+        await Promise.all(
+          ['IG001','IG002'].map((adminId) =>
+            createFacultyNotification(pool, {
+              facultyId: adminId,
+              moduleName: 'test-batch',
+              title: 'Test Batch Registration',
+              message: notificationMessage,
+              data: {
+                module_name: 'test-batch-admin-registration',
+                test_code: testCode,
+                roll_no: rollNo,
+                registered_at: String(registration.registered_at || ''),
+                notification_type: 'test_batch_registration'
+              }
+            })
+          )
+        );
+      } catch (notificationError) {
+        console.error(
+          'Test Batch registration notification failed:',
+          notificationError
+        );
+      }
+    }
 
     res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
   } catch(err) {
@@ -7437,10 +7490,13 @@ async function ensureStudentDeviceTokensTable() {
 async function startServer() {
   await ensureStudentDeviceTokensTable();
 
+  const facultyNotificationService = require('./faculty-notification-service');
+
   testBatchPushWorker = createTestBatchPushWorker({
     pool,
     sendToStudent,
-    sendToFaculty: require('./faculty-notification-service').sendToFaculty,
+    sendToFaculty: facultyNotificationService.sendToFaculty,
+    createFacultyNotification: facultyNotificationService.createFacultyNotification,
   });
   testBatchPushWorker.start();
 
