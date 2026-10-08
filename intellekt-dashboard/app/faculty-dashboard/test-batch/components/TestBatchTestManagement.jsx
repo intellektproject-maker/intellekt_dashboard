@@ -67,20 +67,19 @@ function normalizeStudent(row) {
 function parseTestBatchCode(value) {
   const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
-  // Format:
-  // S12M35C01
-  // S = State Board, C = CBSE, I = ISC
-  // 12 = Class
-  // M = Mathematics, P = Physics
-  // 35 = Total Marks
-  // C1, C01, C10, etc. = Chapter number
-  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d+)$/);
+  // Only the first 6 characters define the Test Batch category:
+  // S12P70 = State Board, Class 12, Physics, 70 marks.
+  // Everything after those 6 characters is an identifier/suffix and is
+  // intentionally ignored for auto-filling and board/class/subject matching.
+  // Examples:
+  // S12P70FT1, S12P70V2T1, S12P70C4P1, S12P70C2F
+  // all resolve to the same base category: S12P70.
+  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})/);
 
   if (!match) return null;
 
-  const [, boardCode, classCode, subjectCode, marksCode, chapterCode] = match;
+  const [, boardCode, classCode, subjectCode, marksCode] = match;
   const totalMarks = Number(marksCode);
-  const chapterNumber = Number(chapterCode);
 
   let duration = "";
   if ([35, 40, 50].includes(totalMarks)) duration = 90;
@@ -97,7 +96,7 @@ function parseTestBatchCode(value) {
     subject: subjectCode === "M" ? "Mathematics" : "Physics",
     totalMarks,
     duration,
-    chapter: String(chapterNumber).padStart(2, "0"),
+    baseCode: code.slice(0, 6),
   };
 }
 
@@ -140,7 +139,6 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       subject_name: parsed.subject,
       total_marks: String(parsed.totalMarks),
       duration_minutes: parsed.duration ? String(parsed.duration) : "",
-      chapter: parsed.chapter,
     }));
   }, [scheduleForm.test_code]);
 
@@ -284,7 +282,6 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
               subject_name: parsed.subject,
               total_marks: String(parsed.totalMarks),
               duration_minutes: parsed.duration ? String(parsed.duration) : "",
-              chapter: parsed.chapter,
             }
           : {}),
       }));
