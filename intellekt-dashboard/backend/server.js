@@ -27,11 +27,17 @@ function normalizeTestBatchBoard(value) {
 
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
-	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})C(\d+)$/);
+
+	// Only the first 6 characters define board, class, subject and marks.
+	// Any suffix after those 6 characters is part of the unique test code
+	// and must not affect eligibility matching.
+	// Examples:
+	// S12P70FT1, S12P70V2T1, S12P70C4P1, S12P70C2F -> S12P70
+	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})/);
 
 	if (!match) return null;
 
-	const [, boardCode, classCode, subjectCode, marksCode, chapterCode] = match;
+	const [, boardCode, classCode, subjectCode, marksCode] = match;
 
 	return {
 		board:
@@ -43,7 +49,7 @@ function parseTestBatchCode(testCode) {
 		className: classCode,
 		subject: subjectCode === 'M' ? 'Mathematics' : 'Physics',
 		totalMarks: Number(marksCode),
-		chapter: chapterCode
+		baseCode: code.slice(0, 6)
 	};
 }
 
