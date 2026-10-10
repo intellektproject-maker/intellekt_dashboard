@@ -6089,6 +6089,7 @@ app.get('/test-batch/student-status', requireTestBatchAdmin, async (req, res) =>
     const seriesId = String(req.query.seriesId || '').trim();
     const classFilter = String(req.query.class || '').trim();
     const boardFilter = String(req.query.board || '').trim();
+    const categoryFilter = String(req.query.category || '').trim().toLowerCase();
     const testValues = [];
     let testWhere = "WHERE t.status <> 'Cancelled'";
     const studentValues = [];
@@ -6107,6 +6108,9 @@ app.get('/test-batch/student-status', requireTestBatchAdmin, async (req, res) =>
       studentWhere += ' AND s.test_series_id=$' + studentValues.length;
       registrationValues.push(parsed);
       registrationWhere += ' AND t.test_series_id=$' + registrationValues.length;
+    }
+    if (categoryFilter === 'registered') {
+      registrationWhere += " AND (r.writing_date IS NULL OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW())";
     }
     if (classFilter) {
       studentValues.push(classFilter);
