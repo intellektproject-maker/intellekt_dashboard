@@ -5798,8 +5798,13 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     // Notification failures must never make a successful student registration fail.
     if (registration?.is_new_registration === true) {
       const registeredAt = formatTestBatchRegistrationDateTime(registration.registered_at);
+      const studentNameResult = await pool.query(
+        'SELECT name FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+        [rollNo]
+      );
+      const studentName = String(studentNameResult.rows[0]?.name || '').trim() || rollNo;
       const notificationMessage =
-        `${rollNo} has registered for ${testCode} on ${registeredAt}.`;
+        `Test Reminder - ${testCode} is scheduled by ${studentName}. Registered on ${registeredAt}.`;
 
       try {
         await Promise.all(
