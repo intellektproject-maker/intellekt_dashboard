@@ -6114,13 +6114,34 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
     const test = testResult.rows[0];
 
     const category = String(req.query.category || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const seriesFilter = String(req.query.seriesId || '').trim();
     const registeredVisibilityFilter = category === 'Registered'
       ? `AND (
            r.writing_date IS NULL
-           OR (r.writing_date::timestamp + INTERVAL '1 day') >
-              (NOW() AT TIME ZONE 'Asia/Kolkata')
+           OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW()
          )`
       : '';
+
+    const values = [code, test.test_series_id, test.subject_name];
+    let studentFilters = '';
+    if (classFilter) {
+      values.push(classFilter);
+      studentFilters += ` AND TRIM(s.class) = TRIM(${values.length})`;
+    }
+    if (boardFilter) {
+      values.push(boardFilter);
+      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM(${values.length}), '[^a-zA-Z]', '', 'g'))`;
+    }
+    if (seriesFilter) {
+      const parsedSeriesId = Number(seriesFilter);
+      if (!Number.isSafeInteger(parsedSeriesId) || parsedSeriesId <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      values.push(parsedSeriesId);
+      studentFilters += ` AND s.test_series_id = ${values.length}`;
+    }
 
     const studentsResult = await pool.query(
       `SELECT
@@ -6144,9 +6165,10 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
            LOWER(TRIM(s.subjects))='both'
            OR LOWER(TRIM(s.subjects))=LOWER(TRIM($3))
          )
+         ${studentFilters}
          ${registeredVisibilityFilter}
        ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
-      [code, test.test_series_id, test.subject_name]
+      values
     );
 
     res.json({
