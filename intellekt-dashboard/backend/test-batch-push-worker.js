@@ -13,7 +13,7 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
  async function admins(today){
   const target=dateShift(today,3);
   const q=await pool.query(
-   `SELECT DISTINCT r.test_code,r.roll_no
+   `SELECT DISTINCT r.test_code,r.roll_no,s.name AS student_name
     FROM test_batch_registrations r
     JOIN test_batch_tests t
       ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
@@ -28,7 +28,8 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
    const code=String(row.test_code||'').trim().toUpperCase();
    const roll=String(row.roll_no||'').trim().toUpperCase();
    if(!code||!roll||!(await claim('admin_3_day',code,roll,target)))continue;
-   const message=`Test Reminder — ${code} is scheduled by ${roll}.`;
+   const studentName=String(row.student_name||'').trim()||roll;
+   const message=`Test Reminder - ${code} is scheduled by ${studentName}.`;
    try{
     const results=await Promise.all(
      ['IG001','IG002'].map(adminId=>createFacultyNotification(pool,{
