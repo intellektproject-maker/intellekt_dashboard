@@ -6128,11 +6128,11 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
     let studentFilters = '';
     if (classFilter) {
       values.push(classFilter);
-      studentFilters += ` AND TRIM(s.class) = TRIM(${values.length})`;
+      studentFilters += ` AND TRIM(s.class) = TRIM($${values.length})`;
     }
     if (boardFilter) {
       values.push(boardFilter);
-      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM(${values.length}), '[^a-zA-Z]', '', 'g'))`;
+      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM($${values.length}), '[^a-zA-Z]', '', 'g'))`;
     }
     if (seriesFilter) {
       const parsedSeriesId = Number(seriesFilter);
@@ -6140,7 +6140,7 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
         return res.status(400).json({ error: 'Invalid Test Series filter' });
       }
       values.push(parsedSeriesId);
-      studentFilters += ` AND s.test_series_id = ${values.length}`;
+      studentFilters += ` AND s.test_series_id = $${values.length}`;
     }
 
     const studentsResult = await pool.query(
