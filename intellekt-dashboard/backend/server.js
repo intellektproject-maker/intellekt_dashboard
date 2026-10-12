@@ -5693,7 +5693,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
 
     const testResult = await pool.query(
       `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
-              duration_minutes,application_open_date,application_close_date,status
+              duration_minutes,application_open_date,application_close_date,writing_close_date,status
        FROM test_batch_tests
        WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
        LIMIT 1`,
@@ -5744,16 +5744,18 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
     today.setHours(0,0,0,0);
     const open = new Date(test.application_open_date);
     const close = new Date(test.application_close_date);
+    const writingClose = new Date(test.writing_close_date);
     const chosenDate = new Date(selectedWritingDate);
     open.setHours(0,0,0,0);
     close.setHours(0,0,0,0);
+    writingClose.setHours(0,0,0,0);
     chosenDate.setHours(0,0,0,0);
 
     if (today < open || today > close) {
       return res.status(400).json({error:'Registration period is closed for this test'});
     }
-    if (Number.isNaN(chosenDate.getTime()) || chosenDate < open || chosenDate > close) {
-      return res.status(400).json({error:'Selected test date must be within the registration window'});
+    if (Number.isNaN(chosenDate.getTime()) || Number.isNaN(writingClose.getTime()) || chosenDate < open || chosenDate > writingClose) {
+      return res.status(400).json({error:'Selected writing date must be between the opening date and Writing Close Date'});
     }
 
     const durationMinutes = Number(test.duration_minutes);
