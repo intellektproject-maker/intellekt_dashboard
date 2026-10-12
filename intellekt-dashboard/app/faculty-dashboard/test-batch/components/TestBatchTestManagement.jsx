@@ -125,6 +125,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     chapter: "",
     application_open_date: "",
     application_close_date: "",
+    writing_close_date: "",
     status: "Scheduled",
   });
 
@@ -263,6 +264,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       chapter: "",
       application_open_date: "",
       application_close_date: "",
+      writing_close_date: "",
       status: "Scheduled",
     });
   }
@@ -310,6 +312,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         chapter: test.chapter || "",
         application_open_date: dateOnly(test.application_open_date),
         application_close_date: dateOnly(test.application_close_date),
+        writing_close_date: dateOnly(test.writing_close_date),
         status: test.status || "Scheduled",
       });
     } else {
@@ -336,6 +339,10 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     if (form.application_close_date < form.application_open_date) {
       return setError("Apply for Test close date cannot be before the open date.");
     }
+    if (!form.writing_close_date) return setError("Select Writing Close date.");
+    if (form.application_close_date >= form.writing_close_date) {
+      return setError("Registration close date must be before the Writing Close date.");
+    }
 
 
     setSaving(true);
@@ -355,6 +362,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         chapter: form.chapter.trim(),
         application_open_date: form.application_open_date,
         application_close_date: form.application_close_date,
+        writing_close_date: form.writing_close_date,
         status: form.status || "Scheduled",
       };
 
@@ -1719,6 +1727,15 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   onChange={(e) => updateSchedule("application_close_date", e.target.value)}
                   className="block w-full border rounded-lg px-4 py-3 mt-1"
                 />
+              </label>
+
+              <label className="text-sm text-gray-600">
+                Writing Close Date
+                <input type="date" value={scheduleForm.writing_close_date}
+                  min={scheduleForm.application_close_date || undefined}
+                  onChange={(e) => updateSchedule("writing_close_date", e.target.value)}
+                  className="block w-full border rounded-lg px-4 py-3 mt-1" required />
+                <span className="block text-xs text-gray-500 mt-1">Last date for the test; registration must close earlier.</span>
               </label>
 
               <label className="text-sm text-gray-600 md:col-span-2">

@@ -35,20 +35,17 @@ function startOfDay(value) {
   return date;
 }
 
-function buildDates(openValue, closeValue) {
-  if (!openValue || !closeValue) return [];
+function buildDates(writingCloseValue) {
+  if (!writingCloseValue) return [];
 
-  const open = startOfDay(openValue);
-  const close = startOfDay(closeValue);
+  const close = startOfDay(writingCloseValue);
   const today = startOfDay(new Date());
 
   // A student must register at least 3 calendar days before the test date.
   const earliestTestDate = new Date(today);
   earliestTestDate.setDate(earliestTestDate.getDate() + 3);
 
-  const current = new Date(
-    Math.max(open.getTime(), earliestTestDate.getTime())
-  );
+  const current = new Date(earliestTestDate.getTime());
   const dates = [];
 
   while (current <= close) {
@@ -272,10 +269,7 @@ export default function TestBatchStudentTests({ rollNo }) {
   const selectedDates = useMemo(
     () =>
       selectedTest
-        ? buildDates(
-            selectedTest.application_open_date,
-            selectedTest.application_close_date
-          )
+        ? buildDates(selectedTest.writing_close_date)
         : [],
     [selectedTest]
   );
@@ -288,12 +282,15 @@ export default function TestBatchStudentTests({ rollNo }) {
     [selectedTest, selectedDate]
   );
 
+  const isTrue = (value) => value === true || value === "true";
+  const lapsedTests = tests.filter((test) => isTrue(test.is_lapsed));
+  const completedTests = tests.filter((test) => !isTrue(test.is_lapsed) && isTrue(test.is_completed));
   const registeredTests = tests.filter(
-    (test) => test.is_registered === true || test.is_registered === "true"
+    (test) => !isTrue(test.is_lapsed) && !isTrue(test.is_completed) && isTrue(test.is_registered)
   );
 
   const availableTests = tests.filter(
-    (test) => !(test.is_registered === true || test.is_registered === "true")
+    (test) => !isTrue(test.is_registered) && !isTrue(test.is_lapsed) && !isTrue(test.is_completed)
   );
 
   function renderRegistrationContent() {
@@ -314,14 +311,14 @@ export default function TestBatchStudentTests({ rollNo }) {
         ) : (
           <div className="space-y-4">
             {availableTests.map((test) => {
-              const dates = buildDates(
-                test.application_open_date,
-                test.application_close_date
-              );
+              const dates = buildDates(test.writing_close_date);
+              const today = startOfDay(new Date());
               const registrationClosed =
                 dates.length === 0 ||
-                startOfDay(new Date()) >
-                  startOfDay(test.application_close_date);
+                !test.application_open_date ||
+                !test.application_close_date ||
+                today < startOfDay(test.application_open_date) ||
+                today > startOfDay(test.application_close_date);
 
               return (
                 <div
@@ -485,6 +482,15 @@ export default function TestBatchStudentTests({ rollNo }) {
             <span className="text-blue-700 font-semibold">Open</span>
           </div>
         </button>
+
+        <button type="button" onClick={() => setActiveCard("completed")} className="text-left bg-white rounded-2xl shadow-md border border-gray-200 p-5 md:p-6 hover:shadow-lg hover:border-blue-300 transition-all min-h-[150px]">
+          <p className="text-sm text-gray-500">Test Batch</p><h2 className="text-xl md:text-2xl font-bold text-blue-800 mt-1">Completed</h2>
+          <p className="text-sm text-gray-500 mt-2">View tests attended and completed.</p><p className="mt-4 text-sm font-semibold text-blue-700">{completedTests.length} tests</p>
+        </button>
+        <button type="button" onClick={() => setActiveCard("lapsed")} className="text-left bg-white rounded-2xl shadow-md border border-gray-200 p-5 md:p-6 hover:shadow-lg hover:border-blue-300 transition-all min-h-[150px]">
+          <p className="text-sm text-gray-500">Test Batch</p><h2 className="text-xl md:text-2xl font-bold text-blue-800 mt-1">Lapsed</h2>
+          <p className="text-sm text-gray-500 mt-2">View absent tests and missed registration deadlines.</p><p className="mt-4 text-sm font-semibold text-blue-700">{lapsedTests.length} tests</p>
+        </button>
       </div>
 
       {activeCard === "registration" && (
@@ -493,6 +499,18 @@ export default function TestBatchStudentTests({ rollNo }) {
             Register only for tests available to your Test Batch and Test Series.
           </p>
           {renderRegistrationContent()}
+        </Modal>
+      )}
+
+      {activeCard === "completed" && (
+        <Modal title="Completed Tests" onClose={() => setActiveCard(null)}>
+          {completedTests.length === 0 ? <p className="text-gray-500">No completed tests yet.</p> : <div className="space-y-3">{completedTests.map((test) => <div key={test.test_code} className="border rounded-xl p-4"><h3 className="font-semibold text-blue-700">{test.test_code}</h3><p className="text-sm text-gray-600">{test.subject_name || "-"} · Writing date: {formatDate(test.registered_writing_date || test.writing_close_date)}</p></div>)}</div>}
+        </Modal>
+      )}
+
+      {activeCard === "lapsed" && (
+        <Modal title="Lapsed Tests" onClose={() => setActiveCard(null)}>
+          {lapsedTests.length === 0 ? <p className="text-gray-500">No lapsed tests.</p> : <div className="space-y-3">{lapsedTests.map((test) => <div key={test.test_code} className="border border-amber-200 rounded-xl p-4"><h3 className="font-semibold text-blue-700">{test.test_code}</h3><p className="text-sm text-gray-600">{test.subject_name || "-"} · Writing date: {formatDate(test.registered_writing_date || test.writing_close_date)}</p><p className="text-sm text-amber-800 mt-1">{test.is_absent === true || test.is_absent === "true" ? "Marked absent by the administrator for the registered test date." : "Registration was not completed before the registration close date."}</p></div>)}</div>}
         </Modal>
       )}
 
