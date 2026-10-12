@@ -258,3 +258,8 @@ BEGIN
       CHECK (result_publication_status IN ('Pending','Published'));
   END IF;
 END $$;
+
+
+-- Backward-compatible migration for the Test Batch writing deadline.
+ALTER TABLE test_batch_tests
+  ADD COLUMN IF NOT EXISTS writing_close_date DATE;
