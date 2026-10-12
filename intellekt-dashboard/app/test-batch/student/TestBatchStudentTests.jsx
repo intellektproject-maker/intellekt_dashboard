@@ -35,10 +35,9 @@ function startOfDay(value) {
   return date;
 }
 
-function buildDates(openValue, writingCloseValue) {
-  if (!openValue || !writingCloseValue) return [];
+function buildDates(writingCloseValue) {
+  if (!writingCloseValue) return [];
 
-  const open = startOfDay(openValue);
   const close = startOfDay(writingCloseValue);
   const today = startOfDay(new Date());
 
@@ -46,9 +45,7 @@ function buildDates(openValue, writingCloseValue) {
   const earliestTestDate = new Date(today);
   earliestTestDate.setDate(earliestTestDate.getDate() + 3);
 
-  const current = new Date(
-    Math.max(open.getTime(), earliestTestDate.getTime())
-  );
+  const current = new Date(earliestTestDate.getTime());
   const dates = [];
 
   while (current <= close) {
@@ -272,10 +269,7 @@ export default function TestBatchStudentTests({ rollNo }) {
   const selectedDates = useMemo(
     () =>
       selectedTest
-        ? buildDates(
-            selectedTest.application_open_date,
-            selectedTest.writing_close_date
-          )
+        ? buildDates(selectedTest.writing_close_date)
         : [],
     [selectedTest]
   );
@@ -317,14 +311,14 @@ export default function TestBatchStudentTests({ rollNo }) {
         ) : (
           <div className="space-y-4">
             {availableTests.map((test) => {
-              const dates = buildDates(
-                test.application_open_date,
-                test.writing_close_date
-              );
+              const dates = buildDates(test.writing_close_date);
+              const today = startOfDay(new Date());
               const registrationClosed =
                 dates.length === 0 ||
+                !test.application_open_date ||
                 !test.application_close_date ||
-                startOfDay(new Date()) > startOfDay(test.application_close_date);
+                today < startOfDay(test.application_open_date) ||
+                today > startOfDay(test.application_close_date);
 
               return (
                 <div
