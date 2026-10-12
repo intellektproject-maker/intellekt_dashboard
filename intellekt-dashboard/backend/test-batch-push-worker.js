@@ -56,12 +56,52 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
    }
   }
  }
- async function students(today){
+ async function registrationClosingReminders(today){
+  const target=dateShift(today,2);
+  const q=await pool.query(`
+    SELECT t.test_code,t.test_series_id,t.subject_name,t.writing_close_date,
+           s.roll_no,s.subjects
+    FROM test_batch_tests t
+    JOIN test_batch_students s ON s.test_series_id=t.test_series_id
+    WHERE t.application_close_date=$1
+      AND COALESCE(t.status,'Scheduled') NOT IN ('Cancelled','Completed','Returned')
+      AND UPPER(TRIM(s.class))=SUBSTRING(UPPER(TRIM(t.test_code)),2,2)
+      AND (
+        (SUBSTRING(UPPER(TRIM(t.test_code)),1,1)='S' AND LOWER(TRIM(s.board)) IN ('state board','stateboard','state'))
+        OR (SUBSTRING(UPPER(TRIM(t.test_code)),1,1)='C' AND LOWER(TRIM(s.board))='cbse')
+        OR (SUBSTRING(UPPER(TRIM(t.test_code)),1,1)='I' AND LOWER(TRIM(s.board))='isc')
+      )
+      AND (
+        LOWER(TRIM(s.subjects))='both'
+        OR (SUBSTRING(UPPER(TRIM(t.test_code)),4,1)='M' AND LOWER(TRIM(s.subjects)) IN ('maths','mathematics'))
+        OR (SUBSTRING(UPPER(TRIM(t.test_code)),4,1)='P' AND LOWER(TRIM(s.subjects))='physics')
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM test_batch_registrations r
+        WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM(t.test_code))
+          AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+          AND r.status='Registered'
+      )
+    ORDER BY t.test_code,s.roll_no
+  `,[target]);
+  for(const row of q.rows){
+    const code=String(row.test_code||'').trim().toUpperCase();
+    const roll=String(row.roll_no||'').trim().toUpperCase();
+    if(!code||!roll||!(await claim('registration_close_2_day',code,roll,target)))continue;
+    try{
+      await sendToStudent(pool,roll,{title:'Test Registration Closing Soon',body:'Registration for '+code+' closes on '+target+'. Register before the close date.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,close_date:target,reminder_type:'registration_close_2_day'}});
+    }catch(e){
+      await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['registration_close_2_day',code,roll,target]);
+      console.error('[Test Batch Push] Registration-close reminder failed:',e.message);
+    }
+  }
+}
+async function students(today){
   const target=dateShift(today,1);
   const q=await pool.query(`SELECT DISTINCT r.roll_no,r.test_code FROM test_batch_registrations r JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code)) JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) WHERE r.writing_date=$1 AND COALESCE(t.status,'Scheduled')<>'Cancelled' ORDER BY r.roll_no,r.test_code`,[target]);
   for(const row of q.rows){const roll=String(row.roll_no||'').trim().toUpperCase(),code=String(row.test_code||'').trim().toUpperCase();if(!roll||!code||!(await claim('student_1_day',code,roll,target)))continue;try{const r=await sendToStudent(pool,roll,{title:'Test Reminder',body:code+' is scheduled tomorrow.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,reminder_type:'student_1_day'}});console.log('[Test Batch Push] Student '+roll+'/'+code+': '+(r.successCount||0)+' delivered');}catch(e){await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['student_1_day',code,roll,target]);console.error('[Test Batch Push] Student failed:',e.message);}}
  }
- async function tick(){if(running||stopped)return;running=true;try{const n=parts(),today=n.year+'-'+n.month+'-'+n.day;if(Number(n.hour)>=notificationHour){await ensureTable();await admins(today);await students(today);}}catch(e){console.error('[Test Batch Push] Worker cycle failed:',e);}finally{running=false;}}
+ async function tick(){if(running||stopped)return;running=true;try{const n=parts(),today=n.year+'-'+n.month+'-'+n.day;if(Number(n.hour)>=notificationHour){await ensureTable();await admins(today);await students(today);await registrationClosingReminders(today);}}catch(e){console.error('[Test Batch Push] Worker cycle failed:',e);}finally{running=false;}}
  function start(){if(timer)return;stopped=false;console.log('[Test Batch Push] Worker started');void tick();timer=setInterval(()=>void tick(),intervalMs);timer.unref();}
  function stop(){stopped=true;if(timer)clearInterval(timer);timer=null;}
  return {start,stop,tick};
