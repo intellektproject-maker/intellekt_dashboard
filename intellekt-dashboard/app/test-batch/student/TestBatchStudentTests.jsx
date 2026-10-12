@@ -35,11 +35,11 @@ function startOfDay(value) {
   return date;
 }
 
-function buildDates(openValue, closeValue) {
-  if (!openValue || !closeValue) return [];
+function buildDates(openValue, writingCloseValue) {
+  if (!openValue || !writingCloseValue) return [];
 
   const open = startOfDay(openValue);
-  const close = startOfDay(closeValue);
+  const close = startOfDay(writingCloseValue);
   const today = startOfDay(new Date());
 
   // A student must register at least 3 calendar days before the test date.
@@ -274,7 +274,7 @@ export default function TestBatchStudentTests({ rollNo }) {
       selectedTest
         ? buildDates(
             selectedTest.application_open_date,
-            selectedTest.application_close_date
+            selectedTest.writing_close_date
           )
         : [],
     [selectedTest]
@@ -288,12 +288,15 @@ export default function TestBatchStudentTests({ rollNo }) {
     [selectedTest, selectedDate]
   );
 
+  const isTrue = (value) => value === true || value === "true";
+  const lapsedTests = tests.filter((test) => isTrue(test.is_lapsed));
+  const completedTests = tests.filter((test) => !isTrue(test.is_lapsed) && isTrue(test.is_completed));
   const registeredTests = tests.filter(
-    (test) => test.is_registered === true || test.is_registered === "true"
+    (test) => !isTrue(test.is_lapsed) && !isTrue(test.is_completed) && isTrue(test.is_registered)
   );
 
   const availableTests = tests.filter(
-    (test) => !(test.is_registered === true || test.is_registered === "true")
+    (test) => !isTrue(test.is_registered) && !isTrue(test.is_lapsed) && !isTrue(test.is_completed)
   );
 
   function renderRegistrationContent() {
@@ -316,12 +319,12 @@ export default function TestBatchStudentTests({ rollNo }) {
             {availableTests.map((test) => {
               const dates = buildDates(
                 test.application_open_date,
-                test.application_close_date
+                test.writing_close_date
               );
               const registrationClosed =
                 dates.length === 0 ||
-                startOfDay(new Date()) >
-                  startOfDay(test.application_close_date);
+                !test.application_close_date ||
+                startOfDay(new Date()) > startOfDay(test.application_close_date);
 
               return (
                 <div
