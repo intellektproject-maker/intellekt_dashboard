@@ -5529,7 +5529,7 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
   try {
     const {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
-      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
     }=req.body||{};
     if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
       return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
@@ -5540,10 +5540,13 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
     if (application_open_date && application_close_date && application_close_date < application_open_date) {
       return res.status(400).json({error:'Application close date cannot be before application open date'});
     }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
     const result=await pool.query(
-      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status,created_by) '+
-      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (test_code) DO NOTHING RETURNING *',
-      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status,created_by) '+
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (test_code) DO NOTHING RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',req.testBatchAdminId]);
     if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
     res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
   } catch(err){
@@ -5557,14 +5560,17 @@ app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
   try {
     const {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
-      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
     }=req.body||{};
     if (application_open_date && application_close_date && application_close_date < application_open_date) {
       return res.status(400).json({error:'Application close date cannot be before application open date'});
     }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
     const result=await pool.query(
-      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,status=$14,updated_at=CURRENT_TIMESTAMP WHERE id=$15 RETURNING *',
-      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',Number(req.params.id)]);
+      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,writing_close_date=$14,status=$15,updated_at=CURRENT_TIMESTAMP WHERE id=$16 RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',Number(req.params.id)]);
     if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
     res.json({message:'Test Batch test updated successfully',test:result.rows[0]});
   } catch(err){
@@ -5595,7 +5601,7 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
       `SELECT
          t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
          t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
-         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,
+         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,t.writing_close_date,
          t.status,
          CASE
            WHEN r.id IS NOT NULL
@@ -5608,6 +5614,15 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
              )
              THEN true
            ELSE false
+         END AS is_absent,
+         CASE
+           WHEN (r.id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM test_batch_attendance a
+             WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+               AND a.attendance_date=COALESCE(r.writing_date,t.writing_date)
+               AND LOWER(TRIM(a.status))='absent'
+           )) OR (r.id IS NULL AND t.application_close_date IS NOT NULL AND t.application_close_date < CURRENT_DATE)
+           THEN true ELSE false
          END AS is_lapsed,
          CASE
            WHEN t.status IN ('Completed','Returned') THEN true
