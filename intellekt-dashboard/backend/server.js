@@ -5542,8 +5542,9 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
     }
     const result=await pool.query(
       'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,status,created_by) '+
-      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (test_code) DO NOTHING RETURNING *',
       [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+    if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
     res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
   } catch(err){
     console.error('POST /test-batch/tests error:',err);
@@ -6835,6 +6836,9 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
       return res.status(400).json({ error:'Invalid Test Series' });
     }
 
+    // Normalize optional email values so whitespace is stored as NULL, not an empty string.
+    const normalizedEmail = email == null ? null : (String(email).trim().toLowerCase() || null);
+
     await client.query('BEGIN');
 
     const rollNo = await generateNextTestBatchRollNo(client);
@@ -6842,10 +6846,10 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
       ? String(password).trim()
       : rollNo;
 
-    await client.query(
+    const inserted = await client.query(
       'INSERT INTO test_batch_students ' +
       '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12)',
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12) ON CONFLICT DO NOTHING RETURNING roll_no',
       [
         rollNo,
         String(name).trim(),
@@ -6853,7 +6857,7 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
         board ? String(board).trim() : null,
         mode_of_education ? String(mode_of_education).trim() : null,
         phone ? String(phone).trim() : null,
-        email ? String(email).trim() : null,
+        normalizedEmail,
         school_name ? String(school_name).trim() : null,
         validSubjects,
         finalPassword,
@@ -6861,6 +6865,20 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
         req.testBatchAdminId
       ]
     );
+
+    if (!inserted.rows.length) {
+      const emailExists = normalizedEmail
+        ? await client.query(
+            'SELECT 1 FROM test_batch_students WHERE LOWER(TRIM(email))=LOWER(TRIM($1)) LIMIT 1',
+            [normalizedEmail]
+          )
+        : { rows: [] };
+      await client.query('ROLLBACK');
+      if (emailExists.rows.length) {
+        return res.status(409).json({ error:'Email already exists in Test Batch' });
+      }
+      return res.status(409).json({ error:'Could not allocate a unique Test Batch roll number. Please retry.' });
+    }
 
     await client.query('COMMIT');
     res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo });
