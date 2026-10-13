@@ -7127,6 +7127,12 @@ app.get('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
           s.roll_no,
           s.name,
           ts.name AS test_series_name,
+          (
+            SELECT STRING_AGG(DISTINCT TRIM(tr.test_code), ', ' ORDER BY TRIM(tr.test_code))
+            FROM test_batch_registrations tr
+            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+              AND tr.writing_date = $1
+          ) AS test_codes,
           a.id,
           a.attendance_date,
           a.status,
