@@ -824,6 +824,7 @@ function AttendanceSection({ adminId }) {
               <tr className="bg-blue-700 text-white">
                 <th className="p-3 text-left">Roll No</th>
                 <th className="p-3 text-left">Name</th>
+                <th className="p-3 text-left">Test Code</th>
                 <th className="p-3 text-left">Series</th>
                 <th className="p-3 text-left">Date</th>
                 <th className="p-3 text-left">Status</th>
@@ -835,6 +836,7 @@ function AttendanceSection({ adminId }) {
                 <tr key={r.roll_no} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}>
                   <td className="p-3 font-semibold">{r.roll_no}</td>
                   <td className="p-3">{r.name}</td>
+                  <td className="p-3 font-medium">{r.test_codes || "-"}</td>
                   <td className="p-3">{r.test_series_name}</td>
                   <td className="p-3">{formatDate(r.attendance_date||date)}</td>
                   <td className="p-3">
