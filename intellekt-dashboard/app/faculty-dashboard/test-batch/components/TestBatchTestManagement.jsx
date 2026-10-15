@@ -70,7 +70,7 @@ function parseTestBatchCode(value) {
   // Test codes normally encode marks with two digits (for example S12P70).
   // Explicitly support the three-digit 140-mark category without consuming
   // numeric suffixes used by existing two-digit-mark test codes.
-  const match = code.match(/^([SCI])(\\d{2})([MP])(140|\\d{2})/);
+  const match = code.match(/^([SCI])(\d{2})([MP])(140|\d{2})/);
 
   if (!match) return null;
 
