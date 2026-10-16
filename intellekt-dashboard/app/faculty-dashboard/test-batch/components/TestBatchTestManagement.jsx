@@ -1089,15 +1089,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
 
     if (!selectedWritingDate) { setError("Select a writing date before saving marks."); return; }
-    const missing = visibleMarkStudents.filter(
-      (student) => !String(student.marks_obtained || "").trim()
+    const recordsToSave = visibleMarkStudents.filter(
+      (student) => String(student.marks_obtained || "").trim()
     );
 
-    if (missing.length) {
-      setError(
-        "Enter marks for all appeared students before saving/finalizing: " +
-          missing.map((student) => student.roll_no).join(", ")
-      );
+    if (recordsToSave.length === 0) {
+      setError("Enter marks for at least one student who has completed the test on this date.");
       return;
     }
 
@@ -1115,7 +1112,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           body: JSON.stringify({
             adminId,
             writing_date: selectedWritingDate,
-            records: visibleMarkStudents.map((student) => ({
+            records: recordsToSave.map((student) => ({
               roll_no: student.roll_no,
               marks_obtained: student.marks_obtained,
               remarks: student.remarks,
@@ -1127,7 +1124,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage("Marks saved for writing date " + selectedWritingDate + ". Students scheduled on other dates can be marked separately.");
+      setMessage("Saved marks for " + recordsToSave.length + " student(s) on " + selectedWritingDate + ". You can enter the remaining marks later.");
     } catch (err) {
       setError(err.message);
     } finally {
