@@ -67,14 +67,10 @@ function normalizeStudent(row) {
 function parseTestBatchCode(value) {
   const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
-  // Only the first 6 characters define the Test Batch category:
-  // S12P70 = State Board, Class 12, Physics, 70 marks.
-  // Everything after those 6 characters is an identifier/suffix and is
-  // intentionally ignored for auto-filling and board/class/subject matching.
-  // Examples:
-  // S12P70FT1, S12P70V2T1, S12P70C4P1, S12P70C2F
-  // all resolve to the same base category: S12P70.
-  const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})/);
+  // Test codes normally encode marks with two digits (for example S12P70).
+  // Explicitly support the three-digit 140-mark category without consuming
+  // numeric suffixes used by existing two-digit-mark test codes.
+  const match = code.match(/^([SCI])(\d{2})([MP])(140|\d{2})(?!\d)/);
 
   if (!match) return null;
 
@@ -83,7 +79,7 @@ function parseTestBatchCode(value) {
 
   let duration = "";
   if ([35, 40, 50].includes(totalMarks)) duration = 90;
-  if ([70, 80, 90].includes(totalMarks)) duration = 180;
+  if ([70, 80, 90, 140].includes(totalMarks)) duration = 180;
 
   return {
     board:
@@ -96,7 +92,7 @@ function parseTestBatchCode(value) {
     subject: subjectCode === "M" ? "Mathematics" : "Physics",
     totalMarks,
     duration,
-    baseCode: code.slice(0, 6),
+    baseCode: code.slice(0, match[0].length),
   };
 }
 
