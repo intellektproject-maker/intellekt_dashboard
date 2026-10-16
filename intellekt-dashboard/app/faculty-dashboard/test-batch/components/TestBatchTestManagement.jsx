@@ -147,6 +147,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [markTest, setMarkTest] = useState(null);
   const [students, setStudents] = useState([]);
   const [originalStudents, setOriginalStudents] = useState([]);
+  const [selectedWritingDate, setSelectedWritingDate] = useState("");
+  const markWritingDates = useMemo(() => [...new Set(students.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort(), [students]);
+  const visibleMarkStudents = useMemo(() => selectedWritingDate ? students.filter((student) => String(student.registered_writing_date || "").slice(0, 10) === selectedWritingDate) : students, [students, selectedWritingDate]);
 
   const [editingTest, setEditingTest] = useState(null);
   const [settingsForm, setSettingsForm] = useState({
@@ -485,6 +488,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       setMarkTest(loadedTest);
       setStudents(loadedStudents);
       setOriginalStudents(JSON.parse(JSON.stringify(loadedStudents)));
+      const availableWritingDates = [...new Set(loadedStudents.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort();
+      setSelectedWritingDate((current) => availableWritingDates.includes(current) ? current : availableWritingDates[0] || "");
     } catch (err) {
       setMarkTest(null);
       setStudents([]);
@@ -1083,7 +1088,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   async function saveMarks() {
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
 
-    const missing = students.filter(
+    if (!selectedWritingDate) { setError("Select a writing date before saving marks."); return; }
+    const missing = visibleMarkStudents.filter(
       (student) => !String(student.marks_obtained || "").trim()
     );
 
@@ -1108,7 +1114,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
           method: "POST",
           body: JSON.stringify({
             adminId,
-            records: students.map((student) => ({
+            writing_date: selectedWritingDate,
+            records: visibleMarkStudents.map((student) => ({
               roll_no: student.roll_no,
               marks_obtained: student.marks_obtained,
               remarks: student.remarks,
@@ -1120,7 +1127,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage("Test Batch marks saved and finalized successfully. Click Edit Marks to make changes.");
+      setMessage("Marks saved for writing date " + selectedWritingDate + ". Students scheduled on other dates can be marked separately.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1168,7 +1175,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   async function finalizeMarks() {
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
 
-    const missing = students.filter(
+    if (!selectedWritingDate) { setError("Select a writing date before finalizing marks."); return; }
+
+    const missing = visibleMarkStudents.filter(
       (student) => !String(student.marks_obtained || "").trim()
     );
 
@@ -1181,9 +1190,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     }
 
     const confirmed = window.confirm(
-      "Finalize marks for " +
-        markTest.test_code +
-        "? Finalized marks will be locked from further editing."
+      "Finalize marks for " + markTest.test_code + " on " + formatDate(selectedWritingDate) + "? Other writing dates will remain editable until their marks are entered."
     );
 
     if (!confirmed) return;
@@ -1193,22 +1200,20 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     setMessage("");
 
     try {
-      await api(
+      const finalizeResult = await api(
         "/test-batch/tests/" +
           encodeURIComponent(markTest.test_code) +
           "/marks/finalize",
         {
           method: "POST",
-          body: JSON.stringify({ adminId }),
+          body: JSON.stringify({ adminId, writing_date: selectedWritingDate }),
         }
       );
 
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage(
-        "Marks finalized successfully. They are now available to Test Batch result/student views."
-      );
+      setMessage(finalizeResult.message || "Marks processed for the selected writing date.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -2067,7 +2072,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 <div className="bg-gray-50 rounded-lg p-3">
                   <div className="text-xs text-gray-500">Registered Students</div>
                   <div className="font-semibold">
-                    {students.length}
+                    {visibleMarkStudents.length}
                   </div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
@@ -2076,12 +2081,13 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 </div>
               </div>
 
+              <div className="mb-5 max-w-sm"><label className="text-sm text-gray-600">Writing Date — Registered Students Only<select className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white" value={selectedWritingDate} onChange={(event) => { setSelectedWritingDate(event.target.value); setError(""); setMessage(""); }}><option value="">Select Writing Date</option>{markWritingDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label><p className="text-xs text-gray-500 mt-1">Only students registered for this test on the selected date are shown.</p></div>
               {markTest.manual_mark_entry_enabled === false ? (
                 <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-5 text-yellow-800">
                   Manual mark entry is disabled for this test in Post Test
                   settings. Use the configured bulk CSV / Excel workflow.
                 </div>
-              ) : students.length === 0 ? (
+              ) : visibleMarkStudents.length === 0 ? (
                 <div className="border border-dashed rounded-lg p-8 text-center text-gray-500">
                   No Test Batch students are registered for this test yet.
                 </div>
@@ -2100,7 +2106,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                         </tr>
                       </thead>
                       <tbody>
-                        {students.map((student, index) => {
+                        {visibleMarkStudents.map((student, index) => {
                           const locked =
                             markTest.marks_entry_status === "Finalized" &&
                             markTest.lock_marks_after_final_submission !== false;
