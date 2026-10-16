@@ -6526,16 +6526,9 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
         throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
       }
 
-      if (!rawMarks) {
-        await client.query(
-          `DELETE FROM test_batch_marks
-           WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))
-             AND UPPER(TRIM(test_code))=UPPER(TRIM($2))
-             AND UPPER(TRIM(subject_name))=UPPER(TRIM($3))`,
-          [rollNo, code, test.subject_name]
-        );
-        continue;
-      }
+      // Empty marks mean the student has not been marked yet.
+      // Preserve any previously saved mark and allow partial saves.
+      if (!rawMarks) continue;
 
       const validation = validateTestBatchMarks(test.total_marks, rawMarks);
       if (!validation.ok) {
@@ -6556,57 +6549,24 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
       );
     }
 
-    const completed = await client.query(
-      `SELECT s.roll_no
-       FROM test_batch_students s
-       JOIN test_batch_registrations r
-         ON r.roll_no=s.roll_no
-        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
-        AND r.status='Registered'
-       JOIN test_batch_attendance a
-         ON a.roll_no=s.roll_no
-        AND a.attendance_date=r.writing_date
-        AND a.status='Present'
-       LEFT JOIN test_batch_marks m
-         ON m.roll_no=s.roll_no
-        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
-        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
-       WHERE s.test_series_id=$3
-         AND r.writing_date=$4::date
-         AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')
-       ORDER BY s.roll_no ASC`,
-      [code, test.subject_name, test.test_series_id, writingDate]
-    );
-
-    if (completed.rows.length > 0) {
-      throw new Error(
-        'Enter marks for all appeared students on the selected writing date before saving: ' +
-        completed.rows.map(row => row.roll_no).join(', ')
-      );
-    }
-
-    const remaining = await client.query(
-      `SELECT s.roll_no FROM test_batch_students s
-       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
-       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
-       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
-       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
-      [code, test.subject_name, test.test_series_id]
-    );
-    const allDatesComplete = remaining.rows.length === 0;
+    // Saving marks is a draft operation. Do not require every student on
+    // this writing date to have completed the test or entered marks.
+    // Finalization is handled by the separate /marks/finalize endpoint.
     await client.query(
-      `UPDATE test_batch_tests SET marks_entry_status=$1,
-       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
-       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
-      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [test.id]
     );
 
     await client.query('COMMIT');
 
     res.json({
-      message: allDatesComplete ? 'All writing-date marks saved and finalized successfully' : 'Marks saved for selected writing date; other writing dates remain open',
-      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
+      message: 'Marks saved for the selected writing date. You can save remaining students later.',
+      marks_entry_status: 'Draft'
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -6654,10 +6614,14 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
          s.roll_no,
          COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
        FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($3))
+        AND r.status='Registered'
+        AND r.writing_date=$2::date
        JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
         AND a.attendance_date=$2::date
-        AND r.writing_date=$2::date
         AND a.status='Present'
        LEFT JOIN test_batch_marks m
          ON m.roll_no=s.roll_no
@@ -6694,9 +6658,9 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
     );
     const allDatesComplete = remaining.rows.length === 0;
     await client.query(
-      `UPDATE test_batch_tests SET marks_entry_status=$1,
-       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
        updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
       [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
     );
