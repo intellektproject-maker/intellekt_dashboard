@@ -1174,7 +1174,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   async function finalizeMarks() {
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
 
-    const missing = students.filter(
+    if (!selectedWritingDate) { setError("Select a writing date before finalizing marks."); return; }
+
+    const missing = visibleMarkStudents.filter(
       (student) => !String(student.marks_obtained || "").trim()
     );
 
@@ -1187,9 +1189,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     }
 
     const confirmed = window.confirm(
-      "Finalize marks for " +
-        markTest.test_code +
-        "? Finalized marks will be locked from further editing."
+      "Finalize marks for " + markTest.test_code + " on " + formatDate(selectedWritingDate) + "? Other writing dates will remain editable until their marks are entered."
     );
 
     if (!confirmed) return;
@@ -1199,22 +1199,20 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     setMessage("");
 
     try {
-      await api(
+      const finalizeResult = await api(
         "/test-batch/tests/" +
           encodeURIComponent(markTest.test_code) +
           "/marks/finalize",
         {
           method: "POST",
-          body: JSON.stringify({ adminId }),
+          body: JSON.stringify({ adminId, writing_date: selectedWritingDate }),
         }
       );
 
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage(
-        "Marks finalized successfully. They are now available to Test Batch result/student views."
-      );
+      setMessage(finalizeResult.message || "Marks processed for the selected writing date.");
     } catch (err) {
       setError(err.message);
     } finally {
