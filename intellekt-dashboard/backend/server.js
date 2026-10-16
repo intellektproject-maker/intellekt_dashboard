@@ -6654,10 +6654,14 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
          s.roll_no,
          COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
        FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($3))
+        AND r.status='Registered'
+        AND r.writing_date=$2::date
        JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
         AND a.attendance_date=$2::date
-        AND r.writing_date=$2::date
         AND a.status='Present'
        LEFT JOIN test_batch_marks m
          ON m.roll_no=s.roll_no
