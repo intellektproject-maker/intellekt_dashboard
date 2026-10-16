@@ -6595,9 +6595,9 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
     );
     const allDatesComplete = remaining.rows.length === 0;
     await client.query(
-      `UPDATE test_batch_tests SET marks_entry_status=$1,
-       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
        updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
       [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
     );
@@ -6694,9 +6694,9 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
     );
     const allDatesComplete = remaining.rows.length === 0;
     await client.query(
-      `UPDATE test_batch_tests SET marks_entry_status=$1,
-       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
        updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
       [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
     );
