@@ -6454,6 +6454,8 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
     const records = Array.isArray(req.body?.records) ? req.body.records : [];
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
 
     if (records.length === 0) {
       return res.status(400).json({ error: 'At least one mark record is required' });
@@ -6512,11 +6514,12 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
          JOIN test_batch_attendance a
            ON a.roll_no=s.roll_no
           AND a.attendance_date=r.writing_date
+          AND r.writing_date=$4::date
           AND a.status='Present'
          WHERE s.roll_no=$1
            AND s.test_series_id=$3
          LIMIT 1`,
-        [rollNo, code, test.test_series_id]
+        [rollNo, code, test.test_series_id, writingDate]
       );
 
       if (eligible.rows.length === 0) {
@@ -6569,33 +6572,41 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
         AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
         AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
        WHERE s.test_series_id=$3
+         AND r.writing_date=$4::date
          AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')
        ORDER BY s.roll_no ASC`,
-      [code, test.subject_name, test.test_series_id]
+      [code, test.subject_name, test.test_series_id, writingDate]
     );
 
     if (completed.rows.length > 0) {
       throw new Error(
-        'Enter marks for all appeared students before saving/finalizing: ' +
+        'Enter marks for all appeared students on the selected writing date before saving: ' +
         completed.rows.map(row => row.roll_no).join(', ')
       );
     }
 
+    const remaining = await client.query(
+      `SELECT s.roll_no FROM test_batch_students s
+       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
+       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
+       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
+      [code, test.subject_name, test.test_series_id]
+    );
+    const allDatesComplete = remaining.rows.length === 0;
     await client.query(
-      `UPDATE test_batch_tests
-       SET marks_entry_status='Finalized',
-           marks_finalized_at=CURRENT_TIMESTAMP,
-           marks_finalized_by=$1,
-           updated_at=CURRENT_TIMESTAMP
-       WHERE id=$2`,
-      [req.testBatchAdminId, test.id]
+      `UPDATE test_batch_tests SET marks_entry_status=$1,
+       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
+       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
     );
 
     await client.query('COMMIT');
 
     res.json({
-      message: 'Test Batch marks saved and finalized successfully',
-      marks_entry_status: 'Finalized'
+      message: allDatesComplete ? 'All writing-date marks saved and finalized successfully' : 'Marks saved for selected writing date; other writing dates remain open',
+      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -6611,6 +6622,8 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
 
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
 
     const testResult = await client.query(
       `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
@@ -6643,7 +6656,8 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
        FROM test_batch_students s
        JOIN test_batch_attendance a
          ON a.roll_no=s.roll_no
-        AND a.attendance_date=$2
+        AND a.attendance_date=$2::date
+        AND r.writing_date=$2::date
         AND a.status='Present'
        LEFT JOIN test_batch_marks m
          ON m.roll_no=s.roll_no
@@ -6651,40 +6665,47 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
         AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($4))
        WHERE s.test_series_id=$1
        ORDER BY s.roll_no ASC`,
-      [test.test_series_id, test.writing_date, code, test.subject_name]
+      [test.test_series_id, writingDate, code, test.subject_name]
     );
 
     if (result.rows.length === 0) {
       return res.status(400).json({
-        error: 'No Test Batch students marked Present for this test'
+        error: 'No Test Batch students marked Present for this writing date'
       });
     }
 
     const missing = result.rows.filter(row => !row.marks_obtained);
     if (missing.length > 0) {
       return res.status(400).json({
-        error: 'Enter marks for all students before finalizing',
+        error: 'Enter marks for all students on the selected writing date before finalizing',
         missing_roll_numbers: missing.map(row => row.roll_no)
       });
     }
 
     await client.query('BEGIN');
 
+    const remaining = await client.query(
+      `SELECT s.roll_no FROM test_batch_students s
+       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
+       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
+       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
+      [code, test.subject_name, test.test_series_id]
+    );
+    const allDatesComplete = remaining.rows.length === 0;
     await client.query(
-      `UPDATE test_batch_tests
-       SET marks_entry_status='Finalized',
-           marks_finalized_at=CURRENT_TIMESTAMP,
-           marks_finalized_by=$1,
-           updated_at=CURRENT_TIMESTAMP
-       WHERE id=$2`,
-      [req.testBatchAdminId, test.id]
+      `UPDATE test_batch_tests SET marks_entry_status=$1,
+       marks_finalized_at=CASE WHEN $1='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1='Finalized' THEN $2 ELSE NULL END,
+       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
     );
 
     await client.query('COMMIT');
 
     res.json({
-      message: 'Test Batch marks finalized successfully',
-      marks_entry_status: 'Finalized'
+      message: allDatesComplete ? 'All writing-date marks finalized successfully' : 'Selected writing date checked; other writing dates still need marks',
+      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
     });
   } catch (err) {
     await client.query('ROLLBACK');
