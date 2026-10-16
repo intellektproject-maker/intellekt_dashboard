@@ -488,7 +488,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       setMarkTest(loadedTest);
       setStudents(loadedStudents);
       setOriginalStudents(JSON.parse(JSON.stringify(loadedStudents)));
-      setSelectedWritingDate([...new Set(loadedStudents.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort()[0] || "");
+      const availableWritingDates = [...new Set(loadedStudents.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort();
+      setSelectedWritingDate((current) => availableWritingDates.includes(current) ? current : availableWritingDates[0] || "");
     } catch (err) {
       setMarkTest(null);
       setStudents([]);
