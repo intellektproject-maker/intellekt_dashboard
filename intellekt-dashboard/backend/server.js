@@ -6562,23 +6562,6 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
       [test.id]
     );
 
-    const remaining = await client.query(
-      `SELECT s.roll_no FROM test_batch_students s
-       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
-       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
-       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
-       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
-      [code, test.subject_name, test.test_series_id]
-    );
-    const allDatesComplete = remaining.rows.length === 0;
-    await client.query(
-      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
-       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
-       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
-      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
-    );
-
     await client.query('COMMIT');
 
     res.json({
