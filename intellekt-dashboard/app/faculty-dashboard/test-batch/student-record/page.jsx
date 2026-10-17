@@ -172,31 +172,6 @@ export default function TestBatchStudentRecordPage() {
         },
       });
 
-      nextY = (doc.lastAutoTable?.finalY || nextY + 20) + 10;
-      if (nextY > doc.internal.pageSize.getHeight() - 35) {
-        doc.addPage();
-        nextY = 20;
-      }
-      doc.setTextColor(0, 3, 81);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Attendance Details", 14, nextY);
-      autoTable(doc, {
-        startY: nextY + 4,
-        head: [["Date", "Test Code", "Subject", "Status"]],
-        body: attendance.length
-          ? attendance.map((item) => [
-              formatDate(item.attendance_date),
-              item.test_code || "-",
-              item.subject_name || "-",
-              item.status || "-",
-            ])
-          : [["No attendance records", "-", "-", "-"]],
-        theme: "grid",
-        styles: { fontSize: 8, cellPadding: 3 },
-        headStyles: { fillColor: [12, 61, 145], textColor: [255, 255, 255] },
-      });
-
       doc.save(String(student.roll_no || "test-batch-student") + "_report.pdf");
     } catch (e) {
       console.error("Failed to generate Test Batch report", e);
