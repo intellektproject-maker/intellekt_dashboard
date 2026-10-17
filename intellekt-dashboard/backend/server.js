@@ -5421,6 +5421,45 @@ app.delete('/faculty/device-token', async (req, res) => {
 
 const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
 
+// Faculty IG003 and above may record Test Batch attendance and enter marks.
+// IG001/IG002 retain administrator access. This middleware is intentionally
+// applied only to attendance/mark-entry workflows, not test configuration.
+async function requireTestBatchAttendanceMarksAccess(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.get('x-faculty-id') ||
+      req.query.adminId ||
+      req.query.facultyId ||
+      (req.body && (req.body.adminId || req.body.facultyId)) ||
+      ''
+    ).toUpperCase().trim();
+
+    const match = candidate.match(/^IG(\\d{3,})$/);
+    const sequence = match ? Number(match[1]) : NaN;
+    if (!Number.isInteger(sequence) || sequence < 1) {
+      return res.status(403).json({ error: 'Authorized faculty access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Faculty account not found or not authorized' });
+    }
+
+    // Any existing IG faculty may record attendance/marks. Test Batch
+    // administration/configuration routes remain protected by requireTestBatchAdmin.
+    req.testBatchFacultyId = candidate;
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch faculty attendance/marks authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify faculty access' });
+  }
+}
+
 async function requireTestBatchAdmin(req, res, next) {
   try {
     const candidate = String(
@@ -6060,7 +6099,7 @@ app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req
    Marks are stored only in test_batch_marks.
 ========================================================= */
 
-app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const { seriesId, search } = req.query;
     const values = [];
@@ -6102,7 +6141,7 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAdmin, async (req, res) 
   }
 });
 
-app.get('/test-batch/student-status', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const seriesId = String(req.query.seriesId || '').trim();
     const classFilter = String(req.query.class || '').trim();
@@ -6191,7 +6230,7 @@ app.get('/test-batch/student-status', requireTestBatchAdmin, async (req, res) =>
   }
 });
 
-app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
 
@@ -6289,7 +6328,7 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAdmin
   }
 });
 
-app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const seriesId = Number(req.params.seriesId);
     if (!Number.isInteger(seriesId) || seriesId <= 0) {
@@ -6348,7 +6387,7 @@ app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAdmin, async 
   }
 });
 
-app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
 
@@ -6419,7 +6458,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAdmin, async (
   }
 });
 
-app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAdmin, async (req, res) => {
+app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const code = String(req.params.testCode || '').trim().toUpperCase();
 
@@ -6448,7 +6487,7 @@ app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAdmin, async 
   }
 });
 
-app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req, res) => {
+app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -6577,7 +6616,7 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAdmin, async (req,
   }
 });
 
-app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, async (req, res) => {
+app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -6680,7 +6719,7 @@ app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAdmin, as
   }
 });
 
-app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAdmin, async (req, res) => {
+app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -6756,7 +6795,7 @@ app.get('/test-batch/students/next-roll', requireTestBatchAdmin, async (req, res
   }
 });
 
-app.get('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const { search, seriesId, class: className } = req.query;
     const values = [];
@@ -6985,7 +7024,7 @@ app.delete('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req,re
   }
 });
 
-app.get('/test-batch/marks', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { search, seriesId, testCode } = req.query;
     const values = [];
@@ -7020,7 +7059,7 @@ app.get('/test-batch/marks', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.post('/test-batch/marks', requireTestBatchAdmin, async (req,res) => {
+app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { roll_no,test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
     if (!roll_no || !test_code || !subject_name) return res.status(400).json({ error:'Student, test code and subject are required' });
@@ -7055,7 +7094,7 @@ app.post('/test-batch/marks', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
+app.put('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
     const validation = validateTestBatchMarks(total_marks, marks_obtained);
@@ -7076,7 +7115,7 @@ app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.delete('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
+app.delete('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const result = await pool.query('DELETE FROM test_batch_marks WHERE id=$1 RETURNING id', [Number(req.params.id)]);
     if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
@@ -7087,7 +7126,7 @@ app.delete('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.get('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0,10);
     const { search, seriesId } = req.query;
@@ -7149,7 +7188,7 @@ app.get('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
+app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   const client = await pool.connect();
   try {
     const { records, attendanceDate } = req.body || {};
@@ -7216,7 +7255,7 @@ app.post('/test-batch/attendance', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
+app.put('/test-batch/attendance/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const status = String(req.body?.status || '').trim();
     if (!['Present','Absent'].includes(status)) {
@@ -7252,7 +7291,7 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
   }
 });
 
-app.get('/test-batch/attendance-report', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const from = req.query.from || new Date().toISOString().slice(0,10);
     const to = req.query.to || from;
