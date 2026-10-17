@@ -1133,7 +1133,7 @@ export default function TestBatchManager({ section = "dashboard", rollNo = "" })
   // Faculty may access only attendance and marks entry. The backend separately
   // verifies the IG faculty ID exists before allowing these operations.
   const isFacultyAttendanceMarks =
-    /^IG\\d{3,}$/.test(adminId) &&
+    /^IG\d{3,}$/.test(adminId) &&
     (section === "attendance" || section === "marks");
 
   if (!isAdmin && !isFacultyAttendanceMarks) {
