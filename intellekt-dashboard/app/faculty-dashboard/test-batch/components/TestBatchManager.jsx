@@ -258,6 +258,12 @@ function StudentsSection({ adminId }) {
               Add students with the same profile information used in Regular Student management.
               Roll numbers are generated automatically as IAT001, IAT002, IAT003...
             </p>
+            <a
+              href={"/faculty-dashboard/test-batch/student-record?id=" + encodeURIComponent(adminId)}
+              className="mt-3 inline-flex rounded-lg border border-blue-700 px-4 py-2 font-semibold text-blue-700 hover:bg-blue-50"
+            >
+              Open Student Record
+            </a>
           </div>
           <button
             type="button"
