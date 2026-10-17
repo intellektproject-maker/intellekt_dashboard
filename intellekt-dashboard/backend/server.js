@@ -5435,7 +5435,7 @@ async function requireTestBatchAttendanceMarksAccess(req, res, next) {
       ''
     ).toUpperCase().trim();
 
-    const match = candidate.match(/^IG(\\d{3,})$/);
+    const match = candidate.match(/^IG(\d{3,})$/);
     const sequence = match ? Number(match[1]) : NaN;
     if (!Number.isInteger(sequence) || sequence < 1) {
       return res.status(403).json({ error: 'Authorized faculty access required' });
