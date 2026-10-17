@@ -13,7 +13,6 @@ function FacultyLayoutContent({ children }) {
   const [manageOpen, setManageOpen] = useState(false);
 
   const isPrivilegedFaculty = facultyId === "IG001" || facultyId === "IG002";
-  const canAccessTestBatchMarks = /^IG\\d{3,}$/.test(facultyId);
 
   const isActive = (path) => pathname === path;
 
@@ -136,24 +135,16 @@ function FacultyLayoutContent({ children }) {
             )}
           </div>
 
-          {canAccessTestBatchMarks && (
-            <Link
-              href={
-                isPrivilegedFaculty
-                  ? "/faculty-dashboard/test-batch?id=" + facultyId
-                  : "/faculty-dashboard/test-batch/enter-marks?id=" + facultyId
-              }
-              onClick={() => setMenuOpen(false)}
-              className={linkClass(
-                pathname.startsWith("/faculty-dashboard/test-batch")
-              )}
-            >
-              Test Batch – Enter Marks
-            </Link>
-          )}
-
           {isPrivilegedFaculty && (
             <>
+              <Link
+                href={"/faculty-dashboard/test-batch?id=" + facultyId}
+                onClick={() => setMenuOpen(false)}
+                className={linkClass(isActive("/faculty-dashboard/test-batch"))}
+              >
+                Test Batch
+              </Link>
+
               <Link
                 href={`/faculty-dashboard/student-record?id=${facultyId}`}
                 onClick={() => setMenuOpen(false)}
