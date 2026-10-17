@@ -64,17 +64,6 @@ function TestPageInner() {
           </p>
         </Link>
 
-        <Link
-          href={`/faculty-dashboard/test-batch/enter-marks?id=${facultyId}`}
-          className="bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition duration-200"
-        >
-          <h3 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch – Enter Marks
-          </h3>
-          <p className="text-gray-600">
-            Enter and save marks for registered Test Batch students.
-          </p>
-        </Link>
       </div>
 
       <TestBatchTestManagement />
