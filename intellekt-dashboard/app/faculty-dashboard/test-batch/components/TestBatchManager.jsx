@@ -1127,11 +1127,28 @@ function Detail({ label, value }) {
 
 export default function TestBatchManager({ section = "dashboard", rollNo = "" }) {
   const adminId = useAdminId();
-  if(section==="student-dashboard") return <StudentDashboardSection rollNo={rollNo}/>;
-  return <AdminGate adminId={adminId}>
-    {section==="students" && <StudentsSection adminId={adminId}/>}
-    {section==="marks" && <MarksSection adminId={adminId}/>}
-    {section==="attendance" && <AttendanceSection adminId={adminId}/>}
-    {section==="dashboard" && <><DashboardSection adminId={adminId}/><StudentsSection adminId={adminId}/></>}
-  </AdminGate>;
+  if (section === "student-dashboard") return <StudentDashboardSection rollNo={rollNo}/>;
+
+  const isAdmin = ADMIN_IDS.includes(adminId);
+  // Faculty may access only attendance and marks entry. The backend separately
+  // verifies the IG faculty ID exists before allowing these operations.
+  const isFacultyAttendanceMarks =
+    /^IG\d{3,}$/.test(adminId) &&
+    (section === "attendance" || section === "marks");
+
+  if (!isAdmin && !isFacultyAttendanceMarks) {
+    return <Card>
+      <h2 className="text-xl font-bold text-red-700">Unauthorized</h2>
+      <p className="text-gray-600 mt-2">
+        Test Batch administration is restricted to IG001/IG002. Faculty accounts may access only Test Batch attendance and marks entry.
+      </p>
+    </Card>;
+  }
+
+  return <>
+    {isAdmin && section === "students" && <StudentsSection adminId={adminId}/>}
+    {section === "marks" && <MarksSection adminId={adminId}/>}
+    {section === "attendance" && <AttendanceSection adminId={adminId}/>}
+    {isAdmin && section === "dashboard" && <><DashboardSection adminId={adminId}/><StudentsSection adminId={adminId}/></>}
+  </>;
 }
