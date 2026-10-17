@@ -13,7 +13,7 @@ function FacultyLayoutContent({ children }) {
   const [manageOpen, setManageOpen] = useState(false);
 
   const isPrivilegedFaculty = facultyId === "IG001" || facultyId === "IG002";
-  const canAccessTestBatchMarks = /^IG\\d{3,}$/.test(facultyId);
+  const canAccessTestBatchMarks = /^IG\d{3,}$/.test(facultyId);
 
   const isActive = (path) => pathname === path;
 
