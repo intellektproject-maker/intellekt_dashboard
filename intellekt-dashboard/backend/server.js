@@ -6771,7 +6771,7 @@ app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendance
   }
 });
 
-app.get('/test-batch/series', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
     res.json({ series: result.rows });
