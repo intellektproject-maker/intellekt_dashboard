@@ -32,18 +32,18 @@ function StudentLayoutContent({ children }) {
       )}
 
       <div
-        className={`fixed top-0 left-0 h-full w-64 bg-white shadow z-50 transform transition-transform duration-300 ${
+        className={`fixed top-0 left-0 h-dvh max-h-dvh w-64 bg-white shadow z-50 flex flex-col overflow-hidden transform transition-transform duration-300 ${
           menuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div
-          className="p-4 text-xl cursor-pointer"
+          className="p-4 text-xl cursor-pointer shrink-0"
           onClick={() => setMenuOpen(false)}
         >
           ✕
         </div>
 
-        <nav className="flex flex-col gap-4 px-6">
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-4 px-6 pb-4">
           <Link href={`/student?roll=${roll}`} onClick={() => setMenuOpen(false)}>
             Profile
           </Link>
@@ -77,7 +77,7 @@ function StudentLayoutContent({ children }) {
           </Link>
         </nav>
 
-        <div className="absolute bottom-6 left-0 w-full px-6">
+        <div className="shrink-0 w-full px-6 py-4 border-t border-gray-200 bg-white">
           <Link
             href="/"
             className="block text-center bg-red-500 text-white py-2 rounded"
