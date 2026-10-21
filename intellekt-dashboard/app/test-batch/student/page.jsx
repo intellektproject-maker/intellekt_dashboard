@@ -56,18 +56,18 @@ function TestBatchStudentPageInner() {
 
       <div
         className={
-          "fixed top-0 left-0 h-full w-72 bg-white shadow-xl z-50 transform transition-transform duration-300 " +
+          "fixed top-0 left-0 h-dvh max-h-dvh w-72 bg-white shadow-xl z-50 flex flex-col overflow-hidden transform transition-transform duration-300 " +
           (menuOpen ? "translate-x-0" : "-translate-x-full")
         }
       >
         <div
-          className="p-4 text-2xl cursor-pointer w-fit"
+          className="p-4 text-2xl cursor-pointer w-fit shrink-0"
           onClick={() => setMenuOpen(false)}
         >
           ✕
         </div>
 
-        <nav className="flex flex-col gap-2 px-6">
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 px-6 pb-4">
           <Link
             href={`/test-batch/student?roll=${roll}`}
             onClick={() => setMenuOpen(false)}
@@ -78,7 +78,7 @@ function TestBatchStudentPageInner() {
 
         </nav>
 
-        <div className="absolute bottom-6 left-0 w-full px-6">
+        <div className="shrink-0 w-full px-6 py-4 border-t border-gray-200 bg-white">
           <Link
             href="/"
             className="block w-full text-center bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold transition"
