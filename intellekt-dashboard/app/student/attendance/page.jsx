@@ -83,7 +83,6 @@ function AttendancePageInner() {
 );
 
 const total = attendance.length;
-	const notEntered = Math.max(0, daysInMonth - total);
 
 	const subjectMap = {
 		1: 'Maths',
@@ -120,11 +119,11 @@ const total = attendance.length;
 	const absent = absentDates.length;
 
 	const chartData = {
-		labels: ['Present', 'Absent', 'Not Entered'],
+		labels: ['Present', 'Absent'],
 		datasets: [
 			{
-				data: [present, absent, notEntered],
-				backgroundColor: ['#22c55e', '#ef4444', '#9ca3af'],
+				data: [present, absent],
+				backgroundColor: ['#22c55e', '#ef4444'],
 				borderWidth: 1,
 			},
 		],
@@ -177,14 +176,10 @@ const total = attendance.length;
 							{absent}
 						</div>
 
-						<div>
-							<span className="font-medium text-gray-500">Not Entered:</span>{' '}
-							{notEntered}
-						</div>
 					</div>
 
 					<div className="w-36 h-36">
-						{present + absent + notEntered > 0 ? (
+						{present + absent > 0 ? (
 							<Pie data={chartData} />
 						) : (
 							<p className="text-gray-400">No Data</p>
