@@ -4292,11 +4292,11 @@ app.post('/enquiries', async (req, res) => {
 			subjects,
 			academicYearFrom,
 			academicYearTo,
-			modeOfEducation,
+			batch,
+			dateOfBirth,
 			parentName,
 			mobileNumber,
 			secondaryContact,
-			area,
 			reference
 		} = req.body;
 
@@ -4321,6 +4321,15 @@ app.post('/enquiries', async (req, res) => {
 			return res.status(400).json({
 				message: 'Academic Year To must be greater than From'
 			});
+		}
+
+		if (!['Test Batch', 'Regular Batch'].includes(String(batch || '').trim())) {
+			return res.status(400).json({ message: 'Please select Test Batch or Regular Batch' });
+		}
+
+		const cleanDateOfBirth = String(dateOfBirth || '').trim();
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+			return res.status(400).json({ message: 'Please provide a valid date of birth' });
 		}
 
 		if (!/^\d{10}$/.test(cleanMobile)) {
@@ -4362,9 +4371,11 @@ app.post('/enquiries', async (req, res) => {
 			secondary_contact,
 			area,
 			mode_of_education,
-			reference
+			reference,
+			batch,
+			date_of_birth
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING *
 		`,
 			[
@@ -4377,9 +4388,11 @@ app.post('/enquiries', async (req, res) => {
 				cleanAcademicYearTo,
 				parentName,
 				cleanSecondary,
-				area,
-				modeOfEducation,
-				reference || null
+				'',
+				'',
+				reference || null,
+				String(batch).trim(),
+				cleanDateOfBirth
 			]
 		);
 
@@ -4404,6 +4417,8 @@ app.get('/enquiries', async (req, res) => {
 			academic_year_from,
 			academic_year_to,
 			mode_of_education,
+			batch,
+			date_of_birth,
 			parent_name,
 			secondary_contact,
 			created_at,
