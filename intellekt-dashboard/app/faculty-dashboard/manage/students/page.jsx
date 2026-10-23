@@ -109,23 +109,9 @@ const [boardFilter, setBoardFilter] = useState("");
     setPhoneError("");
   }
 
-  function generateNextRollNo() {
-    const iaNumbers = students
-      .map((student) => String(student.roll_no || "").trim().toUpperCase())
-      .filter((roll) => /^IA\d+$/.test(roll))
-      .map((roll) => Number(roll.replace("IA", "")))
-      .filter((num) => !Number.isNaN(num));
-
-    const nextNumber = iaNumbers.length > 0 ? Math.max(...iaNumbers) + 1 : 1;
-
-    return `IA${String(nextNumber).padStart(3, "0")}`;
-  }
-
   function openAddStudentPopup() {
-    const nextRollNo = generateNextRollNo();
-
     setForm({
-      roll_no: nextRollNo,
+      roll_no: "",
       name: "",
       class: "",
       board: "",
@@ -133,7 +119,7 @@ const [boardFilter, setBoardFilter] = useState("");
       phone: "",
       email: "",
       school_name: "",
-      password: nextRollNo,
+      password: "",
       subject_ids: [],
       total_fee: "",
       fee_paid: "",
@@ -341,7 +327,7 @@ return searchMatch && classMatch && boardMatch;
       setSaving(true);
 
       const payload = {
-        roll_no: form.roll_no.trim().toUpperCase(),
+        roll_no: form.roll_no.trim(),
         name: form.name.trim(),
         class: form.class.trim(),
         board: form.board.trim(),
@@ -984,9 +970,10 @@ setBoardFilter("");
                   name="roll_no"
                   value={form.roll_no}
                   onChange={handleInputChange}
-                  placeholder="IA001"
-                  disabled={true}
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
+                  placeholder="Enter roll number (any format)"
+                  maxLength={100}
+                  autoComplete="off"
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
                 />
               </div>
 
