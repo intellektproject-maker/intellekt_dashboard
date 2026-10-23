@@ -3291,30 +3291,12 @@ app.get('/students/:value', async (req, res) => {
 		});
 	}
 });
-async function generateNextStudentRollNo(client) {
-	const result = await client.query(`
-		SELECT roll_no
-		FROM students
-		WHERE UPPER(TRIM(roll_no)) LIKE 'IA%'
-		ORDER BY CAST(REGEXP_REPLACE(roll_no, '\\D', '', 'g') AS INTEGER) DESC
-		LIMIT 1
-	`);
-
-	if (result.rows.length === 0) {
-		return 'IA001';
-	}
-
-	const lastRoll = String(result.rows[0].roll_no || '').toUpperCase().trim();
-	const lastNumber = Number(lastRoll.replace('IA', ''));
-
-	return `IA${String(lastNumber + 1).padStart(3, '0')}`;
-}
-
 app.post('/students', async (req, res) => {
 	const client = await pool.connect();
 
 	try {
 		const {
+			roll_no,
 			name,
 			class: className,
 			board,
@@ -3328,6 +3310,11 @@ app.post('/students', async (req, res) => {
 			fee_paid,
 			next_due
 		} = req.body;
+
+		const cleanRollNo = String(roll_no || '').trim();
+		if (!cleanRollNo) {
+			return res.status(400).json({ error: 'Roll number is required' });
+		}
 
 		if (!name || !className || !board || !mode_of_education || !phone || !email || !school_name) {
 			return res.status(400).json({
@@ -3343,7 +3330,16 @@ app.post('/students', async (req, res) => {
 
 		await client.query('BEGIN');
 
-		const newRoll = await generateNextStudentRollNo(client);
+		const duplicateRoll = await client.query(
+			'SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+			[cleanRollNo]
+		);
+		if (duplicateRoll.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(409).json({ error: 'This roll number already exists. Please enter a different roll number.' });
+		}
+
+		const newRoll = cleanRollNo;
 		const finalPassword = password && String(password).trim() !== '' ? String(password).trim() : newRoll;
 
 		await client.query(
@@ -3424,7 +3420,9 @@ app.post('/students', async (req, res) => {
 		console.error('POST /students error:', err);
 
 		if (err.code === '23505') {
-			return res.status(400).json({ error: 'Duplicate student entry' });
+			return res.status(409).json({
+				error: 'This roll number or another unique student field already exists. Please check the details and try again.'
+			});
 		}
 
 		res.status(500).json({
