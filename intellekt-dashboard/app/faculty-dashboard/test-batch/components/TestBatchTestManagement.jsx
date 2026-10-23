@@ -202,7 +202,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const authorized = ADMIN_IDS.includes(adminId);
+  const authorized = /^IG\d{3,}$/.test(adminId);
 
   async function loadTests() {
     setLoading(true);
