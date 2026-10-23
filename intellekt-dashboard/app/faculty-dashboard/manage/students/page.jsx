@@ -33,7 +33,6 @@ const [boardFilter, setBoardFilter] = useState("");
     name: "",
     class: "",
     board: "",
-    mode_of_education: "",
     phone: "",
     email: "",
     school_name: "",
@@ -97,8 +96,7 @@ const [boardFilter, setBoardFilter] = useState("");
       name: "",
       class: "",
       board: "",
-      mode_of_education: "",
-      phone: "",
+        phone: "",
       email: "",
       school_name: "",
       password: "",
@@ -118,8 +116,7 @@ const [boardFilter, setBoardFilter] = useState("");
       name: "",
       class: "",
       board: "",
-      mode_of_education: "",
-      phone: "",
+        phone: "",
       email: "",
       school_name: "",
       password: "",
@@ -316,7 +313,6 @@ return searchMatch && classMatch && boardMatch;
       !form.name.trim() ||
       !form.class.trim() ||
       !form.board.trim() ||
-      !form.mode_of_education.trim() ||
       !form.phone.trim() ||
       !form.email.trim() ||
       !form.school_name.trim() ||
@@ -354,7 +350,6 @@ return searchMatch && classMatch && boardMatch;
         name: form.name.trim(),
         class: form.class.trim(),
         board: form.board.trim(),
-        mode_of_education: form.mode_of_education.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
         school_name: form.school_name.trim(),
@@ -426,7 +421,6 @@ return searchMatch && classMatch && boardMatch;
         name: data.name || "",
         class: data.class || "",
         board: data.board || "",
-        mode_of_education: data.mode_of_education || "",
         phone: editPhone,
         email: data.email || "",
         school_name: data.school_name || "",
@@ -503,7 +497,6 @@ return searchMatch && classMatch && boardMatch;
       name: student.name || "-",
       class: student.class || "-",
       board: student.board || "-",
-      mode_of_education: student.mode_of_education || "-",
       phone: student.phone || "-",
       email: student.email || "-",
       school_name: student.school_name || "-",
@@ -528,7 +521,6 @@ return searchMatch && classMatch && boardMatch;
             <td>${escapeHtml(student.name)}</td>
             <td>${escapeHtml(student.class)}</td>
             <td>${escapeHtml(student.board)}</td>
-            <td>${escapeHtml(student.mode_of_education)}</td>
             <td>${escapeHtml(student.phone)}</td>
             <td>${escapeHtml(student.email)}</td>
             <td>${escapeHtml(student.school_name)}</td>
@@ -551,7 +543,6 @@ return searchMatch && classMatch && boardMatch;
                 <th>Name</th>
                 <th>Class</th>
                 <th>Board</th>
-                <th>Mode of Education</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>School</th>
@@ -595,7 +586,6 @@ return searchMatch && classMatch && boardMatch;
             <td>${escapeHtml(student.name)}</td>
             <td>${escapeHtml(student.class)}</td>
             <td>${escapeHtml(student.board)}</td>
-            <td>${escapeHtml(student.mode_of_education)}</td>
             <td>${escapeHtml(student.phone)}</td>
             <td>${escapeHtml(student.email)}</td>
             <td>${escapeHtml(student.school_name)}</td>
@@ -793,7 +783,6 @@ setBoardFilter("");
                 <th className="text-left px-4 py-3">Name</th>
                 <th className="text-left px-4 py-3">Class</th>
                 <th className="text-left px-4 py-3">Board</th>
-                <th className="text-left px-4 py-3">Mode of Education</th>
                 <th className="text-left px-4 py-3">Phone</th>
                 <th className="text-left px-4 py-3">Email</th>
                 <th className="text-left px-4 py-3">School</th>
@@ -814,9 +803,6 @@ setBoardFilter("");
                     <td className="px-4 py-3 border-b">{student.name}</td>
                     <td className="px-4 py-3 border-b">{student.class}</td>
                     <td className="px-4 py-3 border-b">{student.board}</td>
-                    <td className="px-4 py-3 border-b">
-                      {student.mode_of_education || "-"}
-                    </td>
                     <td className="px-4 py-3 border-b">{student.phone}</td>
                     <td className="px-4 py-3 border-b">{student.email}</td>
                     <td className="px-4 py-3 border-b">
@@ -1060,22 +1046,6 @@ setBoardFilter("");
                   <option value="CBSE">CBSE</option>
                   <option value="ICSE">ICSE</option>
                   <option value="ISC">ISC</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mode of Education
-                </label>
-                <select
-                  name="mode_of_education"
-                  value={form.mode_of_education}
-                  onChange={handleInputChange}
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-                >
-                  <option value="">Select mode</option>
-                  <option value="Online">Online</option>
-                  <option value="Offline">Offline</option>
                 </select>
               </div>
 
