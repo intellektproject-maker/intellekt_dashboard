@@ -56,11 +56,11 @@ export default function Home() {
     subjects: "",
     academicYearFrom: "",
     academicYearTo: "",
-    modeOfEducation: "",
+    batch: "",
+    dateOfBirth: "",
     parentName: "",
     mobileNumber: "",
     secondaryContact: "",
-    area: "",
     reference: "",
   });
 
@@ -122,13 +122,6 @@ export default function Home() {
       .replace(/^\s+/, "");
   };
 
-  const sanitizeArea = (value) => {
-    return value
-      .replace(/[^A-Za-z0-9\s,.-]/g, "")
-      .replace(/\s{2,}/g, " ")
-      .replace(/^\s+/, "");
-  };
-
   const sanitizePhone = (value) => {
     return value.replace(/\D/g, "").slice(0, 10);
   };
@@ -152,8 +145,6 @@ export default function Home() {
       cleanedValue = sanitizeName(value);
     } else if (name === "schoolName") {
       cleanedValue = sanitizeSchoolName(value);
-    } else if (name === "area") {
-      cleanedValue = sanitizeArea(value);
     } else if (name === "reference") {
       cleanedValue = sanitizeReference(value);
     } else if (name === "academicYearFrom" || name === "academicYearTo") {
@@ -180,7 +171,6 @@ export default function Home() {
     const studentName = formData.studentName.trim();
     const parentName = formData.parentName.trim();
     const schoolName = formData.schoolName.trim();
-    const area = formData.area.trim();
     const mobileNumber = formData.mobileNumber.trim();
     const secondaryContact = formData.secondaryContact.trim();
     const academicYearFrom = formData.academicYearFrom.trim();
@@ -228,8 +218,13 @@ export default function Home() {
       return false;
     }
 
-    if (!formData.modeOfEducation) {
-      alert("Please select mode of education.");
+    if (!formData.batch) {
+      alert("Please select a batch.");
+      return false;
+    }
+
+    if (!formData.dateOfBirth || formData.dateOfBirth > new Date().toISOString().slice(0, 10)) {
+      alert("Please select a valid date of birth.");
       return false;
     }
 
@@ -259,11 +254,6 @@ export default function Home() {
       return false;
     }
 
-    if (!area || !/^[A-Za-z0-9\s,.-]+$/.test(area)) {
-      alert("Area should contain only valid characters.");
-      return false;
-    }
-
     return true;
   };
 
@@ -287,11 +277,11 @@ export default function Home() {
           subjects: formData.subjects,
           academicYearFrom: formData.academicYearFrom.trim(),
           academicYearTo: formData.academicYearTo.trim(),
-          modeOfEducation: formData.modeOfEducation,
+          batch: formData.batch,
+          dateOfBirth: formData.dateOfBirth,
           parentName: formData.parentName.trim(),
           mobileNumber: formData.mobileNumber.trim(),
           secondaryContact: formData.secondaryContact.trim(),
-          area: formData.area.trim(),
           reference: formData.reference.trim(),
         }),
       });
@@ -313,11 +303,11 @@ export default function Home() {
         subjects: "",
         academicYearFrom: "",
         academicYearTo: "",
-        modeOfEducation: "",
+        batch: "",
+        dateOfBirth: "",
         parentName: "",
         mobileNumber: "",
         secondaryContact: "",
-        area: "",
         reference: "",
       });
       setPhoneError("");
@@ -689,50 +679,64 @@ export default function Home() {
     </label>
 
     <div className="grid grid-cols-2 gap-3">
-      <input
-        type="text"
+      <select
         name="academicYearFrom"
         value={formData.academicYearFrom}
         onChange={handleChange}
-        placeholder="From"
-        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
         required
-        inputMode="numeric"
-        maxLength={4}
-        autoComplete="off"
-      />
+      >
+        <option value="">From</option>
+        {Array.from({ length: 4 }, (_, index) => new Date().getFullYear() + index).map((year) => (
+          <option key={year} value={String(year)}>{year}</option>
+        ))}
+      </select>
 
-      <input
-        type="text"
+      <select
         name="academicYearTo"
         value={formData.academicYearTo}
         onChange={handleChange}
-        placeholder="To"
-        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
+        className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
         required
-        inputMode="numeric"
-        maxLength={4}
-        autoComplete="off"
-      />
+      >
+        <option value="">To</option>
+        {Array.from({ length: 5 }, (_, index) => new Date().getFullYear() + index).map((year) => (
+          <option key={year} value={String(year)}>{year}</option>
+        ))}
+      </select>
     </div>
   </div>
 
   <div>
     <label className="block text-sm font-semibold text-gray-700 mb-2">
-      Mode of Education
+      Batch
     </label>
 
-    <select
-      name="modeOfEducation"
-      value={formData.modeOfEducation}
+    <div className="flex flex-wrap gap-6 rounded-xl border border-gray-300 px-4 py-3">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="batch" value="Test Batch" checked={formData.batch === "Test Batch"} onChange={handleChange} required />
+        <span>Test Batch</span>
+      </label>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="batch" value="Regular Batch" checked={formData.batch === "Regular Batch"} onChange={handleChange} required />
+        <span>Regular Batch</span>
+      </label>
+    </div>
+  </div>
+
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-2">
+      Date of Birth
+    </label>
+    <input
+      type="date"
+      name="dateOfBirth"
+      value={formData.dateOfBirth}
       onChange={handleChange}
-      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700 bg-white"
+      max={new Date().toISOString().slice(0, 10)}
+      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
       required
-    >
-      <option value="">Select mode</option>
-      <option value="Online">Online</option>
-      <option value="Offline">Offline</option>
-    </select>
+    />
   </div>
 
   <div>
@@ -793,24 +797,6 @@ export default function Home() {
       required
       inputMode="numeric"
       maxLength={10}
-      autoComplete="off"
-    />
-  </div>
-
-  <div>
-    <label className="block text-sm font-semibold text-gray-700 mb-2">
-      Area
-    </label>
-
-    <input
-      type="text"
-      name="area"
-      value={formData.area}
-      onChange={handleChange}
-      placeholder="Enter area"
-      className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-700"
-      required
-      maxLength={80}
       autoComplete="off"
     />
   </div>
