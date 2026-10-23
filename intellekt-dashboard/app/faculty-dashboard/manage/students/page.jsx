@@ -818,7 +818,14 @@ setBoardFilter("");
                 <th className="text-left px-4 py-3">Name</th>
                 <th className="text-left px-4 py-3">Class</th>
                 <th className="text-left px-4 py-3">Board</th>
+                <th className="text-left px-4 py-3">Date of Birth</th>
+                <th className="text-left px-4 py-3">Batch</th>
+                <th className="text-left px-4 py-3">Academic From</th>
+                <th className="text-left px-4 py-3">Academic To</th>
+                <th className="text-left px-4 py-3">Parent Name</th>
                 <th className="text-left px-4 py-3">Phone</th>
+                <th className="text-left px-4 py-3">Secondary Contact</th>
+                <th className="text-left px-4 py-3">Reference</th>
                 <th className="text-left px-4 py-3">Email</th>
                 <th className="text-left px-4 py-3">School</th>
                 <th className="text-left px-4 py-3">Password</th>
@@ -838,7 +845,14 @@ setBoardFilter("");
                     <td className="px-4 py-3 border-b">{student.name}</td>
                     <td className="px-4 py-3 border-b">{student.class}</td>
                     <td className="px-4 py-3 border-b">{student.board}</td>
+                    <td className="px-4 py-3 border-b">{student.date_of_birth ? String(student.date_of_birth).slice(0, 10) : ""}</td>
+                    <td className="px-4 py-3 border-b">{student.batch || "Regular Batch"}</td>
+                    <td className="px-4 py-3 border-b">{student.academic_year_from || ""}</td>
+                    <td className="px-4 py-3 border-b">{student.academic_year_to || ""}</td>
+                    <td className="px-4 py-3 border-b">{student.parent_name || ""}</td>
                     <td className="px-4 py-3 border-b">{student.phone}</td>
+                    <td className="px-4 py-3 border-b">{student.secondary_contact || ""}</td>
+                    <td className="px-4 py-3 border-b">{student.reference || ""}</td>
                     <td className="px-4 py-3 border-b">{student.email}</td>
                     <td className="px-4 py-3 border-b">
                       {student.school_name}
