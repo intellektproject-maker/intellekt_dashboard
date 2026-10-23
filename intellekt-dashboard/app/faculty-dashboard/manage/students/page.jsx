@@ -33,6 +33,7 @@ const [boardFilter, setBoardFilter] = useState("");
     name: "",
     class: "",
     board: "",
+    date_of_birth: "",
     phone: "",
     email: "",
     school_name: "",
@@ -350,6 +351,7 @@ return searchMatch && classMatch && boardMatch;
         name: form.name.trim(),
         class: form.class.trim(),
         board: form.board.trim(),
+        date_of_birth: form.date_of_birth || null,
         phone: form.phone.trim(),
         email: form.email.trim(),
         school_name: form.school_name.trim(),
@@ -421,6 +423,7 @@ return searchMatch && classMatch && boardMatch;
         name: data.name || "",
         class: data.class || "",
         board: data.board || "",
+        date_of_birth: data.date_of_birth ? String(data.date_of_birth).slice(0, 10) : "",
         phone: editPhone,
         email: data.email || "",
         school_name: data.school_name || "",
@@ -1047,6 +1050,20 @@ setBoardFilter("");
                   <option value="ICSE">ICSE</option>
                   <option value="ISC">ISC</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  name="date_of_birth"
+                  value={form.date_of_birth}
+                  onChange={handleInputChange}
+                  max={new Date().toISOString().slice(0, 10)}
+                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                />
               </div>
 
               <div>
