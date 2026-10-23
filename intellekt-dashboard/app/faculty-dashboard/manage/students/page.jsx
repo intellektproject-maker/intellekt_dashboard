@@ -34,6 +34,12 @@ const [boardFilter, setBoardFilter] = useState("");
     class: "",
     board: "",
     date_of_birth: "",
+    batch: "",
+    academic_year_from: "",
+    academic_year_to: "",
+    parent_name: "",
+    secondary_contact: "",
+    reference: "",
     phone: "",
     email: "",
     school_name: "",
@@ -97,6 +103,13 @@ const [boardFilter, setBoardFilter] = useState("");
       name: "",
       class: "",
       board: "",
+    date_of_birth: "",
+    batch: "",
+    academic_year_from: "",
+    academic_year_to: "",
+    parent_name: "",
+    secondary_contact: "",
+    reference: "",
         phone: "",
       email: "",
       school_name: "",
@@ -117,6 +130,13 @@ const [boardFilter, setBoardFilter] = useState("");
       name: "",
       class: "",
       board: "",
+    date_of_birth: "",
+    batch: "",
+    academic_year_from: "",
+    academic_year_to: "",
+    parent_name: "",
+    secondary_contact: "",
+    reference: "",
         phone: "",
       email: "",
       school_name: "",
@@ -352,6 +372,12 @@ return searchMatch && classMatch && boardMatch;
         class: form.class.trim(),
         board: form.board.trim(),
         date_of_birth: form.date_of_birth || null,
+        batch: form.batch,
+        academic_year_from: form.academic_year_from || null,
+        academic_year_to: form.academic_year_to || null,
+        parent_name: form.parent_name.trim(),
+        secondary_contact: form.secondary_contact.trim(),
+        reference: form.reference.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
         school_name: form.school_name.trim(),
@@ -424,6 +450,12 @@ return searchMatch && classMatch && boardMatch;
         class: data.class || "",
         board: data.board || "",
         date_of_birth: data.date_of_birth ? String(data.date_of_birth).slice(0, 10) : "",
+        batch: data.batch || "Regular Batch",
+        academic_year_from: data.academic_year_from ? String(data.academic_year_from) : "",
+        academic_year_to: data.academic_year_to ? String(data.academic_year_to) : "",
+        parent_name: data.parent_name || "",
+        secondary_contact: String(data.secondary_contact || "").replace(/\D/g, "").slice(0, 10),
+        reference: data.reference || "",
         phone: editPhone,
         email: data.email || "",
         school_name: data.school_name || "",
@@ -1064,6 +1096,43 @@ setBoardFilter("");
                   max={new Date().toISOString().slice(0, 10)}
                   className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
+                <div className="flex flex-wrap gap-5 border rounded-lg px-4 py-3">
+                  {["Test Batch", "Regular Batch"].map((batchOption) => (
+                    <label key={batchOption} className="flex items-center gap-2">
+                      <input type="radio" name="batch" value={batchOption} checked={form.batch === batchOption} onChange={handleInputChange} />
+                      <span>{batchOption}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year From</label>
+                <select name="academic_year_from" value={form.academic_year_from} onChange={(e) => setForm((prev) => ({...prev, academic_year_from: e.target.value, academic_year_to: prev.academic_year_to && Number(prev.academic_year_to) > Number(e.target.value) ? prev.academic_year_to : ""}))} className="w-full border rounded-lg px-4 py-3 bg-white">
+                  <option value="">Select year</option>
+                  {Array.from({length: 4}, (_, i) => new Date().getFullYear() + i).map((year) => <option key={year} value={String(year)}>{year}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year To</label>
+                <select name="academic_year_to" value={form.academic_year_to} onChange={handleInputChange} className="w-full border rounded-lg px-4 py-3 bg-white">
+                  <option value="">Select year</option>
+                  {Array.from({length: 5}, (_, i) => new Date().getFullYear() + i).filter((year) => !form.academic_year_from || year > Number(form.academic_year_from)).map((year) => <option key={year} value={String(year)}>{year}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name</label>
+                <input type="text" name="parent_name" value={form.parent_name} onChange={handleInputChange} placeholder="Enter parent name" className="w-full border rounded-lg px-4 py-3" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Contact</label>
+                <input type="tel" name="secondary_contact" value={form.secondary_contact} onChange={(e) => setForm((prev) => ({...prev, secondary_contact: e.target.value.replace(/\D/g, "").slice(0, 10)}))} inputMode="numeric" maxLength={10} placeholder="Enter secondary contact" className="w-full border rounded-lg px-4 py-3" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                <input type="text" name="reference" value={form.reference} onChange={handleInputChange} placeholder="Enter reference" maxLength={100} className="w-full border rounded-lg px-4 py-3" />
               </div>
 
               <div>
