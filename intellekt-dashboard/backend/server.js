@@ -3350,7 +3350,8 @@ app.post('/students', async (req, res) => {
 			phone,
 			email,
 			school_name,
-			password
+			password,
+			date_of_birth
 		)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		`,
