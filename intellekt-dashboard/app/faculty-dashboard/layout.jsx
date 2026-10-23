@@ -11,8 +11,13 @@ function FacultyLayoutContent({ children }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [testBatchOpen, setTestBatchOpen] = useState(
+    pathname.startsWith("/faculty-dashboard/test-batch")
+  );
 
   const isPrivilegedFaculty = facultyId === "IG001" || facultyId === "IG002";
+  // Test Batch is available to all faculty IDs IG003+ as well as admins IG001/IG002.
+  const canAccessTestBatch = /^IG\\d{3,}$/i.test(facultyId.trim());
 
   const isActive = (path) => pathname === path;
 
@@ -135,27 +140,69 @@ function FacultyLayoutContent({ children }) {
             )}
           </div>
 
+          {canAccessTestBatch && (
+            <div className="rounded-lg">
+              <button
+                type="button"
+                aria-expanded={testBatchOpen}
+                onClick={() => setTestBatchOpen((open) => !open)}
+                className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-base font-medium transition ${
+                  pathname.startsWith("/faculty-dashboard/test-batch")
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-gray-800 hover:bg-gray-100"
+                }`}
+              >
+                <span>Test Batch</span>
+                <span className="text-sm">{testBatchOpen ? "▲" : "▼"}</span>
+              </button>
+
+              {testBatchOpen && (
+                <div className="mt-2 ml-3 flex flex-col gap-2 border-l-2 border-gray-200 pl-3">
+                  <Link
+                    href={`/faculty-dashboard/test-batch/enter-marks?id=${encodeURIComponent(facultyId)}`}
+                    onClick={() => setMenuOpen(false)}
+                    className={subLinkClass(isActive("/faculty-dashboard/test-batch/enter-marks"))}
+                  >
+                    Enter Marks
+                  </Link>
+                  <Link
+                    href={`/faculty-dashboard/test-batch/test-list?id=${encodeURIComponent(facultyId)}`}
+                    onClick={() => setMenuOpen(false)}
+                    className={subLinkClass(isActive("/faculty-dashboard/test-batch/test-list"))}
+                  >
+                    Test List
+                  </Link>
+                  <Link
+                    href={`/faculty-dashboard/test-batch/post-test?id=${encodeURIComponent(facultyId)}`}
+                    onClick={() => setMenuOpen(false)}
+                    className={subLinkClass(isActive("/faculty-dashboard/test-batch/post-test"))}
+                  >
+                    Post Test
+                  </Link>
+                  <Link
+                    href={`/faculty-dashboard/test-batch/registered-students?id=${encodeURIComponent(facultyId)}`}
+                    onClick={() => setMenuOpen(false)}
+                    className={subLinkClass(isActive("/faculty-dashboard/test-batch/registered-students"))}
+                  >
+                    Register Student
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+
           {isPrivilegedFaculty && (
             <>
               <Link
-                href={"/faculty-dashboard/test-batch?id=" + facultyId}
+                href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}`}
                 onClick={() => setMenuOpen(false)}
-                className={linkClass(isActive("/faculty-dashboard/test-batch"))}
-              >
-                Test Batch
-              </Link>
-              <Link
-                href={`/faculty-dashboard/student-record?id=${facultyId}`}
-                onClick={() => setMenuOpen(false)}
-                className={linkClass(
-                  isActive("/faculty-dashboard/student-record")
-                )}
+                className={linkClass(isActive("/faculty-dashboard/student-record"))}
               >
                 Student Record
               </Link>
 
               <Link
-                href={`/faculty-dashboard/enquiries?id=${facultyId}`}
+                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}`}
                 onClick={() => setMenuOpen(false)}
                 className={linkClass(isActive("/faculty-dashboard/enquiries"))}
               >
@@ -163,11 +210,9 @@ function FacultyLayoutContent({ children }) {
               </Link>
 
               <Link
-                href={`/faculty-dashboard/requests?id=${facultyId}`}
+                href={`/faculty-dashboard/requests?id=${encodeURIComponent(facultyId)}`}
                 onClick={() => setMenuOpen(false)}
-                className={subLinkClass(
-                  isActive("/faculty-dashboard/requests")
-                )}
+                className={subLinkClass(isActive("/faculty-dashboard/requests"))}
               >
                 Requests
               </Link>
