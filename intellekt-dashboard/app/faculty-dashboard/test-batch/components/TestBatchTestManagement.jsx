@@ -393,40 +393,45 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   async function loadEligibleTests() {
     try {
-      // Always start from the main Test Batch list. This endpoint is also
-      // used by Test List, so every posted Test Batch test remains selectable
-      // even if the specialized mark-entry endpoint is temporarily stale.
       const testListData = await api(
         "/test-batch/tests?adminId=" + encodeURIComponent(adminId)
       );
 
-      const allTests = (testListData.tests || []).filter(
+      let allTests = (testListData.tests || []).filter(
         (test) => test.status !== "Cancelled"
       );
 
-      // Enrich the list with registration counts when the mark-entry
-      // endpoint is available. The test itself must never disappear just
-      // because that enrichment request returns no rows.
+      // Also fetch the specialized mark-entry list. Some deployments may
+      // return an empty general list while mark-entry still has available tests.
+      let markEntryTests = [];
       try {
         const markEntryData = await api(
-          "/test-batch/mark-entry/tests?adminId=" +
-            encodeURIComponent(adminId)
+          "/test-batch/mark-entry/tests?adminId=" + encodeURIComponent(adminId)
         );
-
-        const markEntryByCode = new Map(
-          (markEntryData.tests || []).map((test) => [test.test_code, test])
-        );
-
-        setEligibleTests(
-          allTests.map((test) => ({
-            ...test,
-            registered_students:
-              markEntryByCode.get(test.test_code)?.registered_students ?? 0,
-          }))
+        markEntryTests = (markEntryData.tests || []).filter(
+          (test) => test.status !== "Cancelled"
         );
       } catch {
-        setEligibleTests(allTests);
+        // Preserve the general test list if this optional endpoint is unavailable.
       }
+
+      if (allTests.length === 0 && markEntryTests.length > 0) {
+        allTests = markEntryTests;
+      }
+
+      const markEntryByCode = new Map(
+        markEntryTests.map((test) => [test.test_code, test])
+      );
+
+      setEligibleTests(
+        allTests.map((test) => ({
+          ...test,
+          registered_students:
+            markEntryByCode.get(test.test_code)?.registered_students ??
+            test.registered_students ??
+            0,
+        }))
+      );
     } catch (err) {
       setError(err.message);
       setEligibleTests([]);
