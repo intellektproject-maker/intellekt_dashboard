@@ -164,6 +164,10 @@ export default function Home() {
     setFormData((prev) => ({
       ...prev,
       [name]: cleanedValue,
+      ...(name === "academicYearFrom" &&
+      Number(prev.academicYearTo) <= Number(cleanedValue)
+        ? { academicYearTo: "" }
+        : {}),
     }));
   };
 
@@ -700,9 +704,11 @@ export default function Home() {
         required
       >
         <option value="">To</option>
-        {Array.from({ length: 5 }, (_, index) => new Date().getFullYear() + index).map((year) => (
-          <option key={year} value={String(year)}>{year}</option>
-        ))}
+        {Array.from({ length: 5 }, (_, index) => new Date().getFullYear() + index)
+          .filter((year) => !formData.academicYearFrom || year > Number(formData.academicYearFrom))
+          .map((year) => (
+            <option key={year} value={String(year)}>{year}</option>
+          ))}
       </select>
     </div>
   </div>
