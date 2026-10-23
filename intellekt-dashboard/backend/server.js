@@ -3089,7 +3089,13 @@ app.get('/students', async (req, res) => {
         s.email,
         s.school_name,
         s.password,
-        s.date_of_birth
+        s.date_of_birth,
+        s.batch,
+        s.academic_year_from,
+        s.academic_year_to,
+        s.parent_name,
+        s.secondary_contact,
+        s.reference
       FROM students s
       LEFT JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -3303,6 +3309,12 @@ app.post('/students', async (req, res) => {
 			school_name,
 			password,
 			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
 			subject_ids,
 			total_fee,
 			fee_paid,
@@ -3351,9 +3363,15 @@ app.post('/students', async (req, res) => {
 			email,
 			school_name,
 			password,
-			date_of_birth
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		`,
 			[
 				newRoll,
@@ -3364,7 +3382,13 @@ app.post('/students', async (req, res) => {
 				String(email).trim(),
 				String(school_name).trim(),
 				finalPassword,
-				date_of_birth || null
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null
 			]
 		);
 
@@ -3447,6 +3471,12 @@ app.put('/students/:roll_no', async (req, res) => {
 			school_name,
 			password,
 			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
 			subject_ids,
 			total_fee,
 			fee_paid,
@@ -3517,8 +3547,14 @@ app.put('/students/:roll_no', async (req, res) => {
 			email = $6,
 			school_name = $7,
 			password = $8,
-			date_of_birth = $9
-		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($10))
+			date_of_birth = $9,
+			batch = $10,
+			academic_year_from = $11,
+			academic_year_to = $12,
+			parent_name = $13,
+			secondary_contact = $14,
+			reference = $15
+		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($16))
 		`,
 			[
 				newRollNo,
@@ -3530,6 +3566,12 @@ app.put('/students/:roll_no', async (req, res) => {
 				String(school_name).trim(),
 				String(password).trim(),
 				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null,
 				oldRollNo
 			]
 		);
@@ -4909,7 +4951,13 @@ app.get('/attendance-students', async (req, res) => {
         s.email,
         s.school_name,
         s.password,
-        s.date_of_birth
+        s.date_of_birth,
+        s.batch,
+        s.academic_year_from,
+        s.academic_year_to,
+        s.parent_name,
+        s.secondary_contact,
+        s.reference
       FROM students s
       INNER JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
