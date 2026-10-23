@@ -36,10 +36,10 @@ async function generatePDF(filteredData) {
     { header: 'EnquiryID', dataKey: 'enq_id' },
     { header: 'Student', dataKey: 'student_name' },
     { header: 'Class', dataKey: 'class_board' },
-    { header: 'Mode', dataKey: 'mode_of_education' },
+    { header: 'Date of Birth', dataKey: 'date_of_birth' },
+    { header: 'Batch', dataKey: 'batch' },
     { header: 'Mobile', dataKey: 'mobile_number' },
     { header: 'Secondary Contact', dataKey: 'secondary_contact' },
-    { header: 'Area', dataKey: 'area' },
     { header: 'School', dataKey: 'school_name' },
     { header: 'Subjects Looking For', dataKey: 'subjects' },
     { header: 'Academic From', dataKey: 'academic_year_from' },
@@ -55,10 +55,10 @@ async function generatePDF(filteredData) {
     enq_id: item.enq_id || '-',
     student_name: item.student_name || '-',
     class_board: item.class_board || '-',
-    mode_of_education: item.mode_of_education || '-',
+    date_of_birth: item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '-',
+    batch: item.batch || '-',
     mobile_number: item.mobile_number || '-',
     secondary_contact: item.secondary_contact || '-',
-    area: item.area || '-',
     school_name: item.school_name || '-',
     subjects: item.subjects || '-',
     academic_year_from: item.academic_year_from || '-',
@@ -94,10 +94,10 @@ function generateCSV(filteredData) {
     'EnquiryID',
     'Student',
     'Class',
-    'Mode',
+    'Date of Birth',
+    'Batch',
     'Mobile',
     'Secondary Contact',
-    'Area',
     'School',
     'Subjects Looking For',
     'Academic From',
@@ -113,10 +113,10 @@ function generateCSV(filteredData) {
     item.enq_id || '',
     item.student_name || '',
     item.class_board || '',
-    item.mode_of_education || '',
+    item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '',
+    item.batch || '',
     item.mobile_number || '',
     item.secondary_contact || '',
-    item.area || '',
     item.school_name || '',
     item.subjects || '',
     item.academic_year_from || '',
@@ -518,11 +518,11 @@ const filteredData = useMemo(() => {
                 <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">EnquiryID</th>
                 <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Student</th>
                 <th className="w-[130px] px-4 py-3 text-left text-base font-semibold text-blue-700">Class</th>
-                <th className="w-[110px] px-4 py-3 text-left text-base font-semibold text-blue-700">Mode</th>
+                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">Date of Birth</th>
+                <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">Batch</th>
                 <th className="w-[140px] px-4 py-3 text-left text-base font-semibold text-blue-700">Mobile</th>
                 <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">Secondary Contact</th>
-                <th className="w-[160px] px-4 py-3 text-left text-base font-semibold text-blue-700">Area</th>
-                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">School</th>
+                                <th className="w-[180px] px-4 py-3 text-left text-base font-semibold text-blue-700">School</th>
                 <th className="w-[170px] px-4 py-3 text-left text-base font-semibold text-blue-700">Subjects Looking For</th>
                 <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Academic From</th>
                 <th className="w-[150px] px-4 py-3 text-left text-base font-semibold text-blue-700">Academic To</th>
@@ -717,16 +717,14 @@ function Row({ item, onSave }) {
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
-        <span
-          className={`inline-block rounded-md px-3 py-1 text-xs font-semibold ${
-            item.mode_of_education === 'Online'
-              ? 'bg-blue-100 text-blue-700'
-              : item.mode_of_education === 'Offline'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          {item.mode_of_education || '-'}
+        {item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '-'}
+      </td>
+
+      <td className="px-4 py-3 text-left text-gray-800 align-top">
+        <span className={`inline-block rounded-md px-3 py-1 text-xs font-semibold ${
+          item.batch === 'Test Batch' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+        }`}>
+          {item.batch || '-'}
         </span>
       </td>
 
@@ -736,10 +734,6 @@ function Row({ item, onSave }) {
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
         {item.secondary_contact || '-'}
-      </td>
-
-      <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.area || '-'}
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
