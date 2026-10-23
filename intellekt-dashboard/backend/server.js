@@ -1961,7 +1961,6 @@ app.get('/student-record-report/:rollNo', async (req, res) => {
 					name,
 					TRIM(class) AS class,
 					TRIM(board) AS board,
-					mode_of_education,
 					phone,
 					email,
 					school_name
@@ -3090,7 +3089,7 @@ app.get('/students', async (req, res) => {
         s.email,
         s.school_name,
         s.password,
-        s.mode_of_education
+        s.date_of_birth
       FROM students s
       LEFT JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -3234,7 +3233,6 @@ app.get('/students/:value', async (req, res) => {
 			s.name,
 			s.class,
 			s.board,
-			s.mode_of_education,
 			s.phone,
 			s.email,
 			s.school_name,
@@ -3300,7 +3298,6 @@ app.post('/students', async (req, res) => {
 			name,
 			class: className,
 			board,
-			mode_of_education,
 			phone,
 			email,
 			school_name,
@@ -3316,7 +3313,7 @@ app.post('/students', async (req, res) => {
 			return res.status(400).json({ error: 'Roll number is required' });
 		}
 
-		if (!name || !className || !board || !mode_of_education || !phone || !email || !school_name) {
+		if (!name || !className || !board || !phone || !email || !school_name) {
 			return res.status(400).json({
 				error: 'All basic student fields are required'
 			});
@@ -3349,7 +3346,6 @@ app.post('/students', async (req, res) => {
 			name,
 			class,
 			board,
-			mode_of_education,
 			phone,
 			email,
 			school_name,
@@ -3362,11 +3358,11 @@ app.post('/students', async (req, res) => {
 				String(name).trim(),
 				String(className).trim(),
 				String(board).trim(),
-				String(mode_of_education).trim(),
 				String(phone).trim(),
 				String(email).trim(),
 				String(school_name).trim(),
-				finalPassword
+				finalPassword,
+				date_of_birth || null
 			]
 		);
 
@@ -3444,7 +3440,6 @@ app.put('/students/:roll_no', async (req, res) => {
 			name,
 			class: className,
 			board,
-			mode_of_education,
 			phone,
 			email,
 			school_name,
@@ -3460,7 +3455,6 @@ app.put('/students/:roll_no', async (req, res) => {
 			!name ||
 			!className ||
 			!board ||
-			!mode_of_education ||
 			!phone ||
 			!email ||
 			!school_name ||
@@ -3516,11 +3510,11 @@ app.put('/students/:roll_no', async (req, res) => {
 			name = $2,
 			class = $3,
 			board = $4,
-			mode_of_education = $5,
-			phone = $6,
-			email = $7,
-			school_name = $8,
-			password = $9
+			phone = $5,
+			email = $6,
+			school_name = $7,
+			password = $8,
+			date_of_birth = $9
 		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($10))
 		`,
 			[
@@ -3528,11 +3522,11 @@ app.put('/students/:roll_no', async (req, res) => {
 				String(name).trim(),
 				String(className).trim(),
 				String(board).trim(),
-				String(mode_of_education).trim(),
 				String(phone).trim(),
 				String(email).trim(),
 				String(school_name).trim(),
 				String(password).trim(),
+				date_of_birth || null,
 				oldRollNo
 			]
 		);
@@ -4912,7 +4906,7 @@ app.get('/attendance-students', async (req, res) => {
         s.email,
         s.school_name,
         s.password,
-        s.mode_of_education
+        s.date_of_birth
       FROM students s
       INNER JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
