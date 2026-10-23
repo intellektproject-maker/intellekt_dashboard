@@ -152,7 +152,15 @@ const [boardFilter, setBoardFilter] = useState("");
     const { name, value } = e.target;
 
     if (name === "roll_no") {
-      setRollNoCheck({ checking: false, exists: false, message: "" });
+      const candidate = value.trim().toLowerCase();
+      const duplicate = !editingRollNo && candidate !== "" && students.some(
+        (student) => String(student.roll_no || "").trim().toLowerCase() === candidate
+      );
+      setRollNoCheck({
+        checking: false,
+        exists: duplicate,
+        message: duplicate ? "This roll number already exists. Please enter a different roll number." : "",
+      });
     }
 
     if (name === "phone") {
