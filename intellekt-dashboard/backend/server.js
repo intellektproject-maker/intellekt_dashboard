@@ -5619,7 +5619,7 @@ function marksComputedFields(row) {
   return { ...row, percentage:Number(percentage.toFixed(2)), result_status:percentage >= 40 ? 'Pass' : 'Fail' };
 }
 
-app.get('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { seriesId, search, status, from, to } = req.query;
     const values=[]; let where='WHERE 1=1';
@@ -5635,7 +5635,7 @@ app.get('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
   } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
 });
 
-app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
+app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
@@ -5666,7 +5666,7 @@ app.post('/test-batch/tests', requireTestBatchAdmin, async (req,res) => {
   }
 });
 
-app.put('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
+app.put('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
@@ -5967,7 +5967,7 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
   }
 });
 
-app.delete('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
+app.delete('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
     if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
@@ -5980,7 +5980,7 @@ app.delete('/test-batch/tests/:id', requireTestBatchAdmin, async (req,res) => {
    Available only after a test is Completed or Returned.
 ========================================================= */
 
-app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const result = await pool.query(
       `SELECT
@@ -6015,7 +6015,7 @@ app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (r
   }
 });
 
-app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (req,res) => {
+app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const body = req.body || {};
     const result = await pool.query(
@@ -6089,7 +6089,7 @@ app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAdmin, async (r
   }
 });
 
-app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAdmin, async (req,res) => {
+app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const result = await pool.query(
       `UPDATE test_batch_tests
@@ -6114,7 +6114,7 @@ app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAdmin,
   }
 });
 
-app.get('/test-batch/tests/:testCode/results', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/tests/:testCode/results', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const testResult = await pool.query(
       `SELECT passing_percentage,grade_boundaries,result_publication_status,
@@ -6842,7 +6842,7 @@ app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendance
   }
 });
 
-app.get('/test-batch/series', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
     res.json({ series: result.rows });
