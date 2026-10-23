@@ -23,6 +23,7 @@ const [boardFilter, setBoardFilter] = useState("");
 
   const [editingRollNo, setEditingRollNo] = useState(null);
   const [phoneError, setPhoneError] = useState("");
+  const [rollNoCheck, setRollNoCheck] = useState({ checking: false, exists: false, message: "" });
   const [showStudentPopup, setShowStudentPopup] = useState(false);
   const [showExportPopup, setShowExportPopup] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -90,6 +91,7 @@ const [boardFilter, setBoardFilter] = useState("");
   }
 
   function resetForm() {
+    setRollNoCheck({ checking: false, exists: false, message: "" });
     setForm({
       roll_no: "",
       name: "",
@@ -110,6 +112,7 @@ const [boardFilter, setBoardFilter] = useState("");
   }
 
   function openAddStudentPopup() {
+    setRollNoCheck({ checking: false, exists: false, message: "" });
     setForm({
       roll_no: "",
       name: "",
@@ -147,6 +150,10 @@ const [boardFilter, setBoardFilter] = useState("");
 
   function handleInputChange(e) {
     const { name, value } = e.target;
+
+    if (name === "roll_no") {
+      setRollNoCheck({ checking: false, exists: false, message: "" });
+    }
 
     if (name === "phone") {
       const digitsOnly = value.replace(/\D/g, "").slice(0, 10);
@@ -308,6 +315,14 @@ return searchMatch && classMatch && boardMatch;
       !form.password.trim()
     ) {
       alert("Please fill all student details");
+      return;
+    }
+
+    if (!editingRollNo && students.some((student) =>
+      String(student.roll_no || "").trim().toLowerCase() === form.roll_no.trim().toLowerCase()
+    )) {
+      setRollNoCheck({ checking: false, exists: true, message: "This roll number already exists. Please enter a different roll number." });
+      alert("This roll number already exists. Please enter a different roll number.");
       return;
     }
 
@@ -971,10 +986,27 @@ setBoardFilter("");
                   value={form.roll_no}
                   onChange={handleInputChange}
                   placeholder="Enter roll number (any format)"
-                  maxLength={100}
+                  maxLength={50}
                   autoComplete="off"
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
+                  aria-invalid={rollNoCheck.exists}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 ${rollNoCheck.exists ? "border-red-500" : ""}`}
                 />
+                {(() => {
+                  const lastStudent = students.length ? students[students.length - 1] : null;
+                  return lastStudent ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Last listed student: <span className="font-semibold">{lastStudent.roll_no}</span>
+                      {lastStudent.name ? ` — ${lastStudent.name}` : ""}. Enter the next roll number manually.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500">Enter a unique roll number in any format.</p>
+                  );
+                })()}
+                {rollNoCheck.exists && (
+                  <p role="alert" className="mt-1 text-sm font-medium text-red-600">
+                    {rollNoCheck.message || "This roll number already exists."}
+                  </p>
+                )}
               </div>
 
               <div>
