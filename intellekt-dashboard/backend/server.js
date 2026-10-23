@@ -3231,7 +3231,13 @@ app.get('/students/:value', async (req, res) => {
 	const upperValue = String(value).toUpperCase();
 
 	try {
-		if (upperValue.startsWith('IA') || upperValue.startsWith('IG')) {
+		const matchingRoll = await pool.query(
+			`SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1`,
+			[value]
+		);
+
+		// Look up existing students by their actual roll number, regardless of format.
+		if (matchingRoll.rows.length > 0) {
 			const studentResult = await pool.query(
 				`
 			SELECT 
@@ -3243,6 +3249,13 @@ app.get('/students/:value', async (req, res) => {
 			s.email,
 			s.school_name,
 			s.password,
+			s.date_of_birth,
+			s.batch,
+			s.academic_year_from,
+			s.academic_year_to,
+			s.parent_name,
+			s.secondary_contact,
+			s.reference,
 			COALESCE(f.total_fee, 0) AS total_fee,
 			COALESCE(f.fee_paid, 0) AS fee_paid,
 			f.next_due
