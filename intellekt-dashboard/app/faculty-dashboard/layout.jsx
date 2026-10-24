@@ -1,4 +1,5 @@
 "use client";
+// Keep the faculty sidebar aligned with the reverted Test Batch navigation.
 
 import Link from "next/link";
 import { Suspense, useState } from "react";
