@@ -5493,9 +5493,10 @@ app.delete('/faculty/device-token', async (req, res) => {
 
 const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
 
-// Faculty IG003 and above may record Test Batch attendance and enter marks.
-// IG001/IG002 retain administrator access. This middleware is intentionally
-// applied only to attendance/mark-entry workflows, not test configuration.
+// Verify an existing IG faculty account for Test Batch operational access.
+// This middleware is used by dashboard reads, student management, attendance,
+// and marks workflows. Test Batch series/configuration administration remains
+// protected by requireTestBatchAdmin where applicable.
 async function requireTestBatchAttendanceMarksAccess(req, res, next) {
   try {
     const candidate = String(
