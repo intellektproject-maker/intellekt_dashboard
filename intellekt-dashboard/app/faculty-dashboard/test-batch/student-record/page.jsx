@@ -10,7 +10,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://responsible-wonder-production.up.railway.app";
 
-const isValidFacultyId = (value) => /^IG\\d{3,}$/.test(String(value || "").toUpperCase().trim());
+const isValidFacultyId = (value) => /^IG\d{3,}$/.test(String(value || "").toUpperCase().trim());
 
 export default function TestBatchStudentRecordPage() {
   const params = useSearchParams();
