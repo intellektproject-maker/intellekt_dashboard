@@ -5643,21 +5643,24 @@ app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,
       duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
     }=req.body||{};
     if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
-      return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
+      return res.status(400).json({error:'Test code, test series, subject, duration and total marks are required'});
+    }
+    if (!application_open_date || !application_close_date || !writing_close_date) {
+      return res.status(400).json({error:'Application open date, application close date and Writing Close date are required'});
     }
     const series=await validateTestBatchSeries(test_series_id);
     if(!series)return res.status(400).json({error:'Invalid Test Series'});
 
-    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+    if (application_close_date < application_open_date) {
       return res.status(400).json({error:'Application close date cannot be before application open date'});
     }
-    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
-      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    if (application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the Writing Close date'});
     }
     const result=await pool.query(
       'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status,created_by) '+
-      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (test_code) DO NOTHING RETURNING *',
-      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+      'VALUES($1,$2,$3,NULL,NULL,NULL,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (test_code) DO NOTHING RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date,application_close_date,writing_close_date,status||'Scheduled',req.testBatchAdminId]);
     if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
     res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
   } catch(err){
