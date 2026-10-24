@@ -136,7 +136,7 @@ function FacultyLayoutContent({ children }) {
             )}
           </div>
 
-                    {/^IG\\d{3,}$/.test(facultyId.trim()) && (
+                    {/^IG\d{3,}$/.test(facultyId.trim()) && (
             <Link
               href={"/faculty-dashboard/test-batch?id=" + encodeURIComponent(facultyId)}
               onClick={() => setMenuOpen(false)}
