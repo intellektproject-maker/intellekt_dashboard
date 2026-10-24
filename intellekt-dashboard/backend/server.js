@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
+const registerRecordEditRoutes = require('./record_edit_requests');
 const crypto = require("node:crypto");
 const { makeEventKey, queueNotificationEvent } = require('./web-notification-outbox');
 const { sendToStudent } = require('./student-notification-service');
@@ -7764,7 +7765,9 @@ async function startServer() {
     pool,
     sendToStudent,
     sendToFaculty: facultyNotificationService.sendToFaculty,
-    createFacultyNotification: facultyNotificationService.createFacultyNotification,
+    createFacultyNotification: facultyNotificationServiceregisterRecordEditRoutes(app, pool);
+
+.createFacultyNotification,
   });
   testBatchPushWorker.start();
 
