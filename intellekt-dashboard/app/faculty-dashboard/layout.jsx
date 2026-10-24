@@ -11,7 +11,6 @@ function FacultyLayoutContent({ children }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const [testBatchOpen, setTestBatchOpen] = useState(pathname.startsWith("/faculty-dashboard/test-batch"));
 
   const isPrivilegedFaculty = facultyId === "IG001" || facultyId === "IG002";
 
@@ -136,48 +135,15 @@ function FacultyLayoutContent({ children }) {
             )}
           </div>
 
-                    {/^IG\d{3,}$/.test(facultyId.trim()) && (
-            <div className="rounded-lg">
-              <button
-                type="button"
-                aria-expanded={testBatchOpen}
-                onClick={() => setTestBatchOpen((open) => !open)}
-                className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-base font-medium transition ${
-                  pathname.startsWith("/faculty-dashboard/test-batch")
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-gray-800 hover:bg-gray-100"
-                }`}
-              >
-                <span>Test Batch</span>
-                <span className="text-sm">{testBatchOpen ? "▲" : "▼"}</span>
-              </button>
-              {testBatchOpen && (
-                <div className="mt-2 ml-3 flex flex-col gap-2 border-l-2 border-gray-200 pl-3">
-                  {[
-                    ["mark-entry", "Enter Marks"],
-                    ["list", "Test List"],
-                    ["schedule", "Post Test"],
-                    ["registered-students", "Registered Students"],
-                  ].map(([feature, label]) => (
-                    <Link
-                      key={feature}
-                      href={`/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&feature=${feature}`}
-                      onClick={() => setMenuOpen(false)}
-                      className={subLinkClass(
-                        pathname === "/faculty-dashboard/test-batch" &&
-                          searchParams.get("feature") === feature
-                      )}
-                    >
-                      {label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {isPrivilegedFaculty && (
+                    {isPrivilegedFaculty && (
             <>
+              <Link
+                href={"/faculty-dashboard/test-batch?id=" + facultyId}
+                onClick={() => setMenuOpen(false)}
+                className={linkClass(isActive("/faculty-dashboard/test-batch"))}
+              >
+                Test Batch
+              </Link>
               <Link
                 href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}`}
                 onClick={() => setMenuOpen(false)}
