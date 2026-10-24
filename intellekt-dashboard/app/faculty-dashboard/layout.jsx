@@ -136,15 +136,19 @@ function FacultyLayoutContent({ children }) {
             )}
           </div>
 
-                    {isPrivilegedFaculty && (
+                    {/^IG\d{3,}$/.test(facultyId.trim()) && (
+            <Link
+              href={"/faculty-dashboard/test-batch?id=" + encodeURIComponent(facultyId)}
+              onClick={() => setMenuOpen(false)}
+              className={linkClass(isActive("/faculty-dashboard/test-batch"))}
+            >
+              Test Batch
+            </Link>
+          )}
+
+          {isPrivilegedFaculty && (
             <>
-              <Link
-                href={"/faculty-dashboard/test-batch?id=" + facultyId}
-                onClick={() => setMenuOpen(false)}
-                className={linkClass(isActive("/faculty-dashboard/test-batch"))}
-              >
-                Test Batch
-              </Link>
+
               <Link
                 href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}`}
                 onClick={() => setMenuOpen(false)}

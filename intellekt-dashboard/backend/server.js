@@ -5493,9 +5493,10 @@ app.delete('/faculty/device-token', async (req, res) => {
 
 const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
 
-// Faculty IG003 and above may record Test Batch attendance and enter marks.
-// IG001/IG002 retain administrator access. This middleware is intentionally
-// applied only to attendance/mark-entry workflows, not test configuration.
+// Verify an existing IG faculty account for Test Batch operational access.
+// This middleware is used by dashboard reads, student management, attendance,
+// and marks workflows. Test Batch series/configuration administration remains
+// protected by requireTestBatchAdmin where applicable.
 async function requireTestBatchAttendanceMarksAccess(req, res, next) {
   try {
     const candidate = String(
@@ -6853,7 +6854,7 @@ app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req,
   }
 });
 
-app.get('/test-batch/students/next-roll', requireTestBatchAdmin, async (req, res) => {
+app.get('/test-batch/students/next-roll', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
@@ -6929,7 +6930,7 @@ app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (re
   }
 });
 
-app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
+app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -7006,7 +7007,7 @@ app.post('/test-batch/students', requireTestBatchAdmin, async (req, res) => {
   }
 });
 
-app.put('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req, res) => {
+app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -7071,7 +7072,7 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req, res)
   }
 });
 
-app.delete('/test-batch/students/:roll_no', requireTestBatchAdmin, async (req,res) => {
+app.delete('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   const client = await pool.connect();
   try {
     const roll = String(req.params.roll_no).toUpperCase().trim();
@@ -7416,7 +7417,7 @@ app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, 
   }
 });
 
-app.get('/test-batch/dashboard', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { seriesId, from, to } = req.query;
     const studentValues = [];
