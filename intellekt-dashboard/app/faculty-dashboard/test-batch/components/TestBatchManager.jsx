@@ -1129,8 +1129,7 @@ export default function TestBatchManager({ section = "dashboard", rollNo = "" })
   const adminId = useAdminId();
   if (section === "student-dashboard") return <StudentDashboardSection rollNo={rollNo}/>;
 
-  const isAdmin = ADMIN_IDS.includes(adminId);
-  const isAuthorizedFaculty = /^IG\\d{3,}$/.test(adminId);
+  const isAuthorizedFaculty = /^IG\d{3,}$/.test(adminId);
 
   if (!isAuthorizedFaculty) {
     return <Card>
