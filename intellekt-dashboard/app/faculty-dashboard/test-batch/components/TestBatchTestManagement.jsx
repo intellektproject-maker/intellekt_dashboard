@@ -1521,11 +1521,11 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       {section === "" && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <a
-          href={"/faculty-dashboard/test-batch/enter-marks?id=" + encodeURIComponent(adminId)}
+          href={"/faculty-dashboard/test-batch?feature=mark-entry&id=" + encodeURIComponent(adminId)}
           onClick={(event) => {
             event.preventDefault();
             window.location.assign(
-              "/faculty-dashboard/test-batch/enter-marks?id=" + encodeURIComponent(adminId)
+              "/faculty-dashboard/test-batch?feature=mark-entry&id=" + encodeURIComponent(adminId)
             );
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
@@ -1540,11 +1540,11 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         </a>
 
         <a
-          href={"/faculty-dashboard/test-batch/test-list?id=" + encodeURIComponent(adminId)}
+          href={"/faculty-dashboard/test-batch?feature=list&id=" + encodeURIComponent(adminId)}
           onClick={(event) => {
             event.preventDefault();
             window.location.assign(
-              "/faculty-dashboard/test-batch/test-list?id=" + encodeURIComponent(adminId)
+              "/faculty-dashboard/test-batch?feature=list&id=" + encodeURIComponent(adminId)
             );
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
@@ -1558,11 +1558,11 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         </a>
 
         <a
-          href={"/faculty-dashboard/test-batch/post-test?id=" + encodeURIComponent(adminId)}
+          href={"/faculty-dashboard/test-batch?feature=schedule&id=" + encodeURIComponent(adminId)}
           onClick={(event) => {
             event.preventDefault();
             window.location.assign(
-              "/faculty-dashboard/test-batch/post-test?id=" + encodeURIComponent(adminId)
+              "/faculty-dashboard/test-batch?feature=schedule&id=" + encodeURIComponent(adminId)
             );
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
@@ -1576,11 +1576,11 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         </a>
 
         <a
-          href={"/faculty-dashboard/test-batch/registered-students?id=" + encodeURIComponent(adminId)}
+          href={"/faculty-dashboard/test-batch?feature=registered-students&id=" + encodeURIComponent(adminId)}
           onClick={(event) => {
             event.preventDefault();
             window.location.assign(
-              "/faculty-dashboard/test-batch/registered-students?id=" + encodeURIComponent(adminId)
+              "/faculty-dashboard/test-batch?feature=registered-students&id=" + encodeURIComponent(adminId)
             );
           }}
           className="text-left bg-white shadow-md rounded-xl border border-gray-200 p-6 hover:shadow-lg hover:scale-[1.02] transition block"
