@@ -10,7 +10,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://responsible-wonder-production.up.railway.app";
 
-const ADMIN_IDS = ["IG001", "IG002"];
+const isValidFacultyId = (value) => /^IG\\d{3,}$/.test(String(value || "").toUpperCase().trim());
 
 export default function TestBatchStudentRecordPage() {
   const params = useSearchParams();
@@ -25,7 +25,7 @@ export default function TestBatchStudentRecordPage() {
   const [hasViewed, setHasViewed] = useState(false);
 
   useEffect(() => {
-    if (!ADMIN_IDS.includes(adminId)) return;
+    if (!isValidFacultyId(adminId)) return;
     let cancelled = false;
 
     async function loadClasses() {
@@ -181,11 +181,11 @@ export default function TestBatchStudentRecordPage() {
     }
   }
 
-  if (!ADMIN_IDS.includes(adminId)) {
+  if (!isValidFacultyId(adminId)) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 md:p-10">
         <div className="rounded-xl border border-red-200 bg-white p-6 text-red-700">
-          Unauthorized. Test Batch student records are available only to authorized administrators.
+          Unauthorized. Sign in with a valid faculty account to access Test Batch student records.
         </div>
       </div>
     );
