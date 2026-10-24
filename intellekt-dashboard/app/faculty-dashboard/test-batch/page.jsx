@@ -11,7 +11,7 @@ function TestBatchAdminPageInner() {
   const feature = params.get("feature") || "";
   const facultyId = (params.get("id") || "").toUpperCase().trim();
   const isAdmin = facultyId === "IG001" || facultyId === "IG002";
-  const isFaculty = /^IG\\d{3,}$/.test(facultyId);
+  const isFaculty = /^IG\d{3,}$/.test(facultyId);
 
   if (feature && isFaculty) {
     return <TestBatchTestManagement key={feature} initialSection={feature} />;
