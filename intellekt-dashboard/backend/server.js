@@ -7416,7 +7416,7 @@ app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, 
   }
 });
 
-app.get('/test-batch/dashboard', requireTestBatchAdmin, async (req,res) => {
+app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
     const { seriesId, from, to } = req.query;
     const studentValues = [];
