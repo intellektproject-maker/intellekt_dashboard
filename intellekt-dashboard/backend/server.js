@@ -7756,6 +7756,8 @@ async function ensureStudentDeviceTokensTable() {
   `);
 }
 
+registerRecordEditRoutes(app, pool);
+
 async function startServer() {
   await ensureStudentDeviceTokensTable();
 
@@ -7765,9 +7767,7 @@ async function startServer() {
     pool,
     sendToStudent,
     sendToFaculty: facultyNotificationService.sendToFaculty,
-    createFacultyNotification: facultyNotificationServiceregisterRecordEditRoutes(app, pool);
-
-.createFacultyNotification,
+    createFacultyNotification: facultyNotificationService.createFacultyNotification,
   });
   testBatchPushWorker.start();
 
