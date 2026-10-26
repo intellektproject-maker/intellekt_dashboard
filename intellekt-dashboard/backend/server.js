@@ -3543,7 +3543,10 @@ app.put('/students/:roll_no', async (req, res) => {
 				return res.status(400).json({ error: 'New roll number already exists' });
 			}
 
-			await client.query(`UPDATE student_subjects SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			// Subject mappings reference students.roll_no with a foreign key.
+			// Remove the old mappings inside this transaction; the selected subjects
+			// are validated and reinserted under the new roll number after the student update.
+			await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ oldRollNo ]);
 			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
 			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
 			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
