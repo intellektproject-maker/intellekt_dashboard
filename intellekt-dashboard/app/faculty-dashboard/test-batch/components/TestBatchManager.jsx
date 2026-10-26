@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import TestBatchStudentTests from "../../../test-batch/student/TestBatchStudentTests";
 
 const API_BASE =
@@ -56,6 +56,11 @@ function SeriesSelect({ series, value, onChange, allLabel = "All Test Series" })
 }
 
 function StudentsSection({ adminId }) {
+  const params = useSearchParams();
+  const router = useRouter();
+  const admissionEnquiryId = params.get("admitEnquiryId") || "";
+  const admissionToken = params.get("admissionToken") || "";
+  const [prefillLoadedId, setPrefillLoadedId] = useState("");
   const [series, setSeries] = useState([]);
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState("");
@@ -71,13 +76,20 @@ function StudentsSection({ adminId }) {
   const [showForm, setShowForm] = useState(false);
   const [nextRoll, setNextRoll] = useState("IAT001");
   const [form, setForm] = useState({
+    roll_no: "",
     name: "",
     class: "",
     board: "",
     phone: "",
     email: "",
     school_name: "",
+    parent_name: "",
+    secondary_contact: "",
+    reference: "",
     password: "",
+    date_of_birth: "",
+    academic_year_from: "",
+    academic_year_to: "",
     test_series_id: "",
     subjects: ""
   });
@@ -126,6 +138,49 @@ function StudentsSection({ adminId }) {
   }, [adminId]);
 
   useEffect(() => {
+    if (!admissionEnquiryId || !admissionToken || !series.length || prefillLoadedId === admissionEnquiryId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const enquiry = await api("/enquiries/" + encodeURIComponent(admissionEnquiryId));
+        if (enquiry.batch !== "Test Batch") throw new Error("This enquiry belongs to Regular Batch. Open the Regular Add Student form.");
+        const combined = String(enquiry.class_board || "");
+        const dash = combined.lastIndexOf("-");
+        const board = dash >= 0 ? combined.slice(0, dash).trim() : "";
+        const classValue = dash >= 0 ? combined.slice(dash + 1).trim() : "";
+        const wanted = String(enquiry.subjects || "").toLowerCase();
+        const subjects = wanted.includes("both") ? "Both" : wanted.includes("phys") ? "Physics" : wanted.includes("math") ? "Mathematics" : "";
+        if (cancelled) return;
+        setForm({
+          roll_no: "",
+          name: enquiry.student_name || "",
+          class: classValue,
+          board,
+          phone: String(enquiry.mobile_number || "").replace(/\D/g, "").slice(0, 10),
+          email: "",
+          school_name: enquiry.school_name || "",
+          parent_name: enquiry.parent_name || "",
+          secondary_contact: String(enquiry.secondary_contact || "").replace(/\D/g, "").slice(0, 10),
+          reference: enquiry.reference || "",
+          password: "",
+          date_of_birth: enquiry.date_of_birth ? String(enquiry.date_of_birth).slice(0, 10) : "",
+          academic_year_from: enquiry.academic_year_from ? String(enquiry.academic_year_from) : "",
+          academic_year_to: enquiry.academic_year_to ? String(enquiry.academic_year_to) : "",
+          test_series_id: "",
+          subjects
+        });
+        setShowForm(true);
+        setEditing(null);
+        setPrefillLoadedId(admissionEnquiryId);
+        setError("");
+      } catch (e) {
+        if (!cancelled) setError(e.message || "Failed to prefill Test Batch student form");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [adminId, admissionEnquiryId, admissionToken, series, prefillLoadedId]);
+
+  useEffect(() => {
     setCurrentPage(1);
     const t = setTimeout(loadStudents, 150);
     return () => clearTimeout(t);
@@ -133,13 +188,20 @@ function StudentsSection({ adminId }) {
 
   function emptyForm() {
     return {
+      roll_no: "",
       name: "",
       class: "",
       board: "",
         phone: "",
       email: "",
       school_name: "",
+      parent_name: "",
+      secondary_contact: "",
+      reference: "",
       password: "",
+      date_of_birth: "",
+      academic_year_from: "",
+      academic_year_to: "",
       test_series_id: series[0] ? String(series[0].id) : "",
       subjects: ""
     };
@@ -162,13 +224,20 @@ function StudentsSection({ adminId }) {
   function editStudent(s) {
     setEditing(s.roll_no);
     setForm({
+      roll_no: s.roll_no || "",
       name: s.name || "",
       class: s.class || "",
       board: s.board || "",
       phone: s.phone || "",
       email: s.email || "",
       school_name: s.school_name || "",
+      parent_name: s.parent_name || "",
+      secondary_contact: s.secondary_contact || "",
+      reference: s.reference || "",
       password: "",
+      date_of_birth: s.date_of_birth ? String(s.date_of_birth).slice(0, 10) : "",
+      academic_year_from: s.academic_year_from ? String(s.academic_year_from) : "",
+      academic_year_to: s.academic_year_to ? String(s.academic_year_to) : "",
       test_series_id: String(s.test_series_id || ""),
       subjects: s.subjects || ""
     });
@@ -183,6 +252,15 @@ function StudentsSection({ adminId }) {
     setError("");
 
     try {
+      if (admissionEnquiryId && admissionToken) {
+        await api("/enquiries/" + encodeURIComponent(admissionEnquiryId) + "/admission/start", {
+          method: "POST",
+          body: JSON.stringify({ admission_token: admissionToken })
+        });
+      }
+      if (!editing && !form.roll_no.trim()) throw new Error("Roll number is required; enter it manually.");
+      if (!editing && !/^IAT[0-9]{3,}$/i.test(form.roll_no.trim())) throw new Error("Test Batch roll number must use the IAT format, for example IAT014.");
+      if (!editing && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase())) throw new Error("This Test Batch roll number already exists. Please enter a different roll number.");
       if (!form.name.trim()) throw new Error("Student name is required");
       if (!form.class) throw new Error("Select a class");
       if (!form.subjects) throw new Error("Select at least one subject");
@@ -191,9 +269,15 @@ function StudentsSection({ adminId }) {
         throw new Error("Phone number must contain exactly 10 digits");
       }
 
+      if (form.academic_year_from && !/^\d{4}$/.test(form.academic_year_from)) throw new Error("Academic Year From must be a four-digit year.");
+      if (form.academic_year_to && !/^\d{4}$/.test(form.academic_year_to)) throw new Error("Academic Year To must be a four-digit year.");
+      if (form.academic_year_from && form.academic_year_to && Number(form.academic_year_to) <= Number(form.academic_year_from)) throw new Error("Academic Year To must be later than Academic Year From.");
+
       const payload = {
         ...form,
         adminId,
+        enquiry_id: admissionEnquiryId || null,
+        admission_token: admissionToken || null,
         test_series_id: Number(form.test_series_id)
       };
 
@@ -213,12 +297,38 @@ function StudentsSection({ adminId }) {
       }
 
       resetForm();
+      if (admissionEnquiryId) router.replace("/faculty-dashboard/test-batch?id=" + encodeURIComponent(adminId) + "&section=students");
       await Promise.all([loadStudents(), loadNextRoll()]);
     } catch (e) {
+      if (admissionEnquiryId && admissionToken) {
+        try {
+          await api("/enquiries/" + encodeURIComponent(admissionEnquiryId) + "/admission/cancel", {
+            method: "POST",
+            body: JSON.stringify({ admission_token: admissionToken })
+          });
+        } catch (restoreError) {
+          console.error("Could not restore enquiry to Pending:", restoreError);
+        }
+      }
       setError(e.message);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function closeStudentForm() {
+    if (admissionEnquiryId && admissionToken) {
+      try {
+        await api("/enquiries/" + encodeURIComponent(admissionEnquiryId) + "/admission/cancel", {
+          method: "POST",
+          body: JSON.stringify({ admission_token: admissionToken })
+        });
+      } catch (e) {
+        setError(e.message);
+      }
+      router.replace("/faculty-dashboard/test-batch?id=" + encodeURIComponent(adminId) + "&section=students");
+    }
+    resetForm();
   }
 
   async function removeStudent(rollNo) {
@@ -256,7 +366,7 @@ function StudentsSection({ adminId }) {
             <h3 className="text-lg font-semibold text-gray-800">Test Batch Student Records</h3>
             <p className="text-sm text-gray-500 mt-1">
               Add students with the same profile information used in Regular Student management.
-              Roll numbers are generated automatically as IAT001, IAT002, IAT003...
+              Roll numbers must be entered manually and must be unique. Select the Test Series for each student.
             </p>
             <a
               href={"/faculty-dashboard/test-batch/student-record?id=" + encodeURIComponent(adminId)}
@@ -423,7 +533,7 @@ function StudentsSection({ adminId }) {
               </div>
               <button
                 type="button"
-                onClick={resetForm}
+                onClick={closeStudentForm}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-medium"
               >
                 Close
@@ -435,15 +545,21 @@ function StudentsSection({ adminId }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number</label>
                 <input
                   type="text"
-                  value={editing || nextRoll}
-                  disabled
-                  className="w-full border rounded-lg px-4 py-3 outline-none bg-gray-100 text-gray-700"
+                  value={form.roll_no}
+                  onChange={(e) => {
+                    const value = e.target.value.toUpperCase();
+                    setForm((prev) => ({
+                      ...prev,
+                      roll_no: value,
+                      ...(!prev.password || prev.password === prev.roll_no ? { password: value } : {})
+                    }));
+                  }}
+                  disabled={Boolean(editing)}
+                  required={!editing}
+                  placeholder="Enter roll number (e.g., IAT014)"
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100 ${!editing && form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "border-red-500" : ""}`}
                 />
-                {!editing && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Automatically generated. You cannot manually change the IAT roll number.
-                  </p>
-                )}
+                {!editing && <p className={`text-xs mt-1 ${form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "text-red-600" : "text-gray-500"}`}>{form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "This roll number already exists. Enter a different roll number." : "Enter a unique Test Batch roll number manually."}</p>}
               </div>
 
               <div>
@@ -532,6 +648,38 @@ function StudentsSection({ adminId }) {
                   placeholder="Enter school name"
                   className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} max={new Date().toISOString().slice(0, 10)} className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year From</label>
+                <select value={form.academic_year_from} onChange={(e) => setForm((prev) => ({ ...prev, academic_year_from: e.target.value, academic_year_to: prev.academic_year_to && Number(prev.academic_year_to) > Number(e.target.value) ? prev.academic_year_to : "" }))} className="w-full border rounded-lg px-4 py-3 bg-white">
+                  <option value="">Select start year</option>
+                  {Array.from({ length: 3 }, (_, i) => new Date().getFullYear() + i).map((year) => <option key={year} value={String(year)}>{year}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year To</label>
+                <select value={form.academic_year_to} onChange={(e) => setForm({ ...form, academic_year_to: e.target.value })} className="w-full border rounded-lg px-4 py-3 bg-white">
+                  <option value="">Select end year</option>
+                  {Array.from({ length: 4 }, (_, i) => new Date().getFullYear() + i + 1).map((year) => <option key={year} value={String(year)} disabled={Boolean(form.academic_year_from) && Number(year) <= Number(form.academic_year_from)}>{year}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name</label>
+                <input type="text" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} placeholder="Enter parent name" className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Contact</label>
+                <input type="text" inputMode="numeric" maxLength={10} value={form.secondary_contact} onChange={(e) => setForm({ ...form, secondary_contact: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder="Enter secondary contact" className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                <input type="text" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Enter reference" maxLength={150} className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
 
               <div className="md:col-span-2">

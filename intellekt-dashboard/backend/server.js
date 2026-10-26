@@ -3314,6 +3314,8 @@ app.post('/students', async (req, res) => {
 
 	try {
 		const {
+			enquiry_id,
+			admission_token,
 			roll_no,
 			name,
 			class: className,
@@ -3353,6 +3355,19 @@ app.post('/students', async (req, res) => {
 		}
 
 		await client.query('BEGIN');
+
+		if (enquiry_id) {
+			const admissionLock = await client.query(
+				`SELECT id FROM enquiries
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 FOR UPDATE`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admissionLock.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+			}
+		}
 
 		const duplicateRoll = await client.query(
 			'SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
@@ -3445,11 +3460,26 @@ app.post('/students', async (req, res) => {
 			]
 		);
 
+		if (enquiry_id) {
+			const admitted = await client.query(
+				`UPDATE enquiries
+				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 RETURNING id`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admitted.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+			}
+		}
+
 		await client.query('COMMIT');
 
 		res.status(201).json({
 			message: 'Student added successfully',
-			roll_no: newRoll
+			roll_no: newRoll,
+			admitted_enquiry_id: enquiry_id || null
 		});
 	} catch (err) {
 		await client.query('ROLLBACK');
@@ -4264,9 +4294,79 @@ app.delete('/faculty-tasks/:id', async (req, res) => {
 /* =========================================================
 	ENQUIRIES
 	========================================================= */
+app.get('/enquiries/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id,enq_id,student_name,mobile_number,class_board,school_name,subjects,
+              academic_year_from,academic_year_to,batch,date_of_birth,parent_name,
+              secondary_contact,reference,status,comment,reason,created_at,admission_started_at
+       FROM enquiries WHERE id=$1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Enquiry not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /enquiries/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch enquiry' });
+  }
+});
+
+app.post('/enquiries/:id/admission/start', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  if (!token || token.length > 200) return res.status(400).json({ error: 'A valid admission session token is required' });
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
+       WHERE id=$1
+         AND (
+           status='Pending'
+           OR (status='Admission In Progress' AND admission_token=$2)
+           OR (status='Admission In Progress' AND admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+         )
+       RETURNING id,batch,status,admission_started_at`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'This enquiry is already admitted or another admin is currently processing it. Try again after the current admission is cancelled or expires.' });
+    }
+    res.json({ success: true, enquiry: result.rows[0] });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/start error:', err);
+    res.status(500).json({ error: 'Failed to start admission' });
+  }
+});
+
+app.post('/enquiries/:id/admission/cancel', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Pending', admission_token=NULL, admission_started_at=NULL
+       WHERE id=$1 AND status='Admission In Progress'
+         AND (admission_token=$2 OR admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes')
+       RETURNING id`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'Admission could not be cancelled because it is no longer yours to cancel or is being processed by another admin.' });
+    }
+    res.json({ success: true, status: 'Pending' });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel admission' });
+  }
+});
+
 app.put('/enquiries/:id', async (req, res) => {
 	const { id } = req.params;
 	const { status, comment, reason } = req.body;
+
+	if (!['Pending'].includes(String(status || 'Pending'))) {
+		return res.status(400).json({ success: false, error: 'Use the admission workflow to change an enquiry to Admitted.' });
+	}
 
 	try {
 		const result = await pool.query(
@@ -4274,8 +4374,10 @@ app.put('/enquiries/:id', async (req, res) => {
 		UPDATE enquiries
 		SET status = $1,
 			comment = $2,
-			reason = $3
-		WHERE id = $4
+			reason = $3,
+			admission_token = NULL,
+			admission_started_at = NULL
+		WHERE id = $4 AND status <> 'Admitted'
 		RETURNING *
 		`,
 			[ status || 'Pending', comment || null, reason || null, id ]
@@ -4480,7 +4582,8 @@ app.get('/enquiries', async (req, res) => {
 			comment,
 			reason,
 			area,
-			reference
+			reference,
+			admission_started_at
 		FROM enquiries
 		ORDER BY created_at DESC
 		`);
@@ -6894,6 +6997,7 @@ app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (re
 
     const result = await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
       's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
       'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
       where + ' ORDER BY s.roll_no ASC',
@@ -6938,13 +7042,22 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
 
   try {
     const {
+      enquiry_id, admission_token, roll_no,
       name, class: className, board, mode_of_education,
-      phone, email, school_name, password, test_series_id, subjects
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
     } = req.body || {};
 
+    const cleanRollNo = String(roll_no || '').trim().toUpperCase();
+    if (!cleanRollNo) return res.status(400).json({ error:'Roll number is required; enter it manually.' });
+    if (!/^IAT[0-9]{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Test Batch roll number must use the IAT format, for example IAT014.' });
     if (!name || !className || !test_series_id || !subjects) {
-      return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+      return res.status(400).json({ error:'Roll number, student name, class, subjects and test series are required' });
     }
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
 
     const validSubjects = validateTestBatchSubjects(subjects);
     if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
@@ -6958,15 +7071,37 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
 
     await client.query('BEGIN');
 
-    const rollNo = await generateNextTestBatchRollNo(client);
+    if (enquiry_id) {
+      const admissionLock = await client.query(
+        `SELECT id FROM enquiries
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         FOR UPDATE`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admissionLock.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+      }
+    }
+
+    const duplicateRoll = await client.query(
+      'SELECT 1 FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [cleanRollNo]
+    );
+    if (duplicateRoll.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'This Test Batch roll number already exists. Please enter a different roll number.' });
+    }
+
+    const rollNo = cleanRollNo;
     const finalPassword = password && String(password).trim()
       ? String(password).trim()
       : rollNo;
 
     const inserted = await client.query(
       'INSERT INTO test_batch_students ' +
-      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12) ON CONFLICT DO NOTHING RETURNING roll_no',
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to,parent_name,secondary_contact,reference) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING RETURNING roll_no',
       [
         rollNo,
         String(name).trim(),
@@ -6979,7 +7114,13 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
         validSubjects,
         finalPassword,
         Number(test_series_id),
-        req.testBatchAdminId
+        req.testBatchAdminId,
+        date_of_birth || null,
+        academic_year_from || null,
+        academic_year_to || null,
+        parent_name || null,
+        secondary_contact || null,
+        reference || null
       ]
     );
 
@@ -6997,8 +7138,22 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
       return res.status(409).json({ error:'Could not allocate a unique Test Batch roll number. Please retry.' });
     }
 
+    if (enquiry_id) {
+      const admitted = await client.query(
+        `UPDATE enquiries
+         SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         RETURNING id`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admitted.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+      }
+    }
+
     await client.query('COMMIT');
-    res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo });
+    res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo, admitted_enquiry_id:enquiry_id || null });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /test-batch/students error:', err);
@@ -7017,10 +7172,15 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, 
     const oldRoll = String(req.params.roll_no).toUpperCase().trim();
     const {
       name, class: className, board, mode_of_education,
-      phone, email, school_name, password, test_series_id, subjects
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
     } = req.body || {};
 
     if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
     const validSubjects = validateTestBatchSubjects(subjects);
     if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
     if (!await validateTestBatchSeries(test_series_id)) return res.status(400).json({ error:'Invalid Test Series' });
@@ -7046,19 +7206,27 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, 
       email ? String(email).trim() : null,
       school_name ? String(school_name).trim() : null,
       validSubjects,
-      Number(test_series_id)
+      Number(test_series_id),
+      date_of_birth || null,
+      academic_year_from || null,
+      academic_year_to || null,
+      parent_name || null,
+      secondary_contact || null,
+      reference || null
     ];
 
     let query =
       'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
-      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,updated_at=CURRENT_TIMESTAMP';
+      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,date_of_birth=$10,' +
+      'academic_year_from=$11,academic_year_to=$12,parent_name=$13,secondary_contact=$14,reference=$15,' +
+      'updated_at=CURRENT_TIMESTAMP';
 
     if (password && String(password).trim()) {
       values.push(String(password).trim(), oldRoll);
-      query += ',password=$10,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$11 RETURNING roll_no';
+      query += ',password=$16,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$17 RETURNING roll_no';
     } else {
       values.push(oldRoll);
-      query += ' WHERE UPPER(TRIM(roll_no))=$10 RETURNING roll_no';
+      query += ' WHERE UPPER(TRIM(roll_no))=$16 RETURNING roll_no';
     }
 
     const result = await client.query(query, values);
@@ -7499,6 +7667,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
 
     const studentResult=await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
       's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
       'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
       [roll]
@@ -7763,6 +7932,20 @@ async function ensureStudentDeviceTokensTable() {
 registerRecordEditRoutes(app, pool);
 
 async function startServer() {
+  await pool.query(`
+    ALTER TABLE public.enquiries
+      ADD COLUMN IF NOT EXISTS admission_token TEXT,
+      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    ALTER TABLE public.test_batch_students
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
   await ensureStudentDeviceTokensTable();
 
   const facultyNotificationService = require('./faculty-notification-service');

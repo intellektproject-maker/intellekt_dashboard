@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useState, Suspense } from "react";
 import TestBatchManager from "../../test-batch/components/TestBatchManager";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 const API_BASE = "https://responsible-wonder-production.up.railway.app";
 const STUDENTS_PER_PAGE = 10;
 
 function ManageStudentsPageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const facultyId = searchParams.get("id");
+  const admissionEnquiryId = searchParams.get("admitEnquiryId") || "";
+  const admissionToken = searchParams.get("admissionToken") || "";
 
   const [students, setStudents] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -25,6 +28,7 @@ const [boardFilter, setBoardFilter] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [rollNoCheck, setRollNoCheck] = useState({ checking: false, exists: false, message: "" });
   const [showStudentPopup, setShowStudentPopup] = useState(false);
+  const [prefillLoadedId, setPrefillLoadedId] = useState("");
   const [showExportPopup, setShowExportPopup] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -53,6 +57,64 @@ const [boardFilter, setBoardFilter] = useState("");
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    if (!admissionEnquiryId || !admissionToken || !subjects.length || prefillLoadedId === admissionEnquiryId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}`, { cache: "no-store" });
+        const enquiry = await res.json();
+        if (!res.ok) throw new Error(enquiry.error || "Failed to load enquiry details");
+        if (enquiry.batch === "Test Batch") throw new Error("This enquiry belongs to Test Batch. Open the Test Batch student form.");
+        const combined = String(enquiry.class_board || "");
+        const dash = combined.lastIndexOf("-");
+        const board = dash >= 0 ? combined.slice(0, dash).trim() : "";
+        const classValue = dash >= 0 ? combined.slice(dash + 1).trim() : "";
+        const wanted = String(enquiry.subjects || "").toLowerCase();
+        const subjectIds = [];
+        const math = subjects.find((s) => String(s.subject_name || "").toLowerCase().includes("math"));
+        const physics = subjects.find((s) => String(s.subject_name || "").toLowerCase().includes("physics"));
+        if (wanted.includes("both")) {
+          if (math) subjectIds.push(Number(math.subject_id));
+          if (physics) subjectIds.push(Number(physics.subject_id));
+        } else {
+          if (wanted.includes("math") && math) subjectIds.push(Number(math.subject_id));
+          if (wanted.includes("phys") && physics) subjectIds.push(Number(physics.subject_id));
+        }
+        if (cancelled) return;
+        setForm({
+          roll_no: "",
+          name: enquiry.student_name || "",
+          class: classValue,
+          board,
+          date_of_birth: enquiry.date_of_birth ? String(enquiry.date_of_birth).slice(0, 10) : "",
+          batch: "Regular Batch",
+          academic_year_from: enquiry.academic_year_from ? String(enquiry.academic_year_from) : "",
+          academic_year_to: enquiry.academic_year_to ? String(enquiry.academic_year_to) : "",
+          parent_name: enquiry.parent_name || "",
+          secondary_contact: String(enquiry.secondary_contact || "").replace(/\D/g, "").slice(0, 10),
+          reference: "",
+          phone: String(enquiry.mobile_number || "").replace(/\D/g, "").slice(0, 10),
+          email: "",
+          school_name: enquiry.school_name || "",
+          password: "",
+          subject_ids: subjectIds,
+          total_fee: "",
+          fee_paid: "",
+          next_due: "",
+        });
+        setEditingRollNo(null);
+        setPhoneError("");
+        setRollNoCheck({ checking: false, exists: false, message: "" });
+        setShowStudentPopup(true);
+        setPrefillLoadedId(admissionEnquiryId);
+      } catch (err) {
+        if (!cancelled) alert(err.message || "Failed to prefill student form");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [admissionEnquiryId, admissionToken, subjects, prefillLoadedId]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -152,9 +214,28 @@ const [boardFilter, setBoardFilter] = useState("");
     setShowStudentPopup(true);
   }
 
-  function closeStudentPopup() {
+  async function restoreAdmissionToPending() {
+    if (!admissionEnquiryId || !admissionToken) return;
+    try {
+      const res = await fetch(`${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}/admission/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admission_token: admissionToken }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error("Could not restore enquiry to Pending:", data.error);
+      }
+    } catch (err) {
+      console.error("Could not restore enquiry to Pending:", err);
+    }
+  }
+
+  async function closeStudentPopup() {
+    await restoreAdmissionToPending();
     resetForm();
     setShowStudentPopup(false);
+    if (admissionEnquiryId) router.replace(`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId || "")}`);
   }
 
   function validatePhone(phoneValue) {
@@ -203,6 +284,9 @@ const [boardFilter, setBoardFilter] = useState("");
     setForm((prev) => ({
       ...prev,
       [name]: value,
+      ...(name === "roll_no" && (!prev.password || prev.password === prev.roll_no)
+        ? { password: value }
+        : {}),
     }));
   }
 
@@ -329,6 +413,18 @@ return searchMatch && classMatch && boardMatch;
   async function handleSubmit(e) {
     e.preventDefault();
 
+    if (admissionEnquiryId && admissionToken) {
+      try {
+        const reserve = await fetch(`${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}/admission/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ admission_token: admissionToken }),
+        });
+        const reserveData = await reserve.json().catch(() => ({}));
+        if (!reserve.ok) { alert(reserveData.error || "Admission session is no longer active"); return; }
+      } catch { alert("Unable to resume admission. Please try again."); return; }
+    }
+
     if (
       !form.roll_no.trim() ||
       !form.name.trim() ||
@@ -339,6 +435,7 @@ return searchMatch && classMatch && boardMatch;
       !form.school_name.trim() ||
       !form.password.trim()
     ) {
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert("Please fill all student details");
       return;
     }
@@ -347,6 +444,7 @@ return searchMatch && classMatch && boardMatch;
       String(student.roll_no || "").trim().toLowerCase() === form.roll_no.trim().toLowerCase()
     )) {
       setRollNoCheck({ checking: false, exists: true, message: "This roll number already exists. Please enter a different roll number." });
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert("This roll number already exists. Please enter a different roll number.");
       return;
     }
@@ -354,11 +452,13 @@ return searchMatch && classMatch && boardMatch;
     const finalPhoneError = validatePhone(form.phone);
     if (finalPhoneError) {
       setPhoneError(finalPhoneError);
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert(finalPhoneError);
       return;
     }
 
     if (form.subject_ids.length === 0) {
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert("Please select at least one subject");
       return;
     }
@@ -377,7 +477,9 @@ return searchMatch && classMatch && boardMatch;
         academic_year_to: form.academic_year_to || null,
         parent_name: form.parent_name.trim(),
         secondary_contact: form.secondary_contact.trim(),
-        reference: form.reference.trim(),
+        reference: editingRollNo ? form.reference.trim() : "",
+        enquiry_id: admissionEnquiryId || null,
+        admission_token: admissionToken || null,
         phone: form.phone.trim(),
         email: form.email.trim(),
         school_name: form.school_name.trim(),
@@ -407,6 +509,7 @@ return searchMatch && classMatch && boardMatch;
       const data = await res.json();
 
       if (!res.ok) {
+        if (admissionEnquiryId) await restoreAdmissionToPending();
         alert(data.details || data.error || "Failed to save student");
         return;
       }
@@ -417,10 +520,13 @@ return searchMatch && classMatch && boardMatch;
           : "Student added successfully"
       );
 
-      closeStudentPopup();
+      resetForm();
+      setShowStudentPopup(false);
+      if (admissionEnquiryId) router.replace(`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId || "")}`);
       await loadInitialData();
     } catch (err) {
       console.error("Save error:", err);
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert("Something went wrong while saving student");
     } finally {
       setSaving(false);
@@ -1144,11 +1250,6 @@ setBoardFilter("");
                 <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Contact</label>
                 <input type="tel" name="secondary_contact" value={form.secondary_contact} onChange={(e) => setForm((prev) => ({...prev, secondary_contact: e.target.value.replace(/\D/g, "").slice(0, 10)}))} inputMode="numeric" maxLength={10} placeholder="Enter secondary contact" className="w-full border rounded-lg px-4 py-3" />
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                <input type="text" name="reference" value={form.reference} onChange={handleInputChange} placeholder="Enter reference" maxLength={100} className="w-full border rounded-lg px-4 py-3" />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone
