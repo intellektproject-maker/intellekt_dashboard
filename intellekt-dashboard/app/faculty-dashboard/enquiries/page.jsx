@@ -543,12 +543,12 @@ const filteredData = useMemo(() => {
       {admissionInProgress.length > 0 && (
         <div className="mb-6 rounded-xl bg-amber-50 p-4 shadow-sm border border-amber-200">
           <h3 className="text-lg font-semibold text-amber-900">Admissions in progress</h3>
-          <p className="mt-1 text-sm text-amber-800">These enquiries are hidden from the active list. If a browser closes unexpectedly, an admission can be resumed or cancelled after 5 minutes.</p>
+          <p className="mt-1 text-sm text-amber-800">These enquiries are hidden from the active list. If a browser closes unexpectedly, an admission can be resumed or cancelled after 30 minutes.</p>
           <div className="mt-3 overflow-x-auto"><table className="min-w-full text-sm">
             <thead className="bg-amber-100 text-amber-900"><tr><th className="px-3 py-2 text-left">Enquiry</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Batch</th><th className="px-3 py-2 text-left">Started</th><th className="px-3 py-2 text-left">Actions</th></tr></thead>
             <tbody>{admissionInProgress.map((item) => {
-              const ageMinutes = item.admission_started_at ? (Date.now() - new Date(item.admission_started_at).getTime()) / 60000 : 6;
-              const canRecover = !Number.isFinite(ageMinutes) || ageMinutes >= 5;
+              const ageMinutes = item.admission_started_at ? (Date.now() - new Date(item.admission_started_at).getTime()) / 60000 : 31;
+              const canRecover = !Number.isFinite(ageMinutes) || ageMinutes >= 30;
               return <tr key={item.id} className="border-b border-amber-200">
                 <td className="px-3 py-2">{item.enq_id || item.id}</td><td className="px-3 py-2">{item.student_name || '-'}</td><td className="px-3 py-2">{item.batch || 'Regular Batch'}</td><td className="px-3 py-2">{item.admission_started_at ? new Date(item.admission_started_at).toLocaleString('en-IN') : '-'}</td>
                 <td className="px-3 py-2"><div className="flex flex-wrap gap-2">
