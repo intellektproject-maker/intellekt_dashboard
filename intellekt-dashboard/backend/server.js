@@ -4583,7 +4583,8 @@ app.get('/enquiries', async (req, res) => {
 			comment,
 			reason,
 			area,
-			reference
+			reference,
+			admission_started_at
 		FROM enquiries
 		ORDER BY created_at DESC
 		`);
