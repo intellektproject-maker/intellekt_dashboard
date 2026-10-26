@@ -6998,7 +6998,8 @@ app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (re
 
     const result = await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
-      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
       'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
       where + ' ORDER BY s.roll_no ASC',
       values
@@ -7045,7 +7046,8 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
       enquiry_id, admission_token, roll_no,
       name, class: className, board, mode_of_education,
       phone, email, school_name, password, test_series_id, subjects,
-      date_of_birth, academic_year_from, academic_year_to
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
     } = req.body || {};
 
     const cleanRollNo = String(roll_no || '').trim().toUpperCase();
@@ -7099,8 +7101,8 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
 
     const inserted = await client.query(
       'INSERT INTO test_batch_students ' +
-      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15) ON CONFLICT DO NOTHING RETURNING roll_no',
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to,parent_name,secondary_contact,reference) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING RETURNING roll_no',
       [
         rollNo,
         String(name).trim(),
@@ -7116,7 +7118,10 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
         req.testBatchAdminId,
         date_of_birth || null,
         academic_year_from || null,
-        academic_year_to || null
+        academic_year_to || null,
+        parent_name || null,
+        secondary_contact || null,
+        reference || null
       ]
     );
 
@@ -7169,7 +7174,8 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, 
     const {
       name, class: className, board, mode_of_education,
       phone, email, school_name, password, test_series_id, subjects,
-      date_of_birth, academic_year_from, academic_year_to
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
     } = req.body || {};
 
     if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
@@ -7204,20 +7210,24 @@ app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, 
       Number(test_series_id),
       date_of_birth || null,
       academic_year_from || null,
-      academic_year_to || null
+      academic_year_to || null,
+      parent_name || null,
+      secondary_contact || null,
+      reference || null
     ];
 
     let query =
       'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
       'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,date_of_birth=$10,' +
-      'academic_year_from=$11,academic_year_to=$12,updated_at=CURRENT_TIMESTAMP';
+      'academic_year_from=$11,academic_year_to=$12,parent_name=$13,secondary_contact=$14,reference=$15,' +
+      'updated_at=CURRENT_TIMESTAMP';
 
     if (password && String(password).trim()) {
       values.push(String(password).trim(), oldRoll);
-      query += ',password=$13,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$14 RETURNING roll_no';
+      query += ',password=$16,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$17 RETURNING roll_no';
     } else {
       values.push(oldRoll);
-      query += ' WHERE UPPER(TRIM(roll_no))=$13 RETURNING roll_no';
+      query += ' WHERE UPPER(TRIM(roll_no))=$16 RETURNING roll_no';
     }
 
     const result = await client.query(query, values);
@@ -7658,7 +7668,8 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
 
     const studentResult=await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
-      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
       'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
       [roll]
     );
@@ -7931,7 +7942,10 @@ async function startServer() {
     ALTER TABLE public.test_batch_students
       ADD COLUMN IF NOT EXISTS date_of_birth DATE,
       ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
-      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4)
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
   `);
   await ensureStudentDeviceTokensTable();
 
