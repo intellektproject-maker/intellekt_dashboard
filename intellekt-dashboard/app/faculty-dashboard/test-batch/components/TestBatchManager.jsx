@@ -83,6 +83,9 @@ function StudentsSection({ adminId }) {
     phone: "",
     email: "",
     school_name: "",
+    parent_name: "",
+    secondary_contact: "",
+    reference: "",
     password: "",
     date_of_birth: "",
     academic_year_from: "",
@@ -156,6 +159,9 @@ function StudentsSection({ adminId }) {
           phone: String(enquiry.mobile_number || "").replace(/\D/g, "").slice(0, 10),
           email: "",
           school_name: enquiry.school_name || "",
+          parent_name: enquiry.parent_name || "",
+          secondary_contact: String(enquiry.secondary_contact || "").replace(/\D/g, "").slice(0, 10),
+          reference: enquiry.reference || "",
           password: "",
           date_of_birth: enquiry.date_of_birth ? String(enquiry.date_of_birth).slice(0, 10) : "",
           academic_year_from: enquiry.academic_year_from ? String(enquiry.academic_year_from) : "",
@@ -189,6 +195,9 @@ function StudentsSection({ adminId }) {
         phone: "",
       email: "",
       school_name: "",
+      parent_name: "",
+      secondary_contact: "",
+      reference: "",
       password: "",
       date_of_birth: "",
       academic_year_from: "",
@@ -222,6 +231,9 @@ function StudentsSection({ adminId }) {
       phone: s.phone || "",
       email: s.email || "",
       school_name: s.school_name || "",
+      parent_name: s.parent_name || "",
+      secondary_contact: s.secondary_contact || "",
+      reference: s.reference || "",
       password: "",
       date_of_birth: s.date_of_birth ? String(s.date_of_birth).slice(0, 10) : "",
       academic_year_from: s.academic_year_from ? String(s.academic_year_from) : "",
@@ -655,6 +667,19 @@ function StudentsSection({ adminId }) {
                   <option value="">Select end year</option>
                   {Array.from({ length: 4 }, (_, i) => new Date().getFullYear() + i + 1).map((year) => <option key={year} value={String(year)} disabled={Boolean(form.academic_year_from) && Number(year) <= Number(form.academic_year_from)}>{year}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Name</label>
+                <input type="text" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} placeholder="Enter parent name" className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Contact</label>
+                <input type="text" inputMode="numeric" maxLength={10} value={form.secondary_contact} onChange={(e) => setForm({ ...form, secondary_contact: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder="Enter secondary contact" className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                <input type="text" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="Enter reference" maxLength={150} className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
 
               <div className="md:col-span-2">
