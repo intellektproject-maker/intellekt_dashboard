@@ -263,3 +263,13 @@ END $$;
 -- Backward-compatible migration for the Test Batch writing deadline.
 ALTER TABLE test_batch_tests
   ADD COLUMN IF NOT EXISTS writing_close_date DATE;
+
+-- Enquiry-to-admission workflow and Test Batch profile fields.
+ALTER TABLE public.enquiries
+  ADD COLUMN IF NOT EXISTS admission_token TEXT,
+  ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ;
+
+ALTER TABLE public.test_batch_students
+  ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+  ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+  ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4);
