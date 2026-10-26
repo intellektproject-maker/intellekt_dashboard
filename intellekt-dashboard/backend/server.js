@@ -4526,12 +4526,11 @@ app.post('/enquiries', async (req, res) => {
 			parent_name,
 			secondary_contact,
 			area,
-			mode_of_education,
 			reference,
 			batch,
 			date_of_birth
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING *
 		`,
 			[
@@ -4545,7 +4544,6 @@ app.post('/enquiries', async (req, res) => {
 				parentName,
 				cleanSecondary,
 				null, // area is optional on the public enquiry form
-				null, // mode_of_education is optional and must satisfy the database CHECK when provided
 				reference || null,
 				String(batch).trim(),
 				cleanDateOfBirth
@@ -4572,7 +4570,6 @@ app.get('/enquiries', async (req, res) => {
 			subjects,
 			academic_year_from,
 			academic_year_to,
-			mode_of_education,
 			batch,
 			date_of_birth,
 			parent_name,
