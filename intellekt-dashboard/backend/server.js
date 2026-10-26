@@ -4323,7 +4323,7 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
          AND (
            status='Pending'
            OR (status='Admission In Progress' AND admission_token=$2)
-           OR (status='Admission In Progress' AND admission_started_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+           OR (status='Admission In Progress' AND admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes')
          )
        RETURNING id,batch,status,admission_started_at`,
       [id, token]
@@ -4346,7 +4346,7 @@ app.post('/enquiries/:id/admission/cancel', async (req, res) => {
       `UPDATE enquiries
        SET status='Pending', admission_token=NULL, admission_started_at=NULL
        WHERE id=$1 AND status='Admission In Progress'
-         AND (admission_token=$2 OR admission_started_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+         AND (admission_token=$2 OR admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes')
        RETURNING id`,
       [id, token]
     );
