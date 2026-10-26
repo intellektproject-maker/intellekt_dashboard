@@ -3463,7 +3463,7 @@ app.post('/students', async (req, res) => {
 		if (enquiry_id) {
 			const admitted = await client.query(
 				`UPDATE enquiries
-				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
+				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
 				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
 				 RETURNING id`,
 				[enquiry_id, String(admission_token || '')]
@@ -4318,8 +4318,7 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE enquiries
-       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP,
-           comment=NULL, reason=NULL
+       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
        WHERE id=$1
          AND (
            status='Pending'
