@@ -278,7 +278,34 @@ export default function EnquiriesPage() {
     }
   }
 
+  async function handleAdmit(item, admissionToken = null) {
+    const token = admissionToken || (window.crypto?.randomUUID ? window.crypto.randomUUID() : `admission-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    try {
+      const res = await fetch(`${API_BASE}/enquiries/${item.id}/admission/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admission_token: token }) });
+      const result = await res.json();
+      if (!res.ok) { alert(result.error || 'Could not start admission'); return; }
+      const params = new URLSearchParams({ id: new URLSearchParams(window.location.search).get('id') || 'IG001', admitEnquiryId: String(item.id), admissionToken: token });
+      if (item.batch === 'Test Batch') { params.set('section', 'students'); window.location.href = `/faculty-dashboard/test-batch?${params.toString()}`; }
+      else { window.location.href = `/faculty-dashboard/manage/students?${params.toString()}`; }
+    } catch (err) { console.error('Start admission error:', err); alert('Unable to start admission. Please try again.'); }
+  }
+
+  async function handleCancelAdmission(item) {
+    if (!window.confirm(`Return enquiry ${item.enq_id || item.id} to Pending?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/enquiries/${item.id}/admission/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admission_token: '' }) });
+      const result = await res.json();
+      if (!res.ok) { alert(result.error || 'Could not cancel this admission'); return; }
+      await loadData();
+    } catch (err) { console.error('Cancel admission error:', err); alert('Unable to cancel admission. Please try again.'); }
+  }
+
   async function handleUpdate(id, status, comment) {
+    if (status === 'Admitted') {
+      const item = data.find((entry) => String(entry.id) === String(id));
+      if (item) await handleAdmit(item);
+      return;
+    }
     if (status === 'Rejected') {
       await handleDelete(id);
       return;
@@ -331,9 +358,12 @@ export default function EnquiriesPage() {
       setPhoneFilterError('');
     }
   }
+const admissionInProgress = useMemo(() => data.filter((item) => item.status === 'Admission In Progress'), [data]);
+
 const filteredData = useMemo(() => {
   return data
     .filter((item) => {
+      if (item.status === 'Admission In Progress' || item.status === 'Admitted') return false;
       const itemClass = getClassValue(item.class_board);
       const itemBoard = getBoardValue(item.class_board);
       const itemStatus = (item.status || 'Pending').trim();
@@ -496,7 +526,7 @@ const filteredData = useMemo(() => {
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-700"
           >
             <option value="">All Status</option>
-            <option value="Admitted">Admitted</option>
+            <option value="Admitted">Admit / Create Student</option>
             <option value="Rejected">Rejected</option>
             <option value="Pending">Pending</option>
           </select>
@@ -509,6 +539,26 @@ const filteredData = useMemo(() => {
           </button>
         </div>
       </div>
+
+      {admissionInProgress.length > 0 && (
+        <div className="mb-6 rounded-xl bg-amber-50 p-4 shadow-sm border border-amber-200">
+          <h3 className="text-lg font-semibold text-amber-900">Admissions in progress</h3>
+          <p className="mt-1 text-sm text-amber-800">These enquiries are hidden from the active list. If a browser closes unexpectedly, an admission can be resumed or cancelled after 30 minutes.</p>
+          <div className="mt-3 overflow-x-auto"><table className="min-w-full text-sm">
+            <thead className="bg-amber-100 text-amber-900"><tr><th className="px-3 py-2 text-left">Enquiry</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Batch</th><th className="px-3 py-2 text-left">Started</th><th className="px-3 py-2 text-left">Actions</th></tr></thead>
+            <tbody>{admissionInProgress.map((item) => {
+              const ageMinutes = item.admission_started_at ? (Date.now() - new Date(item.admission_started_at).getTime()) / 60000 : 31;
+              const canRecover = !Number.isFinite(ageMinutes) || ageMinutes >= 30;
+              return <tr key={item.id} className="border-b border-amber-200">
+                <td className="px-3 py-2">{item.enq_id || item.id}</td><td className="px-3 py-2">{item.student_name || '-'}</td><td className="px-3 py-2">{item.batch || 'Regular Batch'}</td><td className="px-3 py-2">{item.admission_started_at ? new Date(item.admission_started_at).toLocaleString('en-IN') : '-'}</td>
+                <td className="px-3 py-2"><div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={!canRecover} onClick={() => handleAdmit(item)} className="rounded-md bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Resume</button>
+                  <button type="button" disabled={!canRecover} onClick={() => handleCancelAdmission(item)} className="rounded-md border border-amber-400 bg-white px-3 py-2 text-amber-900 disabled:opacity-50">Return to Pending</button>
+                </div></td>
+              </tr>;
+            })}</tbody></table></div>
+        </div>
+      )}
 
       <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
         <div className="overflow-x-auto">
@@ -544,7 +594,7 @@ const filteredData = useMemo(() => {
                 </tr>
               ) : (
                 paginatedData.map((item) => (
-                  <Row key={item.id} item={item} onSave={handleUpdate} />
+                  <Row key={item.id} item={item} onSave={handleUpdate} onAdmit={handleAdmit} />
                 ))
               )}
             </tbody>
@@ -677,7 +727,7 @@ function isSavedEnquiry(item) {
   return savedStatus || savedPendingReason;
 }
 
-function Row({ item, onSave }) {
+function Row({ item, onSave, onAdmit }) {
   const [status, setStatus] = useState(item.status || 'Pending');
   const [comment, setComment] = useState(item.comment || item.reason || '');
   const [isEditing, setIsEditing] = useState(!isSavedEnquiry(item));
@@ -699,6 +749,7 @@ function Row({ item, onSave }) {
       return;
     }
 
+    if (status === 'Admitted') { onAdmit(item); return; }
     onSave(item.id, status, status === 'Pending' ? comment : '');
   }
 
