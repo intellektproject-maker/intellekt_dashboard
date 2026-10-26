@@ -477,7 +477,7 @@ return searchMatch && classMatch && boardMatch;
         academic_year_to: form.academic_year_to || null,
         parent_name: form.parent_name.trim(),
         secondary_contact: form.secondary_contact.trim(),
-        reference: "",
+        reference: editingRollNo ? form.reference.trim() : "",
         enquiry_id: admissionEnquiryId || null,
         admission_token: admissionToken || null,
         phone: form.phone.trim(),
