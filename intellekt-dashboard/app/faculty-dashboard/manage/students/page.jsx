@@ -526,6 +526,7 @@ return searchMatch && classMatch && boardMatch;
       await loadInitialData();
     } catch (err) {
       console.error("Save error:", err);
+      if (admissionEnquiryId) await restoreAdmissionToPending();
       alert("Something went wrong while saving student");
     } finally {
       setSaving(false);
