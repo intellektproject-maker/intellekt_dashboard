@@ -672,7 +672,7 @@ export default function Home() {
     >
       <option value="">Select subject</option>
       <option value="Physics">Physics</option>
-      <option value="Math">Math</option>
+      <option value="Maths">Maths</option>
       <option value="Both">Both</option>
     </select>
   </div>
