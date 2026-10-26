@@ -272,4 +272,7 @@ ALTER TABLE public.enquiries
 ALTER TABLE public.test_batch_students
   ADD COLUMN IF NOT EXISTS date_of_birth DATE,
   ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
-  ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4);
+  ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+  ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS reference VARCHAR(150);
