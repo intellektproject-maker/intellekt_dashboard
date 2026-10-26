@@ -7932,10 +7932,21 @@ async function ensureStudentDeviceTokensTable() {
 registerRecordEditRoutes(app, pool);
 
 async function startServer() {
+  // Keep public enquiry submissions compatible with databases created before
+  // the latest enquiry form fields were introduced.
   await pool.query(`
     ALTER TABLE public.enquiries
       ADD COLUMN IF NOT EXISTS admission_token TEXT,
-      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ
+      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS batch VARCHAR(30) DEFAULT 'Regular Batch',
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS area VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS mode_of_education VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
   `);
   await pool.query(`
     ALTER TABLE public.test_batch_students
