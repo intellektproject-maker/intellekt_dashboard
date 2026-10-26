@@ -4544,8 +4544,8 @@ app.post('/enquiries', async (req, res) => {
 				cleanAcademicYearTo,
 				parentName,
 				cleanSecondary,
-				'',
-				'',
+				null, // area is optional on the public enquiry form
+				null, // mode_of_education is optional and must satisfy the database CHECK when provided
 				reference || null,
 				String(batch).trim(),
 				cleanDateOfBirth
