@@ -248,6 +248,7 @@ function StudentsSection({ adminId }) {
       }
       if (!editing && !form.roll_no.trim()) throw new Error("Roll number is required; enter it manually.");
       if (!editing && !/^IAT[0-9]{3,}$/i.test(form.roll_no.trim())) throw new Error("Test Batch roll number must use the IAT format, for example IAT014.");
+      if (!editing && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase())) throw new Error("This Test Batch roll number already exists. Please enter a different roll number.");
       if (!form.name.trim()) throw new Error("Student name is required");
       if (!form.class) throw new Error("Select a class");
       if (!form.subjects) throw new Error("Select at least one subject");
@@ -312,7 +313,6 @@ function StudentsSection({ adminId }) {
         });
       } catch (e) {
         setError(e.message);
-        return;
       }
       router.replace("/faculty-dashboard/test-batch?id=" + encodeURIComponent(adminId) + "&section=students");
     }
@@ -354,7 +354,7 @@ function StudentsSection({ adminId }) {
             <h3 className="text-lg font-semibold text-gray-800">Test Batch Student Records</h3>
             <p className="text-sm text-gray-500 mt-1">
               Add students with the same profile information used in Regular Student management.
-              Roll numbers are generated automatically as IAT001, IAT002, IAT003...
+              Roll numbers must be entered manually and must be unique. Select the Test Series for each student.
             </p>
             <a
               href={"/faculty-dashboard/test-batch/student-record?id=" + encodeURIComponent(adminId)}
@@ -545,9 +545,9 @@ function StudentsSection({ adminId }) {
                   disabled={Boolean(editing)}
                   required={!editing}
                   placeholder="Enter roll number (e.g., IAT014)"
-                  className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100 ${!editing && form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "border-red-500" : ""}`}
                 />
-                {!editing && <p className="text-xs text-gray-500 mt-1">Enter a unique Test Batch roll number manually.</p>}
+                {!editing && <p className={`text-xs mt-1 ${form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "text-red-600" : "text-gray-500"}`}>{form.roll_no.trim() && students.some((s) => String(s.roll_no || "").trim().toUpperCase() === form.roll_no.trim().toUpperCase()) ? "This roll number already exists. Enter a different roll number." : "Enter a unique Test Batch roll number manually."}</p>}
               </div>
 
               <div>
