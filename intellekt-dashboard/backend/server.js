@@ -1753,6 +1753,10 @@ app.get('/marks', async (req, res) => {
 	}
 });
 app.put('/marks/:roll_no/:test_code', async (req, res) => {
+  const editorId = String(req.get('x-admin-id') || req.body?.adminId || '').trim().toUpperCase();
+  if (!['IG001', 'IG002'].includes(editorId)) {
+    return res.status(403).json({ error: 'Faculty must obtain admin approval before editing marks.' });
+  }
 	const { roll_no, test_code } = req.params;
 	const { marks, comments } = req.body;
 
@@ -2343,6 +2347,10 @@ if (!subject && !isSundayMode) {
 	}
 });
 app.put('/attendance', async (req, res) => {
+  const editorId = String(req.get('x-admin-id') || req.body?.adminId || '').trim().toUpperCase();
+  if (!['IG001', 'IG002'].includes(editorId)) {
+    return res.status(403).json({ error: 'Faculty must obtain admin approval before editing attendance.' });
+  }
 	const { records, subject, facultyId } = req.body;
 	const selectedDate = req.body.date || req.body.attendanceDate;
 
@@ -7336,7 +7344,7 @@ app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,
   }
 });
 
-app.put('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
   try {
     const { test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
     const validation = validateTestBatchMarks(total_marks, marks_obtained);
@@ -7497,7 +7505,7 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
   }
 });
 
-app.put('/test-batch/attendance/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
   try {
     const status = String(req.body?.status || '').trim();
     if (!['Present','Absent'].includes(status)) {
