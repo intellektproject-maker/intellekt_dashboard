@@ -1620,12 +1620,7 @@ app.post('/marks', async (req, res) => {
 					total_marks
 				)
 				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (roll_no, test_code)
-				DO UPDATE SET
-					student_name = EXCLUDED.student_name,
-					marks_obtained = EXCLUDED.marks_obtained,
-					comments = EXCLUDED.comments,
-					total_marks = EXCLUDED.total_marks
+				ON CONFLICT (roll_no, test_code) DO NOTHING
 				`,
 				[
 					studentResult.rows[0].roll_no,
@@ -2204,6 +2199,10 @@ if (!subject && !isSundayMode) {
 
 	if (!facultyId) {
 		return res.status(400).json({ error: 'facultyId is required' });
+	}
+
+	if (overwrite && !['IG001', 'IG002'].includes(String(facultyId).trim().toUpperCase())) {
+		return res.status(403).json({ error: 'Faculty must obtain admin approval before editing existing attendance.' });
 	}
 
 	if (!selectedDate) {
@@ -7489,7 +7488,7 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
       await client.query(
         'INSERT INTO test_batch_attendance(roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at) ' +
         'VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,NULL,NULL) ' +
-        'ON CONFLICT(roll_no,attendance_date) DO UPDATE SET status=EXCLUDED.status,edited_by=EXCLUDED.marked_by,edited_at=CURRENT_TIMESTAMP',
+        'ON CONFLICT(roll_no,attendance_date) DO NOTHING',
         [roll,attendanceDate,status,req.testBatchAdminId]
       );
     }
