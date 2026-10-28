@@ -774,7 +774,24 @@ function MarksSection({ adminId }) {
     try{
       const p={...form,adminId,total_marks:Number(form.total_marks),marks_obtained:String(form.marks_obtained).trim()};
       if(!p.roll_no||!p.test_code||!p.subject_name||!p.total_marks||!p.marks_obtained)throw new Error("Student, test code, subject, total marks and obtained marks are required");
-      if(editingId)await api("/test-batch/marks/"+editingId,{method:"PUT",body:JSON.stringify(p)});else await api("/test-batch/marks",{method:"POST",body:JSON.stringify(p)});
+      if(editingId){
+        const record=marks.find((item)=>String(item.id)===String(editingId));
+        if(!record)throw new Error("Mark record not found. Refresh and try again.");
+        await api("/test-batch/record-edit-requests",{
+          method:"POST",
+          body:JSON.stringify({
+            facultyId:adminId,
+            recordType:"marks",
+            roll_no:record.roll_no,
+            test_code:record.test_code,
+            subject_name:record.subject_name,
+            requested_value:String(form.marks_obtained).trim()
+          })
+        });
+        window.alert("Edit request sent to the admin. The mark will remain unchanged until approval.");
+      }else{
+        await api("/test-batch/marks",{method:"POST",body:JSON.stringify(p)});
+      }
       reset();await loadMarks();
     }catch(e){setError(e.message)}
   }
@@ -790,7 +807,7 @@ function MarksSection({ adminId }) {
       <input className="border rounded-lg px-4 py-3" type="number" min="1" step="0.01" placeholder="Total Marks *" value={form.total_marks} onChange={e=>setForm({...form,total_marks:e.target.value})} required />
       <input className="border rounded-lg px-4 py-3" placeholder="Obtained Marks / A" value={form.marks_obtained} onChange={e=>setForm({...form,marks_obtained:e.target.value})} required />
       <input className="border rounded-lg px-4 py-3" placeholder="Comments" value={form.comments} onChange={e=>setForm({...form,comments:e.target.value})} />
-      <div className="md:col-span-2 lg:col-span-3 flex gap-3"><button className="bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">{editingId?"Update Mark":"Add Mark"}</button><button type="button" onClick={reset} className="bg-gray-200 px-6 py-3 rounded-lg">Reset</button></div>
+      <div className="md:col-span-2 lg:col-span-3 flex gap-3"><button className="bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">{editingId?"Request Edit Approval":"Add Mark"}</button><button type="button" onClick={reset} className="bg-gray-200 px-6 py-3 rounded-lg">Reset</button></div>
     </form><ErrorText error={error}/></Card>
     <Card>
       <div className="flex flex-wrap gap-3 mb-5"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input className="border rounded-lg px-4 py-2 flex-1 min-w-[220px]" placeholder="Search roll number or student" value={search} onChange={e=>setSearch(e.target.value)}/><input className="border rounded-lg px-4 py-2" placeholder="Test code" value={testFilter} onChange={e=>setTestFilter(e.target.value)}/><button onClick={loadMarks} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div>
@@ -906,12 +923,20 @@ function AttendanceSection({ adminId }) {
 
   async function editStatus(id,status){
     if(!status)return;
+    const row=rows.find((item)=>String(item.id)===String(id));
+    if(!row){setError("Attendance record not found. Refresh and try again.");return;}
     try{
-      await api("/test-batch/attendance/"+id,{
-        method:"PUT",
-        body:JSON.stringify({adminId,status})
+      await api("/test-batch/record-edit-requests",{
+        method:"POST",
+        body:JSON.stringify({
+          facultyId:adminId,
+          recordType:"attendance",
+          roll_no:row.roll_no,
+          attendance_date:String(row.attendance_date||date).slice(0,10),
+          requested_value:status
+        })
       });
-      await Promise.all([loadRows(),loadReport()]);
+      window.alert("Attendance edit request sent to the admin. Attendance will remain unchanged until approval.");
     }catch(e){
       setError(e.message);
     }
@@ -1012,7 +1037,7 @@ function AttendanceSection({ adminId }) {
                         value=""
                         onChange={e=>editStatus(r.id,e.target.value)}
                       >
-                        <option value="">Edit Status</option>
+                        <option value="">Request Edit</option>
                         <option value="Present">Present</option>
                         <option value="Absent">Absent</option>
                       </select>
