@@ -27,7 +27,7 @@ function dateLabel(value) {
 }
 
 function scopeLabel(request) {
-  return request.record_scope === "test_batch" || request.record_type === "test_batch" ? "Test Batch" : "Regular Student";
+  return request._source === "test_batch" || request.record_scope === "test_batch" || request.record_type === "test_batch" ? "Test Batch" : "Regular Student";
 }
 
 function recordLabel(request) {
