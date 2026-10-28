@@ -174,7 +174,7 @@ export default function ManageMarks() {
       return;
     }
 
-    const confirmEdit = window.confirm("Confirm updating this mark?");
+    const confirmEdit = window.confirm("Send this mark edit request to the admin for approval?");
     if (!confirmEdit) return;
 
     try {
