@@ -801,12 +801,12 @@ function MarksSection({ adminId }) {
   return <div className="mt-8 space-y-5">
     <div className="border-t-4 border-blue-700 pt-6"><Header title="Test Batch Marks Management" description="Marks are stored only in Test Batch tables and never in Regular Student marks." /></div>
     <Card><form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <select className="border rounded-lg px-4 py-3 bg-white" value={form.roll_no} onChange={e=>setForm({...form,roll_no:e.target.value})} required><option value="">Select Student</option>{students.map(s=><option key={s.roll_no} value={s.roll_no}>{s.roll_no} - {s.name} ({s.test_series_name})</option>)}</select>
-      <input className="border rounded-lg px-4 py-3" placeholder="Test Code *" value={form.test_code} onChange={e=>setForm({...form,test_code:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" placeholder="Subject *" value={form.subject_name} onChange={e=>setForm({...form,subject_name:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" type="number" min="1" step="0.01" placeholder="Total Marks *" value={form.total_marks} onChange={e=>setForm({...form,total_marks:e.target.value})} required />
+      <select disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 bg-white disabled:bg-gray-100" value={form.roll_no} onChange={e=>setForm({...form,roll_no:e.target.value})} required><option value="">Select Student</option>{students.map(s=><option key={s.roll_no} value={s.roll_no}>{s.roll_no} - {s.name} ({s.test_series_name})</option>)}</select>
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Test Code *" value={form.test_code} onChange={e=>setForm({...form,test_code:e.target.value})} required />
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Subject *" value={form.subject_name} onChange={e=>setForm({...form,subject_name:e.target.value})} required />
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" type="number" min="1" step="0.01" placeholder="Total Marks *" value={form.total_marks} onChange={e=>setForm({...form,total_marks:e.target.value})} required />
       <input className="border rounded-lg px-4 py-3" placeholder="Obtained Marks / A" value={form.marks_obtained} onChange={e=>setForm({...form,marks_obtained:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" placeholder="Comments" value={form.comments} onChange={e=>setForm({...form,comments:e.target.value})} />
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Comments" value={form.comments} onChange={e=>setForm({...form,comments:e.target.value})} />
       <div className="md:col-span-2 lg:col-span-3 flex gap-3"><button className="bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">{editingId?"Request Edit Approval":"Add Mark"}</button><button type="button" onClick={reset} className="bg-gray-200 px-6 py-3 rounded-lg">Reset</button></div>
     </form><ErrorText error={error}/></Card>
     <Card>
