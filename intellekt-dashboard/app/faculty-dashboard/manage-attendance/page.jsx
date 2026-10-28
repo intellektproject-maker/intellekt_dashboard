@@ -298,67 +298,43 @@ const [classesLoading, setClassesLoading] = useState(false);
 
   async function saveSingleRow(rowKey, type = "report") {
     const sourceRows = type === "marked" ? markedRows : rows;
-    const setter = type === "marked" ? setMarkedRows : setRows;
     const row = sourceRows.find((item) => getRowKey(item) === rowKey);
 
     if (!row || !row.isEditing) return;
-
     if (row.editedStatus === row.status) {
       cancelEdit(rowKey, type);
       return;
     }
 
     const ok = window.confirm(
-      `Change attendance for ${row.roll_no} from ${row.status} to ${row.editedStatus}?`
+      `Send an edit request for attendance of ${row.roll_no} on ${toInputDate(row.attendance_date)} (${row.status} → ${row.editedStatus})?`
     );
-
     if (!ok) return;
 
     try {
-      const res = await fetch(`${API_BASE}/attendance`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+      const response = await fetch(API_BASE + "/record-edit-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          records: [
-            {
-              roll_no: row.roll_no,
-              status: row.editedStatus,
-            },
-          ],
-          subject: row.subject_id,
           facultyId,
-          date: toInputDate(row.attendance_date),
+          recordType: "attendance",
+          roll_no: row.roll_no,
+          subject_id: row.subject_id,
+          attendance_date: toInputDate(row.attendance_date),
+          requested_value: row.editedStatus,
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert(data.error || "Failed to update attendance");
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || "Failed to submit attendance edit request");
         return;
       }
 
-      setter((prev) =>
-        prev.map((item) =>
-          getRowKey(item) === rowKey
-            ? {
-                ...item,
-                status: row.editedStatus,
-                editedStatus: row.editedStatus,
-                isEditing: false,
-                edited_by: facultyId || item.edited_by,
-                edited_at: new Date().toISOString(),
-              }
-            : item
-        )
-      );
-
-      alert("Attendance updated successfully");
+      cancelEdit(rowKey, type);
+      alert(data.message || "Edit request sent to the admin. Attendance remains unchanged until approval.");
     } catch (err) {
-      console.error("Save row error:", err);
-      alert("Failed to update attendance");
+      console.error("Submit attendance edit request error:", err);
+      alert("Failed to submit attendance edit request");
     }
   }
 

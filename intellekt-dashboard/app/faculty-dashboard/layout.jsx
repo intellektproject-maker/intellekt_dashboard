@@ -173,6 +173,16 @@ function FacultyLayoutContent({ children }) {
             </>
           )}
 
+          {/^IG\d{3,}$/.test(facultyId.trim()) && (
+            <Link
+              href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}`}
+              onClick={() => setMenuOpen(false)}
+              className={linkClass(isActive("/faculty-dashboard/edit-requests"))}
+            >
+              Edit Requests
+            </Link>
+          )}
+
           <Link
             href={`/reset-password?id=${facultyId}&role=${
               isPrivilegedFaculty ? "admin" : "faculty"

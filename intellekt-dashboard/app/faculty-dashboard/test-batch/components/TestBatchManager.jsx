@@ -774,7 +774,24 @@ function MarksSection({ adminId }) {
     try{
       const p={...form,adminId,total_marks:Number(form.total_marks),marks_obtained:String(form.marks_obtained).trim()};
       if(!p.roll_no||!p.test_code||!p.subject_name||!p.total_marks||!p.marks_obtained)throw new Error("Student, test code, subject, total marks and obtained marks are required");
-      if(editingId)await api("/test-batch/marks/"+editingId,{method:"PUT",body:JSON.stringify(p)});else await api("/test-batch/marks",{method:"POST",body:JSON.stringify(p)});
+      if(editingId){
+        const record=marks.find((item)=>String(item.id)===String(editingId));
+        if(!record)throw new Error("Mark record not found. Refresh and try again.");
+        await api("/test-batch/record-edit-requests",{
+          method:"POST",
+          body:JSON.stringify({
+            facultyId:adminId,
+            recordType:"marks",
+            roll_no:record.roll_no,
+            test_code:record.test_code,
+            subject_name:record.subject_name,
+            requested_value:String(form.marks_obtained).trim()
+          })
+        });
+        window.alert("Edit request sent to the admin. The mark will remain unchanged until approval.");
+      }else{
+        await api("/test-batch/marks",{method:"POST",body:JSON.stringify(p)});
+      }
       reset();await loadMarks();
     }catch(e){setError(e.message)}
   }
@@ -784,18 +801,18 @@ function MarksSection({ adminId }) {
   return <div className="mt-8 space-y-5">
     <div className="border-t-4 border-blue-700 pt-6"><Header title="Test Batch Marks Management" description="Marks are stored only in Test Batch tables and never in Regular Student marks." /></div>
     <Card><form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <select className="border rounded-lg px-4 py-3 bg-white" value={form.roll_no} onChange={e=>setForm({...form,roll_no:e.target.value})} required><option value="">Select Student</option>{students.map(s=><option key={s.roll_no} value={s.roll_no}>{s.roll_no} - {s.name} ({s.test_series_name})</option>)}</select>
-      <input className="border rounded-lg px-4 py-3" placeholder="Test Code *" value={form.test_code} onChange={e=>setForm({...form,test_code:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" placeholder="Subject *" value={form.subject_name} onChange={e=>setForm({...form,subject_name:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" type="number" min="1" step="0.01" placeholder="Total Marks *" value={form.total_marks} onChange={e=>setForm({...form,total_marks:e.target.value})} required />
+      <select disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 bg-white disabled:bg-gray-100" value={form.roll_no} onChange={e=>setForm({...form,roll_no:e.target.value})} required><option value="">Select Student</option>{students.map(s=><option key={s.roll_no} value={s.roll_no}>{s.roll_no} - {s.name} ({s.test_series_name})</option>)}</select>
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Test Code *" value={form.test_code} onChange={e=>setForm({...form,test_code:e.target.value})} required />
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Subject *" value={form.subject_name} onChange={e=>setForm({...form,subject_name:e.target.value})} required />
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" type="number" min="1" step="0.01" placeholder="Total Marks *" value={form.total_marks} onChange={e=>setForm({...form,total_marks:e.target.value})} required />
       <input className="border rounded-lg px-4 py-3" placeholder="Obtained Marks / A" value={form.marks_obtained} onChange={e=>setForm({...form,marks_obtained:e.target.value})} required />
-      <input className="border rounded-lg px-4 py-3" placeholder="Comments" value={form.comments} onChange={e=>setForm({...form,comments:e.target.value})} />
-      <div className="md:col-span-2 lg:col-span-3 flex gap-3"><button className="bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">{editingId?"Update Mark":"Add Mark"}</button><button type="button" onClick={reset} className="bg-gray-200 px-6 py-3 rounded-lg">Reset</button></div>
+      <input disabled={Boolean(editingId)} className="border rounded-lg px-4 py-3 disabled:bg-gray-100" placeholder="Comments" value={form.comments} onChange={e=>setForm({...form,comments:e.target.value})} />
+      <div className="md:col-span-2 lg:col-span-3 flex gap-3"><button className="bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">{editingId?"Request Edit Approval":"Add Mark"}</button><button type="button" onClick={reset} className="bg-gray-200 px-6 py-3 rounded-lg">Reset</button></div>
     </form><ErrorText error={error}/></Card>
     <Card>
       <div className="flex flex-wrap gap-3 mb-5"><SeriesSelect series={series} value={seriesFilter} onChange={setSeriesFilter}/><input className="border rounded-lg px-4 py-2 flex-1 min-w-[220px]" placeholder="Search roll number or student" value={search} onChange={e=>setSearch(e.target.value)}/><input className="border rounded-lg px-4 py-2" placeholder="Test code" value={testFilter} onChange={e=>setTestFilter(e.target.value)}/><button onClick={loadMarks} className="bg-blue-700 text-white px-5 py-2 rounded-lg">Refresh</button></div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5"><div className="bg-blue-50 rounded-xl p-4"><p className="text-sm text-gray-500">Total Marks</p><p className="text-xl font-bold text-blue-800">{money(summary.total)}</p></div><div className="bg-green-50 rounded-xl p-4"><p className="text-sm text-gray-500">Obtained Marks</p><p className="text-xl font-bold text-green-700">{money(summary.obtained)}</p></div><div className="bg-gray-50 rounded-xl p-4"><p className="text-sm text-gray-500">Percentage</p><p className="text-xl font-bold">{percent(summary.percentage)}%</p></div></div>
-      {loading?<Loading/>:marks.length===0?<p className="text-gray-500">No Test Batch marks found.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[1200px] border-collapse"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Roll No</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Series</th><th className="p-3 text-left">Test</th><th className="p-3 text-left">Subject</th><th className="p-3 text-left">Obtained</th><th className="p-3 text-left">Total</th><th className="p-3 text-left">Percentage</th><th className="p-3 text-left">Result</th><th className="p-3 text-left">Actions</th></tr></thead><tbody>{marks.map((m,i)=><tr key={m.id} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}><td className="p-3 font-semibold">{m.roll_no}</td><td className="p-3">{m.name}</td><td className="p-3">{m.test_series_name}</td><td className="p-3">{m.test_code}</td><td className="p-3">{m.subject_name}</td><td className="p-3">{m.marks_obtained}</td><td className="p-3">{m.total_marks}</td><td className="p-3">{percent(m.percentage)}%</td><td className="p-3">{m.result_status}</td><td className="p-3"><div className="flex gap-2"><button onClick={()=>edit(m)} className="bg-yellow-500 text-white px-3 py-1 rounded">Edit</button><button onClick={()=>remove(m.id)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></td></tr>)}</tbody></table></div>}
+      {loading?<Loading/>:marks.length===0?<p className="text-gray-500">No Test Batch marks found.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[1200px] border-collapse"><thead><tr className="bg-blue-700 text-white"><th className="p-3 text-left">Roll No</th><th className="p-3 text-left">Name</th><th className="p-3 text-left">Series</th><th className="p-3 text-left">Test</th><th className="p-3 text-left">Subject</th><th className="p-3 text-left">Obtained</th><th className="p-3 text-left">Total</th><th className="p-3 text-left">Percentage</th><th className="p-3 text-left">Result</th><th className="p-3 text-left">Actions</th></tr></thead><tbody>{marks.map((m,i)=><tr key={m.id} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}><td className="p-3 font-semibold">{m.roll_no}</td><td className="p-3">{m.name}</td><td className="p-3">{m.test_series_name}</td><td className="p-3">{m.test_code}</td><td className="p-3">{m.subject_name}</td><td className="p-3">{m.marks_obtained}</td><td className="p-3">{m.total_marks}</td><td className="p-3">{percent(m.percentage)}%</td><td className="p-3">{m.result_status}</td><td className="p-3"><div className="flex gap-2"><button onClick={()=>edit(m)} className="bg-yellow-500 text-white px-3 py-1 rounded">Request Edit</button><button onClick={()=>remove(m.id)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></td></tr>)}</tbody></table></div>}
     </Card>
   </div>;
 }
@@ -906,12 +923,20 @@ function AttendanceSection({ adminId }) {
 
   async function editStatus(id,status){
     if(!status)return;
+    const row=rows.find((item)=>String(item.id)===String(id));
+    if(!row){setError("Attendance record not found. Refresh and try again.");return;}
     try{
-      await api("/test-batch/attendance/"+id,{
-        method:"PUT",
-        body:JSON.stringify({adminId,status})
+      await api("/test-batch/record-edit-requests",{
+        method:"POST",
+        body:JSON.stringify({
+          facultyId:adminId,
+          recordType:"attendance",
+          roll_no:row.roll_no,
+          attendance_date:String(row.attendance_date||date).slice(0,10),
+          requested_value:status
+        })
       });
-      await Promise.all([loadRows(),loadReport()]);
+      window.alert("Attendance edit request sent to the admin. Attendance will remain unchanged until approval.");
     }catch(e){
       setError(e.message);
     }
@@ -982,7 +1007,7 @@ function AttendanceSection({ adminId }) {
                 <th className="p-3 text-left">Series</th>
                 <th className="p-3 text-left">Date</th>
                 <th className="p-3 text-left">Status</th>
-                <th className="p-3 text-left">Edit</th>
+                <th className="p-3 text-left">Request Edit</th>
               </tr>
             </thead>
             <tbody>
@@ -1012,7 +1037,7 @@ function AttendanceSection({ adminId }) {
                         value=""
                         onChange={e=>editStatus(r.id,e.target.value)}
                       >
-                        <option value="">Edit Status</option>
+                        <option value="">Request Edit</option>
                         <option value="Present">Present</option>
                         <option value="Absent">Absent</option>
                       </select>

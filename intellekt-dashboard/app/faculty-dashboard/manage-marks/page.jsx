@@ -174,29 +174,37 @@ export default function ManageMarks() {
       return;
     }
 
-    const confirmEdit = window.confirm("Confirm updating this mark?");
+    const confirmEdit = window.confirm("Send this mark edit request to the admin for approval?");
     if (!confirmEdit) return;
 
     try {
-      const res = await fetch(
-        `${API_BASE}/marks/${row.roll_no}/${row.test_code}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ marks: normalizedMarks }),
-        }
-      );
+      const facultyId = new URLSearchParams(window.location.search).get("id") || "";
+      if (!facultyId.trim()) {
+        alert("Faculty ID is missing. Please reopen the dashboard and try again.");
+        return;
+      }
+
+      const res = await fetch(API_BASE + "/record-edit-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          facultyId,
+          recordType: "marks",
+          roll_no: row.roll_no,
+          test_code: row.test_code,
+          requested_value: String(normalizedMarks),
+        }),
+      });
 
       const data = await res.json();
-
       if (!res.ok) {
-        alert(data.error || "Failed to update marks");
+        alert(data.error || "Failed to submit edit request");
         return;
       }
 
       setEditingRow(null);
       setNewMarks("");
-      await fetchMarks();
+      alert(data.message || "Edit request sent to the admin. Marks remain unchanged until approval.");
     } catch (err) {
       console.error("Update failed:", err);
       alert("Failed to update marks");
