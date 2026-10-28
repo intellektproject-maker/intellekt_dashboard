@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
 const registerRecordEditRoutes = require('./record_edit_requests');
+const registerTestBatchEditRequestRoutes = require('./test_batch_edit_requests');
 const crypto = require("node:crypto");
 const { makeEventKey, queueNotificationEvent } = require('./web-notification-outbox');
 const { sendToStudent } = require('./student-notification-service');
@@ -7927,6 +7928,7 @@ async function ensureStudentDeviceTokensTable() {
 }
 
 registerRecordEditRoutes(app, pool);
+registerTestBatchEditRequestRoutes(app, pool);
 
 async function startServer() {
   // Keep public enquiry submissions compatible with databases created before
