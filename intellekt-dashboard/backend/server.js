@@ -4329,7 +4329,8 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
        SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
        WHERE id=$1
          AND (
-           status IN ('Pending', 'Admission In Progress')
+           status IS NULL
+           OR status IN ('Pending', 'Admission In Progress')
            OR (
              status='Admitted'
              AND NOT EXISTS (
