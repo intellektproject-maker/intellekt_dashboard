@@ -4328,7 +4328,28 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
       `UPDATE enquiries
        SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
        WHERE id=$1
-         AND status IN ('Pending', 'Admission In Progress')
+         AND (
+           status IN ('Pending', 'Admission In Progress')
+           OR (
+             status='Admitted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM students s
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(s.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(s.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM test_batch_students t
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(t.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(t.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+           )
+         )
        RETURNING id,batch,status,admission_started_at`,
       [id, token]
     );
