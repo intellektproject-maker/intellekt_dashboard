@@ -96,8 +96,8 @@ export default function EditRequestsPage() {
           api("/test-batch/record-edit-requests?adminId=" + encodeURIComponent(facultyId)),
         ]);
         setRequests([
-          ...(Array.isArray(regular) ? regular.map((r) => ({ ...r, _source: "regular" })) : []),
-          ...(Array.isArray(testBatch) ? testBatch.map((r) => ({ ...r, _source: "test_batch" })) : []),
+          ...(Array.isArray(regular) ? regular.filter((r) => r.status !== "Applied").map((r) => ({ ...r, _source: "regular" })) : []),
+          ...(Array.isArray(testBatch) ? testBatch.filter((r) => r.status !== "Applied").map((r) => ({ ...r, _source: "test_batch" })) : []),
         ].sort((a, b) => {
           const pendingOrder = (a.status === "Pending" ? 0 : 1) - (b.status === "Pending" ? 0 : 1);
           return pendingOrder || new Date(b.created_at || 0) - new Date(a.created_at || 0);
