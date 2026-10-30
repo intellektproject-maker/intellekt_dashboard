@@ -211,7 +211,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   function getScheduleEditRequest(test) {
     return testBatchEditRequests.find((request) =>
       request.record_type === "schedule" &&
-      String(request.test_code || "").trim().toUpperCase() === String(test.test_code || "").trim().toUpperCase()
+      String(request.roll_no || "").trim().toUpperCase() === "TEST:" + String(test.id)
     ) || null;
   }
 
@@ -256,6 +256,10 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   useEffect(() => {
     loadTestBatchEditRequests();
   }, [adminId]);
+
+  useEffect(() => {
+    if (section === "list") loadTestBatchEditRequests();
+  }, [section, adminId]);
 
 
   async function loadTests() {
