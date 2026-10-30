@@ -55,7 +55,7 @@ function registerRecordEditRoutes(app, pool) {
     if (!requester || isAdmin(requester)) {
       return res.status(403).json({ error: 'A valid faculty account is required.' });
     }
-    if (!['marks', 'attendance'].includes(type) || !roll || !requested) {
+    if (!['marks', 'attendance'].includes(type) || !roll) {
       return res.status(400).json({ error: 'recordType, roll_no and requested_value are required.' });
     }
 
@@ -121,10 +121,6 @@ function registerRecordEditRoutes(app, pool) {
         attendanceDateValue = date;
       }
 
-      if (originalValue === requested) {
-        return res.status(400).json({ error: 'The requested value is the same as the current value.' });
-      }
-
       const pending = await pool.query(
         `SELECT id FROM record_edit_requests
          WHERE record_type = $1 AND UPPER(TRIM(roll_no)) = UPPER(TRIM($2))
@@ -143,7 +139,7 @@ function registerRecordEditRoutes(app, pool) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
         [type, roll, studentResult.rows[0].name, testCodeValue, subjectIdValue,
-          attendanceDateValue, originalValue, requested, requester, facultyResult.rows[0].name]
+          attendanceDateValue, originalValue, 'Edit permission requested', requester, facultyResult.rows[0].name]
       );
 
       const message = `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
@@ -193,6 +189,21 @@ function registerRecordEditRoutes(app, pool) {
     }
   });
 
+  app.get('/record-edit-requests/mine', async (req, res) => {
+    const facultyId = cleanId(req.query.facultyId);
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    try {
+      await ensureSchema();
+      const result = await pool.query(
+        `SELECT * FROM record_edit_requests WHERE requested_by = $1 AND status IN ('Pending', 'Approved') ORDER BY created_at DESC`,
+        [facultyId]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error('GET my edit requests error:', error);
+      res.status(500).json({ error: 'Could not load your edit requests.' });
+    }
+  });
   app.put('/record-edit-requests/:id/review', async (req, res) => {
     const adminId = cleanId(req.body?.adminId);
     const decision = String(req.body?.decision || '').trim().toLowerCase();
