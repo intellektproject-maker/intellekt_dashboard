@@ -150,6 +150,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [selectedWritingDate, setSelectedWritingDate] = useState("");
   const [testBatchEditRequests, setTestBatchEditRequests] = useState([]);
   const [editingMarkRoll, setEditingMarkRoll] = useState("");
+  const [overallBulkEditing, setOverallBulkEditing] = useState(false);
   const markWritingDates = useMemo(() => [...new Set(students.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort(), [students]);
   const visibleMarkStudents = useMemo(() => selectedWritingDate ? students.filter((student) => String(student.registered_writing_date || "").slice(0, 10) === selectedWritingDate) : students, [students, selectedWritingDate]);
 
@@ -1074,6 +1075,44 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   }
 
 
+  function getOverallMarkEditRequest() {
+    return testBatchEditRequests.find((request) => request.record_type === 'marks' && request.roll_no === '*' && String(request.test_code || '').trim().toUpperCase() === String(markTest?.test_code || '').trim().toUpperCase() && String(request.attendance_date || '').slice(0, 10) === selectedWritingDate) || null;
+  }
+  function getOverallEditSnapshot(request) {
+    try { return JSON.parse(request?.original_value || '[]'); } catch { return []; }
+  }
+  async function requestOverallTestEdit() {
+    const existing = getOverallMarkEditRequest();
+    if (existing?.status === 'Pending') { setMessage('The overall edit request is waiting for admin approval.'); return; }
+    if (existing?.status === 'Approved') { setOverallBulkEditing(true); setError(''); setMessage('Admin approved overall editing. Update the marks and use Save All Changes.'); return; }
+    if (!selectedWritingDate) { setError('Select a writing date first.'); return; }
+    const rollNos = visibleMarkStudents.filter((student) => String(student.marks_obtained ?? '').trim() !== '').map((student) => student.roll_no);
+    if (!rollNos.length) { setError('There are no saved marks to edit for this writing date.'); return; }
+    if (!window.confirm('Request permission to edit all saved marks for ' + markTest.test_code + ' on ' + formatDate(selectedWritingDate) + '?')) return;
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const result = await api('/test-batch/record-edit-requests/bulk-marks', { method: 'POST', body: JSON.stringify({ facultyId: adminId, test_code: markTest.test_code, subject_name: markTest.subject_name, writing_date: selectedWritingDate, roll_nos: rollNos }) });
+      setMessage(result.message || 'Overall edit request sent to the admins.');
+      await loadTestBatchEditRequests();
+    } catch (err) { setError(err.message); } finally { setSaving(false); }
+  }
+  async function saveOverallTestEdit() {
+    const request = getOverallMarkEditRequest();
+    if (!request || request.status !== 'Approved') { setError('Admin approval is required for overall editing.'); return; }
+    const snapshot = getOverallEditSnapshot(request);
+    const snapshotRolls = new Set(snapshot.map((row) => String(row.roll_no).trim().toUpperCase()));
+    const records = visibleMarkStudents.filter((student) => snapshotRolls.has(String(student.roll_no).trim().toUpperCase())).map((student) => ({ roll_no: student.roll_no, marks_obtained: student.marks_obtained }));
+    if (records.length !== snapshot.length) { setError('The registered student list changed. Reload the test and submit a new overall edit request.'); return; }
+    for (const record of records) { const value = String(record.marks_obtained ?? '').trim().toUpperCase(); const total = Number(markTest?.total_marks); if (!value || (value !== 'A' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > total))) { setError('Enter valid marks between 0 and ' + total + ', or A for absent, for every student included in this edit.'); return; } }
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const result = await api('/test-batch/record-edit-requests/' + request.id + '/apply', { method: 'POST', body: JSON.stringify({ facultyId: adminId, records }) });
+      setOverallBulkEditing(false);
+      await loadMarkEntry(markTest.test_code);
+      await loadTestBatchEditRequests();
+      setMessage(result.message || 'All approved Test Batch marks were saved successfully.');
+    } catch (err) { setError(err.message); } finally { setSaving(false); }
+  }
   function getStudentMarkEditRequest(student) {
     return testBatchEditRequests.find((request) =>
       request.record_type === 'marks' &&
@@ -2157,7 +2196,29 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                 </div>
               </div>
 
-              <div className="mb-5 max-w-sm"><label className="text-sm text-gray-600">Writing Date — Registered Students Only<select className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white" value={selectedWritingDate} onChange={(event) => { setSelectedWritingDate(event.target.value); setError(""); setMessage(""); }}><option value="">Select Writing Date</option>{markWritingDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label><p className="text-xs text-gray-500 mt-1">Only students registered for this test on the selected date are shown.</p></div>
+              <div className="mb-5 flex flex-wrap items-end gap-3">
+  <div className="max-w-sm flex-1">
+    <label className="text-sm text-gray-600">Writing Date — Registered Students Only
+      <select className="block w-full border rounded-lg px-4 py-3 mt-1 bg-white" value={selectedWritingDate} onChange={(event) => { setSelectedWritingDate(event.target.value); setOverallBulkEditing(false); setEditingMarkRoll(""); setError(""); setMessage(""); }}>
+        <option value="">Select Writing Date</option>
+        {markWritingDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}
+      </select>
+    </label>
+    <p className="text-xs text-gray-500 mt-1">Only students registered for this test on the selected date are shown.</p>
+  </div>
+  {!isAdminUser && selectedWritingDate && (
+    <div className="flex flex-wrap items-center gap-2">
+      {getOverallMarkEditRequest()?.status === "Approved" && overallBulkEditing ? (
+        <button type="button" onClick={saveOverallTestEdit} disabled={saving} className="rounded-lg bg-green-600 px-5 py-3 font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save All Changes"}</button>
+      ) : (
+        <button type="button" onClick={requestOverallTestEdit} disabled={saving || getOverallMarkEditRequest()?.status === "Pending"} className="rounded-lg bg-yellow-500 px-5 py-3 font-semibold text-white disabled:opacity-50">
+          {getOverallMarkEditRequest()?.status === "Pending" ? "Overall Edit Request Pending" : "Edit Entire Test"}
+        </button>
+      )}
+      {getOverallMarkEditRequest()?.status === "Approved" && <span className="text-sm font-medium text-green-700">Admin approved</span>}
+    </div>
+  )}
+</div>
               {markTest.manual_mark_entry_enabled === false ? (
                 <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-5 text-yellow-800">
                   Manual mark entry is disabled for this test in Post Test
@@ -2186,9 +2247,12 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                           const rowEditRequest = getStudentMarkEditRequest(student);
                           const hasSavedMark = String(student.marks_obtained ?? "").trim() !== "";
                           const rowApproved = rowEditRequest?.status === "Approved";
+                          const overallRequest = getOverallMarkEditRequest();
+                          const overallSnapshotRolls = new Set(getOverallEditSnapshot(overallRequest).map((row) => String(row.roll_no).trim().toUpperCase()));
+                          const overallRowApproved = overallRequest?.status === "Approved" && overallBulkEditing && overallSnapshotRolls.has(String(student.roll_no).trim().toUpperCase());
                           const locked = !isAdminUser ? (
                             ((hasSavedMark || markTest.marks_entry_status === "Finalized") &&
-                              !(rowApproved && editingMarkRoll === student.roll_no))
+                              !(overallRowApproved || (rowApproved && editingMarkRoll === student.roll_no)))
                           ) : (
                             markTest.marks_entry_status === "Finalized" &&
                             markTest.lock_marks_after_final_submission !== false
