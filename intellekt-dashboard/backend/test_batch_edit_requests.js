@@ -130,6 +130,60 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     }
   });
 
+  app.post('/test-batch/record-edit-requests/bulk-marks', async (req, res) => {
+    const facultyId = cleanId(req.body?.facultyId);
+    const testCode = String(req.body?.test_code || '').trim().toUpperCase();
+    const subjectName = String(req.body?.subject_name || '').trim() || null;
+    const writingDate = String(req.body?.writing_date || '').trim();
+    const rolls = [...new Set((Array.isArray(req.body?.roll_nos) ? req.body.roll_nos : [])
+      .map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))];
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    if (!testCode || !/^\d{4}-\d{2}-\d{2}$/.test(writingDate) || !rolls.length) {
+      return res.status(400).json({ error: 'Test code, writing date and registered student roll numbers are required.' });
+    }
+    try {
+      await ensureSchema();
+      const faculty = await validFaculty(facultyId);
+      if (!faculty) return res.status(403).json({ error: 'Faculty account was not found.' });
+      const marks = await pool.query(
+        "SELECT m.roll_no,m.subject_name,m.marks_obtained,m.total_marks,s.name FROM test_batch_marks m " +
+        "JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(m.roll_no)) " +
+        "WHERE UPPER(TRIM(m.test_code))=$1 AND UPPER(TRIM(m.roll_no))=ANY($2::text[]) " +
+        "AND ($3::text IS NULL OR LOWER(TRIM(m.subject_name))=LOWER(TRIM($3))) ORDER BY m.roll_no",
+        [testCode, rolls, subjectName]
+      );
+      if (!marks.rows.length) return res.status(404).json({ error: 'No saved marks found for the selected students.' });
+      const snapshot = marks.rows.map((row) => ({
+        roll_no: row.roll_no,
+        subject_name: row.subject_name,
+        marks_obtained: String(row.marks_obtained),
+        total_marks: Number(row.total_marks),
+      }));
+      const existing = await pool.query(
+        "SELECT id,status FROM test_batch_record_edit_requests WHERE record_type='marks' AND roll_no='*' " +
+        "AND UPPER(TRIM(test_code))=$1 AND attendance_date=$2::date AND status IN ('Pending','Approved') LIMIT 1",
+        [testCode, writingDate]
+      );
+      if (existing.rows.length) return res.status(409).json({ error: 'An overall edit request for this test and writing date is already pending or approved.' });
+      const inserted = await pool.query(
+        "INSERT INTO test_batch_record_edit_requests " +
+        "(record_type,roll_no,student_name,test_code,subject_name,attendance_date,original_value,requested_value,requested_by,requested_by_name) " +
+        "VALUES ('marks','*',$1,$2,$3,$4,$5,'BULK_EDIT',$6,$7) RETURNING *",
+        [marks.rows.length + ' registered students', testCode, subjectName, writingDate, JSON.stringify(snapshot), facultyId, faculty.name]
+      );
+      const notice = faculty.name + ' requested overall Test Batch marks edit for test ' + testCode +
+        ' on ' + writingDate + ' (' + marks.rows.length + ' students).';
+      await pool.query(
+        "INSERT INTO faculty_notifications (faculty_id,module_name,message) VALUES ('IG001','record-edit-request',$1),('IG002','record-edit-request',$1)",
+        [notice]
+      );
+      res.status(201).json({ message: 'Overall edit request sent to the admins.', request: inserted.rows[0] });
+    } catch (error) {
+      console.error('POST overall Test Batch marks edit request error:', error);
+      res.status(500).json({ error: 'Could not submit overall Test Batch edit request.' });
+    }
+  });
+
   app.get('/test-batch/record-edit-requests/mine', async (req, res) => {
     const facultyId = cleanId(req.query.facultyId);
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
@@ -203,6 +257,57 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         return res.status(403).json({ error: 'No approved edit permission exists for this record.' });
       }
       const request = requestResult.rows[0];
+      if (request.record_type === 'marks' && request.roll_no === '*') {
+        const records = Array.isArray(req.body?.records) ? req.body.records : [];
+        let snapshot;
+        try { snapshot = JSON.parse(request.original_value); } catch { snapshot = null; }
+        if (!snapshot || !Array.isArray(snapshot) || !records.length) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'A valid set of edited marks is required.' });
+        }
+        const snapshotByRoll = new Map(snapshot.map((row) => [String(row.roll_no).trim().toUpperCase(), row]));
+        const submittedRolls = new Set();
+        for (const row of records) {
+          const roll = String(row.roll_no || '').trim().toUpperCase();
+          const original = snapshotByRoll.get(roll);
+          const next = String(row.marks_obtained ?? '').trim().toUpperCase();
+          if (!original || submittedRolls.has(roll) || !next) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Invalid or duplicate student mark in the overall edit.' });
+          }
+          submittedRolls.add(roll);
+          if (next !== 'A' && (!Number.isFinite(Number(next)) || Number(next) < 0 || Number(next) > Number(original.total_marks))) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Marks for ' + roll + ' must be between 0 and ' + original.total_marks + ', or A for absent.' });
+          }
+          const current = await client.query(
+            "SELECT marks_obtained,total_marks FROM test_batch_marks WHERE UPPER(TRIM(roll_no))=$1 AND UPPER(TRIM(test_code))=UPPER(TRIM($2)) AND LOWER(TRIM(subject_name))=LOWER(TRIM($3)) FOR UPDATE",
+            [roll, request.test_code, original.subject_name]
+          );
+          if (!current.rows.length || String(current.rows[0].marks_obtained).trim().toUpperCase() !== String(original.marks_obtained).trim().toUpperCase()) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Marks for ' + roll + ' changed after approval was requested. Submit a new overall request.' });
+          }
+        }
+        for (const row of records) {
+          const roll = String(row.roll_no).trim().toUpperCase();
+          const original = snapshotByRoll.get(roll);
+          const next = String(row.marks_obtained).trim().toUpperCase();
+          const total = Number(original.total_marks);
+          const percent = next === 'A' ? 0 : Number(next) / total * 100;
+          const comment = next === 'A' ? 'Absent' : percent >= 90 ? 'Excellent' : percent >= 75 ? 'Very Good' : percent >= 60 ? 'Good' : percent >= 40 ? 'Average' : 'Needs Improvement';
+          await client.query(
+            "UPDATE test_batch_marks SET marks_obtained=$1,comments=$2,updated_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$3 AND UPPER(TRIM(test_code))=UPPER(TRIM($4)) AND LOWER(TRIM(subject_name))=LOWER(TRIM($5))",
+            [next, comment, roll, request.test_code, original.subject_name]
+          );
+        }
+        await client.query(
+          "UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1",
+          [request.id]
+        );
+        await client.query('COMMIT');
+        return res.json({ message: 'Overall approved Test Batch marks edit applied successfully.', updated: records.length });
+      }
       const current = request.record_type === 'marks'
         ? await client.query(
             "SELECT marks_obtained AS value,total_marks FROM test_batch_marks WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) " +
