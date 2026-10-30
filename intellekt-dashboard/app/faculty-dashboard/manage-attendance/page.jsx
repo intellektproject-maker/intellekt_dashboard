@@ -762,6 +762,8 @@ const [classesLoading, setClassesLoading] = useState(false);
                   cancelEdit={cancelEdit}
                   handleEditedStatusChange={handleEditedStatusChange}
                   saveSingleRow={saveSingleRow}
+                  getApprovedRequest={getApprovedRequest}
+                  applyApprovedEdit={applyApprovedEdit}
                   type="report"
                 />
               )}
@@ -805,6 +807,8 @@ const [classesLoading, setClassesLoading] = useState(false);
                   cancelEdit={cancelEdit}
                   handleEditedStatusChange={handleEditedStatusChange}
                   saveSingleRow={saveSingleRow}
+                  getApprovedRequest={getApprovedRequest}
+                  applyApprovedEdit={applyApprovedEdit}
                   type="marked"
                 />
               )}
@@ -865,6 +869,8 @@ function AttendanceTable({
   cancelEdit,
   handleEditedStatusChange,
   saveSingleRow,
+  getApprovedRequest,
+  applyApprovedEdit,
   type,
 }) {
   function getRowKey(row) {
