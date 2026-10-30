@@ -136,7 +136,7 @@ function registerRecordEditRoutes(app, pool) {
           attendanceDateValue, originalValue, 'Edit permission requested', requester, facultyResult.rows[0].name]
       );
 
-      const message = `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
+      const message = roll === '*' ? `${facultyResult.rows[0].name} requested overall marks edit access for test code ${testCodeValue}.` : `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
       await pool.query(
         `INSERT INTO faculty_notifications (faculty_id, module_name, message)
          VALUES ('IG001', 'record-edit-request', $1), ('IG002', 'record-edit-request', $1)`,
