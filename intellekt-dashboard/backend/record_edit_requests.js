@@ -77,30 +77,24 @@ function registerRecordEditRoutes(app, pool) {
 
       if (type === 'marks') {
         if (!test_code) return res.status(400).json({ error: 'test_code is required for marks edits.' });
-        studentResult = await pool.query(
-          `SELECT s.name, m.marks_obtained AS original_value
-           FROM students s
-           JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
-           WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
-             AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($2))
-           LIMIT 1`,
-          [roll, test_code]
-        );
         testCodeValue = String(test_code).trim();
-        if (!studentResult.rows.length) return res.status(404).json({ error: 'Marks record not found.' });
-        originalValue = String(studentResult.rows[0].original_value);
-        const totalResult = await pool.query(
-          'SELECT total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))',
-          [roll, test_code]
-        );
-        const total = Number(totalResult.rows[0]?.total_marks);
-        if (requested.toUpperCase() !== 'A') {
-          const n = Number(requested);
-          if (!Number.isFinite(n) || n < 0 || (Number.isFinite(total) && n > total)) {
-            return res.status(400).json({ error: 'Requested marks must be between 0 and the total marks, or A for absent.' });
+        if (roll === '*') {
+          const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))', [test_code]);
+          if (!countResult.rows[0]?.count) return res.status(404).json({ error: 'No marks records found for this test code.' });
+          studentResult = { rows: [{ name: 'All students' }] };
+          originalValue = 'Multiple records';
+        } else {
+          studentResult = await pool.query('SELECT s.name, m.marks_obtained AS original_value FROM students s JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no)) WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($2)) LIMIT 1', [roll, test_code]);
+          if (!studentResult.rows.length) return res.status(404).json({ error: 'Marks record not found.' });
+          originalValue = String(studentResult.rows[0].original_value);
+          const totalResult = await pool.query('SELECT total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))', [roll, test_code]);
+          const total = Number(totalResult.rows[0]?.total_marks);
+          if (requested.toUpperCase() !== 'A') {
+            const n = Number(requested);
+            if (!Number.isFinite(n) || n < 0 || (Number.isFinite(total) && n > total)) return res.status(400).json({ error: 'Requested marks must be between 0 and the total marks, or A for absent.' });
           }
         }
-      } else {
+      } else {else {
         const date = String(attendance_date || '').trim();
         const subject = Number(subject_id);
         if (!date || !Number.isInteger(subject) || subject <= 0 || !['Present', 'Absent'].includes(requested)) {
@@ -233,6 +227,19 @@ function registerRecordEditRoutes(app, pool) {
     }
   });
 
+  app.post('/record-edit-requests/:id/finish', async (req, res) => {
+    const facultyId = cleanId(req.body?.facultyId);
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    try {
+      await ensureSchema();
+      const result = await pool.query("UPDATE record_edit_requests SET status = 'Applied', applied_at = CURRENT_TIMESTAMP WHERE id = $1 AND requested_by = $2 AND record_type = 'marks' AND roll_no = '*' AND status = 'Approved' RETURNING id", [req.params.id, facultyId]);
+      if (!result.rows.length) return res.status(403).json({ error: 'No active overall edit approval found.' });
+      res.json({ message: 'Overall edit session completed.' });
+    } catch (error) {
+      console.error('Finish overall marks edit error:', error);
+      res.status(500).json({ error: 'Could not finish overall edit session.' });
+    }
+  });
   app.post('/record-edit-requests/:id/apply', async (req, res) => {
     const facultyId = cleanId(req.body?.facultyId);
     const newValue = String(req.body?.newValue ?? '').trim();
@@ -253,6 +260,20 @@ function registerRecordEditRoutes(app, pool) {
           return res.status(403).json({ error: 'No approved edit permission exists for this record.' });
         }
         const request = requestResult.rows[0];
+        if (request.record_type === 'marks' && request.roll_no === '*') {
+          const targetRoll = String(req.body?.roll_no || '').trim();
+          if (!targetRoll) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'roll_no is required.' }); }
+          const target = await client.query('SELECT total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2)) FOR UPDATE', [targetRoll, request.test_code]);
+          if (!target.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Marks record not found for this test code.' }); }
+          const value = newValue.toUpperCase();
+          const total = Number(target.rows[0].total_marks);
+          if (!value || (value !== 'A' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > total))) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Marks must be within the test total, or A for absent.' }); }
+          const percent = value === 'A' ? 0 : Number(value) / total * 100;
+          const comment = value === 'A' ? 'Absent' : percent >= 90 ? 'Excellent' : percent >= 75 ? 'Very Good' : percent >= 60 ? 'Good' : percent >= 40 ? 'Average' : 'Needs Improvement';
+          await client.query('UPDATE marks SET marks_obtained = $1, comments = $2 WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))', [value, comment, targetRoll, request.test_code]);
+          await client.query('COMMIT');
+          return res.json({ message: 'Approved mark updated successfully.' });
+        }
         const currentResult = request.record_type === 'marks'
           ? await client.query(
               'SELECT marks_obtained AS current_value FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))',
