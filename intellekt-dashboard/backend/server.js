@@ -5799,6 +5799,9 @@ app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,
 
 app.put('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
   try {
+    if (!TEST_BATCH_ADMIN_IDS.has(String(req.testBatchAdminId || '').toUpperCase().trim())) {
+      return res.status(403).json({error:'Faculty must receive admin approval before editing a Test Batch schedule'});
+    }
     const {
       test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
       duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
