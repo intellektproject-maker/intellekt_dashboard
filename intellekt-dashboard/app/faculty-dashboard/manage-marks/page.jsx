@@ -444,7 +444,7 @@ export default function ManageMarks() {
                           onClick={() => updateMarks(m)}
                           className="bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700"
                         >
-                          Request Edit
+                          Save
                         </button>
 
                         <button
