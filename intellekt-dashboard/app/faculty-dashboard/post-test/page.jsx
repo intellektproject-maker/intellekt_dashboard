@@ -316,9 +316,10 @@ setPostedTests(Array.isArray(data) ? data : []);
         return;
       }
 
-      alert(editingTestCode ? (approvedScheduleRequestId ? "Approved test edit applied successfully" : "Test updated successfully") : "Test posted successfully");
+      const appliedApprovedRequest = Boolean(approvedScheduleRequestId);
+      alert(editingTestCode ? (appliedApprovedRequest ? "Approved test edit applied successfully" : "Test updated successfully") : "Test posted successfully");
       resetForm();
-      if (approvedScheduleRequestId) await loadScheduleEditRequests();
+      if (appliedApprovedRequest) await loadScheduleEditRequests();
       await loadPostedTests();
 setCurrentPage(1);
     } catch (err) {
