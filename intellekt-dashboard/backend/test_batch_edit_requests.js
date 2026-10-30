@@ -6,13 +6,17 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     if (!schemaPromise) {
       schemaPromise = pool.query(
         "CREATE TABLE IF NOT EXISTS test_batch_record_edit_requests (" +
-        "id BIGSERIAL PRIMARY KEY, record_type VARCHAR(20) NOT NULL CHECK (record_type IN ('marks','attendance')), " +
+        "id BIGSERIAL PRIMARY KEY, record_type VARCHAR(20) NOT NULL CHECK (record_type IN ('marks','attendance','schedule')), " +
         "roll_no TEXT NOT NULL, student_name TEXT, test_code TEXT, subject_name TEXT, attendance_date DATE, " +
         "original_value TEXT NOT NULL, requested_value TEXT NOT NULL, requested_by TEXT NOT NULL, requested_by_name TEXT, " +
         "status VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Approved','Declined','Applied')), " +
         "reviewed_by TEXT, review_note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
         "reviewed_at TIMESTAMPTZ, applied_at TIMESTAMPTZ)"
       ).then(() => pool.query(
+        "ALTER TABLE test_batch_record_edit_requests DROP CONSTRAINT IF EXISTS test_batch_record_edit_requests_record_type_check"
+      )).then(() => pool.query(
+        "ALTER TABLE test_batch_record_edit_requests ADD CONSTRAINT test_batch_record_edit_requests_record_type_check CHECK (record_type IN ('marks','attendance','schedule'))"
+      )).then(() => pool.query(
         "CREATE INDEX IF NOT EXISTS idx_test_batch_edit_requests_status ON test_batch_record_edit_requests(status, created_at DESC)"
       )).catch((err) => { schemaPromise = null; throw err; });
     }
@@ -112,6 +116,42 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     } catch (error) {
       console.error('POST Test Batch edit request error:', error);
       return res.status(500).json({ error: 'Could not submit Test Batch edit request.' });
+    }
+  });
+
+  app.post('/test-batch/record-edit-requests/schedule', async (req, res) => {
+    const facultyId = cleanId(req.body?.facultyId);
+    const testId = Number(req.body?.test_id);
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    if (!Number.isInteger(testId) || testId <= 0) return res.status(400).json({ error: 'A valid Test Batch test is required.' });
+    try {
+      await ensureSchema();
+      const faculty = await validFaculty(facultyId);
+      if (!faculty) return res.status(403).json({ error: 'Faculty account was not found.' });
+      const testResult = await pool.query(
+        "SELECT id,test_code,test_series_id,subject_name,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status FROM test_batch_tests WHERE id=$1 LIMIT 1",
+        [testId]
+      );
+      if (!testResult.rows.length) return res.status(404).json({ error: 'Test Batch test not found.' });
+      const test = testResult.rows[0];
+      const pending = await pool.query(
+        "SELECT id,status FROM test_batch_record_edit_requests WHERE record_type='schedule' AND roll_no=$1 AND status IN ('Pending','Approved') LIMIT 1",
+        ['TEST:' + testId]
+      );
+      if (pending.rows.length) return res.status(409).json({ error: 'A schedule edit request for this test is already pending or approved.' });
+      const inserted = await pool.query(
+        "INSERT INTO test_batch_record_edit_requests (record_type,roll_no,student_name,test_code,subject_name,original_value,requested_value,requested_by,requested_by_name) VALUES ('schedule',$1,'Test schedule',$2,$3,$4,'EDIT_SCHEDULE',$5,$6) RETURNING *",
+        ['TEST:' + testId, test.test_code, test.subject_name, JSON.stringify(test), facultyId, faculty.name]
+      );
+      const notice = faculty.name + ' requested permission to edit the schedule for Test Batch test ' + test.test_code + '.';
+      await pool.query(
+        "INSERT INTO faculty_notifications (faculty_id,module_name,message) VALUES ('IG001','record-edit-request',$1),('IG002','record-edit-request',$1)",
+        [notice]
+      );
+      return res.status(201).json({ message: 'Test schedule edit request sent to the admins.', request: inserted.rows[0] });
+    } catch (error) {
+      console.error('POST Test Batch schedule edit request error:', error);
+      return res.status(500).json({ error: 'Could not submit Test Batch schedule edit request.' });
     }
   });
 
@@ -257,6 +297,49 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         return res.status(403).json({ error: 'No approved edit permission exists for this record.' });
       }
       const request = requestResult.rows[0];
+      if (request.record_type === 'schedule') {
+        const testId = Number(String(request.roll_no || '').replace(/^TEST:/, ''));
+        let snapshot;
+        try { snapshot = JSON.parse(request.original_value); } catch { snapshot = null; }
+        const form = req.body?.schedule || {};
+        if (!Number.isInteger(testId) || !snapshot || !form.test_code || !form.test_series_id || !form.subject_name ||
+            !Number(form.duration_minutes) || !Number(form.total_marks) || !form.application_open_date ||
+            !form.application_close_date || !form.writing_close_date) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Complete and valid schedule details are required.' });
+        }
+        if (form.application_close_date < form.application_open_date || form.application_close_date >= form.writing_close_date) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Registration dates must be valid and close before the writing close date.' });
+        }
+        const currentResult = await client.query(
+          "SELECT id,test_code,test_series_id,subject_name,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status FROM test_batch_tests WHERE id=$1 FOR UPDATE",
+          [testId]
+        );
+        if (!currentResult.rows.length) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Test Batch test not found.' });
+        }
+        const current = currentResult.rows[0];
+        const fields = ['test_code','test_series_id','subject_name','duration_minutes','total_marks','portion','chapter','application_open_date','application_close_date','writing_close_date','status'];
+        const unchanged = fields.every((field) => String(current[field] ?? '').slice(0,10) === String(snapshot[field] ?? '').slice(0,10));
+        if (!unchanged) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'This test schedule changed after the request. Submit a new request.' });
+        }
+        const series = await client.query('SELECT id FROM test_series WHERE id=$1 LIMIT 1', [Number(form.test_series_id)]);
+        if (!series.rows.length) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Invalid Test Series.' });
+        }
+        const updated = await client.query(
+          "UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,duration_minutes=$4,total_marks=$5,portion=$6,chapter=$7,application_open_date=$8,application_close_date=$9,writing_close_date=$10,status=$11,updated_at=CURRENT_TIMESTAMP WHERE id=$12 RETURNING *",
+          [String(form.test_code).trim().toUpperCase(),Number(form.test_series_id),String(form.subject_name).trim(),Number(form.duration_minutes),Number(form.total_marks),form.portion || null,form.chapter || null,form.application_open_date,form.application_close_date,form.writing_close_date,form.status || 'Scheduled',testId]
+        );
+        await client.query("UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
+        await client.query('COMMIT');
+        return res.json({ message: 'Approved Test Batch schedule edit applied successfully.', test: updated.rows[0] });
+      }
       if (request.record_type === 'marks' && request.roll_no === '*') {
         const records = Array.isArray(req.body?.records) ? req.body.records : [];
         let snapshot;
