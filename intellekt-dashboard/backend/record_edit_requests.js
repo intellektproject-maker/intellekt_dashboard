@@ -9,7 +9,7 @@ function registerRecordEditRoutes(app, pool) {
       schemaReady = pool.query(`
         CREATE TABLE IF NOT EXISTS record_edit_requests (
           id BIGSERIAL PRIMARY KEY,
-          record_type VARCHAR(20) NOT NULL CHECK (record_type IN ('marks', 'attendance')),
+          record_type VARCHAR(20) NOT NULL CHECK (record_type IN ('marks', 'attendance', 'schedule')),
           roll_no TEXT NOT NULL,
           student_name TEXT,
           test_code TEXT,
@@ -149,6 +149,42 @@ function registerRecordEditRoutes(app, pool) {
     }
   });
 
+  app.post('/record-edit-requests/schedule', async (req, res) => {
+    const requester = cleanId(req.body?.facultyId);
+    const testCode = String(req.body?.test_code || '').trim().toUpperCase();
+    if (!requester || isAdmin(requester)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    if (!testCode) return res.status(400).json({ error: 'test_code is required.' });
+    try {
+      await ensureSchema();
+      const faculty = await pool.query('SELECT name FROM faculty WHERE UPPER(TRIM(faculty_id))=$1 LIMIT 1', [requester]);
+      if (!faculty.rows.length) return res.status(403).json({ error: 'Faculty account was not found.' });
+      const testResult = await pool.query(
+        "SELECT test_code,subject_id,test_date,total_marks,portion,chapter,class,board,duration_minutes,registration_end_date,writing_allowed_till FROM tests WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1)) LIMIT 1",
+        [testCode]
+      );
+      if (!testResult.rows.length) return res.status(404).json({ error: 'Posted test not found.' });
+      const test = testResult.rows[0];
+      const pending = await pool.query(
+        "SELECT id FROM record_edit_requests WHERE record_type='schedule' AND UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND status IN ('Pending','Approved') LIMIT 1",
+        ['TEST:' + test.test_code]
+      );
+      if (pending.rows.length) return res.status(409).json({ error: 'An edit request for this posted test is already pending or approved.' });
+      const inserted = await pool.query(
+        "INSERT INTO record_edit_requests (record_type,roll_no,student_name,test_code,subject_id,original_value,requested_value,requested_by,requested_by_name) VALUES ('schedule',$1,'Posted test',$2,$3,$4,'EDIT_SCHEDULE',$5,$6) RETURNING *",
+        ['TEST:' + test.test_code, test.test_code, test.subject_id, JSON.stringify(test), requester, faculty.rows[0].name]
+      );
+      const message = faculty.rows[0].name + ' requested permission to edit Regular Student posted test ' + test.test_code + '.';
+      await pool.query(
+        "INSERT INTO faculty_notifications (faculty_id,module_name,message) VALUES ('IG001','record-edit-request',$1),('IG002','record-edit-request',$1)",
+        [message]
+      );
+      return res.status(201).json({ message: 'Posted test edit request sent to the admins.', request: inserted.rows[0] });
+    } catch (error) {
+      console.error('POST regular posted-test edit request error:', error);
+      return res.status(500).json({ error: 'Could not submit posted-test edit request.' });
+    }
+  });
+
   app.get('/record-edit-requests', async (req, res) => {
     const adminId = cleanId(req.query.adminId);
     if (!isAdmin(adminId)) return res.status(403).json({ error: 'Only IG001 and IG002 can review edit requests.' });
@@ -260,6 +296,45 @@ function registerRecordEditRoutes(app, pool) {
           return res.status(403).json({ error: 'No approved edit permission exists for this record.' });
         }
         const request = requestResult.rows[0];
+        if (request.record_type === 'schedule') {
+          const testCode = String(request.test_code || '').trim().toUpperCase();
+          let snapshot;
+          try { snapshot = JSON.parse(request.original_value || '{}'); } catch { snapshot = null; }
+          const form = req.body?.schedule || {};
+          if (!testCode || !snapshot || !form.subject_id || !form.test_date ||
+              !Number.isFinite(Number(form.total_marks)) || Number(form.total_marks) <= 0 ||
+              !form.class_name || !form.board || !form.duration_minutes ||
+              !form.registration_end_date || !form.writing_allowed_till) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Complete and valid posted-test details are required.' });
+          }
+          if (form.registration_end_date >= form.test_date || form.writing_allowed_till < form.test_date) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Registration must end before the test date and writing allowed till cannot be before the test date.' });
+          }
+          const currentResult = await client.query(
+            "SELECT test_code,subject_id,test_date,total_marks,portion,chapter,class,board,duration_minutes,registration_end_date,writing_allowed_till FROM tests WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1)) FOR UPDATE",
+            [testCode]
+          );
+          if (!currentResult.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Posted test no longer exists.' });
+          }
+          const current = currentResult.rows[0];
+          const fields = ['subject_id','test_date','total_marks','portion','chapter','class','board','duration_minutes','registration_end_date','writing_allowed_till'];
+          const unchanged = fields.every((field) => String(current[field] ?? '').slice(0,10) === String(snapshot[field] ?? '').slice(0,10));
+          if (!unchanged) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'This posted test changed after the request. Submit a new request.' });
+          }
+          const updated = await client.query(
+            "UPDATE tests SET subject_id=$1,test_date=$2,total_marks=$3,portion=$4,chapter=$5,class=$6,board=$7,duration_minutes=$8,registration_end_date=$9,writing_allowed_till=$10 WHERE UPPER(TRIM(test_code))=UPPER(TRIM($11)) RETURNING *",
+            [Number(form.subject_id),form.test_date,Number(form.total_marks),form.portion || '',form.chapter || '',String(form.class_name).trim(),String(form.board).trim(),Number(form.duration_minutes),form.registration_end_date,form.writing_allowed_till,testCode]
+          );
+          await client.query("UPDATE record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
+          await client.query('COMMIT');
+          return res.json({ message: 'Approved posted-test edit applied successfully.', test: updated.rows[0] });
+        }
         if (request.record_type === 'marks' && request.roll_no === '*') {
           const targetRoll = String(req.body?.roll_no || '').trim();
           if (!targetRoll) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'roll_no is required.' }); }
