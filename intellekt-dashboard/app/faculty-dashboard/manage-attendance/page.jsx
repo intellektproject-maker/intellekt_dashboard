@@ -97,6 +97,7 @@ function ManageAttendancePageInner() {
 
   const [rows, setRows] = useState([]);
   const [markedRows, setMarkedRows] = useState([]);
+  const [approvedEditRequests, setApprovedEditRequests] = useState([]);
 
   const [loading, setLoading] = useState(false);
   const [markedLoading, setMarkedLoading] = useState(false);
@@ -109,10 +110,57 @@ const [classesLoading, setClassesLoading] = useState(false);
 
   useEffect(() => {
     fetchClasses();
-  }, []);
+    if (facultyId) fetchApprovedEditRequests();
+  }, [facultyId]);
 
   // Removed auto fetch for marked attendance
 
+  async function fetchApprovedEditRequests() {
+    try {
+      const response = await fetch(API_BASE + "/record-edit-requests/approved?facultyId=" + encodeURIComponent(facultyId), { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load approved edit requests.");
+      setApprovedEditRequests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch approved attendance edit requests error:", err);
+    }
+  }
+
+  function getApprovedRequest(row) {
+    return approvedEditRequests.find((request) =>
+      request.record_type === "attendance" &&
+      String(request.roll_no || "").trim().toUpperCase() === String(row.roll_no || "").trim().toUpperCase() &&
+      Number(request.subject_id) === Number(row.subject_id) &&
+      toInputDate(request.attendance_date) === toInputDate(row.attendance_date) &&
+      request.status === "Approved"
+    );
+  }
+
+  async function applyApprovedEdit(row) {
+    const request = getApprovedRequest(row);
+    if (!request) { alert("No approved edit permission was found for this attendance record."); await fetchApprovedEditRequests(); return; }
+    try {
+      const response = await fetch(API_BASE + "/record-edit-requests/" + request.id + "/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ facultyId, newValue: request.requested_value }),
+      });
+      const data = await response.json();
+      if (!response.ok) { alert(data.error || "Could not apply approved attendance edit."); return; }
+      const updateRows = (previous) => previous.map((item) =>
+        getRowKey(item) === getRowKey(row)
+          ? { ...item, status: request.requested_value, editedStatus: request.requested_value, isEditing: false }
+          : item
+      );
+      setRows(updateRows);
+      setMarkedRows(updateRows);
+      await fetchApprovedEditRequests();
+      alert(data.message || "Approved attendance edit applied successfully.");
+    } catch (err) {
+      console.error("Apply approved attendance edit error:", err);
+      alert("Could not apply approved attendance edit.");
+    }
+  }
   async function fetchClasses() {
     try {
       setClassesLoading(true);
@@ -881,7 +929,9 @@ function AttendanceTable({
               </td>
 
               <td className="py-3 px-2">
-                {row.isEditing ? (
+                {getApprovedRequest(row) ? (
+                  <button onClick={() => applyApprovedEdit(row)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Apply Approved Edit</button>
+                ) : row.isEditing ? (
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
