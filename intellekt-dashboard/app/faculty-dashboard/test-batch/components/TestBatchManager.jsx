@@ -821,6 +821,7 @@ function AttendanceSection({ adminId }) {
   const [series,setSeries]=useState([]);
   const [rows,setRows]=useState([]);
   const [report,setReport]=useState([]);
+  const [approvedEditRequests,setApprovedEditRequests]=useState([]);
   const today=new Date().toISOString().slice(0,10);
   const [seriesFilter,setSeriesFilter]=useState("");
   const [search,setSearch]=useState("");
@@ -854,6 +855,13 @@ function AttendanceSection({ adminId }) {
     }
   }
 
+  async function loadApprovedEditRequests(){
+    try{
+      const d=await api("/test-batch/record-edit-requests/approved?facultyId="+encodeURIComponent(adminId));
+      setApprovedEditRequests(Array.isArray(d)?d:[]);
+    }catch(e){setError(e.message);}
+  }
+
   async function loadReport(){
     try{
       const p=new URLSearchParams({adminId,from,to});
@@ -869,6 +877,7 @@ function AttendanceSection({ adminId }) {
 
   useEffect(()=>{
     loadSeries().catch(e=>setError(e.message));
+    loadApprovedEditRequests();
   },[adminId]);
 
   useEffect(()=>{
