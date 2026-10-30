@@ -303,8 +303,9 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         try { snapshot = JSON.parse(request.original_value); } catch { snapshot = null; }
         const form = req.body?.schedule || {};
         if (!Number.isInteger(testId) || !snapshot || !form.test_code || !form.test_series_id || !form.subject_name ||
-            !Number(form.duration_minutes) || !Number(form.total_marks) || !form.application_open_date ||
-            !form.application_close_date || !form.writing_close_date) {
+            !Number.isFinite(Number(form.duration_minutes)) || Number(form.duration_minutes) <= 0 ||
+            !Number.isFinite(Number(form.total_marks)) || Number(form.total_marks) <= 0 ||
+            !form.application_open_date || !form.application_close_date || !form.writing_close_date) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: 'Complete and valid schedule details are required.' });
         }
@@ -443,6 +444,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Apply Test Batch edit request error:', error);
+      if (error.code === '23505') return res.status(409).json({ error: 'That test code already exists. Choose a unique test code.' });
       res.status(500).json({ error: 'Could not apply approved Test Batch edit.' });
     } finally {
       client.release();
