@@ -30,7 +30,25 @@ function scopeLabel(request) {
   return request._source === "test_batch" || request.record_scope === "test_batch" || request.record_type === "test_batch" ? "Test Batch" : "Regular Student";
 }
 
+function scheduleValueLabel(request) {
+  try {
+    const value = JSON.parse(request.original_value || "{}");
+    return [
+      "Subject: " + (value.subject_name || "-"),
+      "Max marks: " + (value.total_marks ?? "-"),
+      "Duration: " + (value.duration_minutes ? value.duration_minutes + " min" : "-"),
+      "Apply open: " + dateLabel(value.application_open_date),
+      "Apply close: " + dateLabel(value.application_close_date),
+      "Writing close: " + dateLabel(value.writing_close_date),
+      "Status: " + (value.status || "-"),
+    ].join(" · ");
+  } catch {
+    return "Current test schedule";
+  }
+}
+
 function currentValueLabel(request) {
+  if (request.record_type === "schedule") return scheduleValueLabel(request);
   if (request.record_type === "marks" && request.roll_no === "*") {
     try {
       const rows = JSON.parse(request.original_value || "[]");
@@ -49,6 +67,7 @@ function currentValueLabel(request) {
 }
 
 function recordLabel(request) {
+  if (request.record_type === "schedule") return "Test Schedule · " + (request.test_code || "-");
   return request.record_type === "attendance"
     ? "Attendance · " + dateLabel(request.attendance_date)
     : "Marks · " + (request.test_code || "-") +
@@ -194,13 +213,13 @@ export default function EditRequestsPage() {
                       <div className="text-xs text-gray-500">{request.requested_by || "-"}</div>
                     </td>
                     <td className="p-3">
-                      <div className="font-semibold">{request.student_name || "-"}</div>
-                      <div className="text-xs text-gray-500">{request.roll_no === "*" ? (request.attendance_date ? "All students on selected writing date" : "All students in test code") : request.roll_no}</div>
+                      <div className="font-semibold">{request.record_type === "schedule" ? "Test schedule" : request.student_name || "-"}</div>
+                      <div className="text-xs text-gray-500">{request.record_type === "schedule" ? request.test_code : request.roll_no === "*" ? (request.attendance_date ? "All students on selected writing date" : "All students in test code") : request.roll_no}</div>
                     </td>
                     <td className="p-3">{scopeLabel(request)}</td>
                     <td className="p-3">{recordLabel(request)}</td>
                     <td className="p-3">{currentValueLabel(request)}</td>
-                    <td className="p-3 font-semibold">{request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
+                    <td className="p-3 font-semibold">{request.record_type === "schedule" ? "Edit schedule permission" : request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
                     <td className="p-3">{dateLabel(request.created_at)}</td>
                     <td className="p-3">
                       <span className={
@@ -217,10 +236,12 @@ export default function EditRequestsPage() {
                           <button disabled={busyId === key} onClick={() => review(request, "approve")} className="rounded bg-green-600 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">Approve</button>
                           <button disabled={busyId === key} onClick={() => review(request, "decline")} className="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">Reject</button>
                         </div>
-                      ) : !isAdmin && request.status === "Approved" ? (
+                      ) : !isAdmin && request.status === "Approved" && request.record_type !== "schedule" ? (
                         <button disabled={busyId === key} onClick={() => apply(request)} className="rounded bg-blue-700 px-3 py-1 text-sm font-semibold text-white disabled:opacity-50">
                           {busyId === key ? "Applying..." : "Apply Approved Edit"}
                         </button>
+                      ) : !isAdmin && request.status === "Approved" && request.record_type === "schedule" ? (
+                        <span className="text-sm font-medium text-green-700">Approved — edit from Test List</span>
                       ) : <span className="text-sm text-gray-400">-</span>}
                     </td>
                   </tr>
