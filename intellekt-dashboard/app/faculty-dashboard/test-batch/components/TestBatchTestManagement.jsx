@@ -2269,6 +2269,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       disabled={
                         saving ||
                         finalizing ||
+                        Boolean(editingMarkRoll) ||
                         markTest.marks_entry_status === "Finalized"
                       }
                       className="bg-blue-700 text-white px-6 py-3 rounded-lg disabled:opacity-50"
