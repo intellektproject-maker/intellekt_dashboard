@@ -33,7 +33,9 @@ function scopeLabel(request) {
 function recordLabel(request) {
   return request.record_type === "attendance"
     ? "Attendance · " + dateLabel(request.attendance_date)
-    : "Marks · " + (request.test_code || "-") + (request.subject_name ? " · " + request.subject_name : "");
+    : "Marks · " + (request.test_code || "-") +
+      (request.subject_name ? " · " + request.subject_name : "") +
+      (request.roll_no === "*" && request.attendance_date ? " · Writing date " + dateLabel(request.attendance_date) : "");
 }
 
 export default function EditRequestsPage() {
@@ -180,7 +182,7 @@ export default function EditRequestsPage() {
                     <td className="p-3">{scopeLabel(request)}</td>
                     <td className="p-3">{recordLabel(request)}</td>
                     <td className="p-3">{request.original_value ?? "-"}</td>
-                    <td className="p-3 font-semibold">{request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
+                    <td className="p-3 font-semibold">{request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
                     <td className="p-3">{dateLabel(request.created_at)}</td>
                     <td className="p-3">
                       <span className={
