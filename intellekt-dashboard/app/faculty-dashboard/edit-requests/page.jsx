@@ -34,12 +34,14 @@ function scheduleValueLabel(request) {
   try {
     const value = JSON.parse(request.original_value || "{}");
     return [
-      "Subject: " + (value.subject_name || "-"),
+      "Subject: " + (value.subject_name || (value.subject_id === 1 ? "Maths" : value.subject_id === 2 ? "Physics" : "-")),
+      "Class: " + (value.class || "-"),
+      "Board: " + (value.board || "-"),
+      "Test date: " + dateLabel(value.test_date),
       "Max marks: " + (value.total_marks ?? "-"),
       "Duration: " + (value.duration_minutes ? value.duration_minutes + " min" : "-"),
-      "Apply open: " + dateLabel(value.application_open_date),
-      "Apply close: " + dateLabel(value.application_close_date),
-      "Writing close: " + dateLabel(value.writing_close_date),
+      "Registration close: " + dateLabel(value.registration_end_date || value.application_close_date),
+      "Writing allowed till: " + dateLabel(value.writing_allowed_till || value.writing_close_date),
       "Status: " + (value.status || "-"),
     ].join(" · ");
   } catch {
