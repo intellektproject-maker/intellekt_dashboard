@@ -932,7 +932,7 @@ function AttendanceSection({ adminId }) {
 
   async function editStatus(id,status){
     if(!status)return;
-    const row=rows.find((item)=>String(item.id)===String(id));
+    const row=rows.find(item=>String(item.id)===String(id));
     if(!row){setError("Attendance record not found. Refresh and try again.");return;}
     try{
       await api("/test-batch/record-edit-requests",{
@@ -946,9 +946,29 @@ function AttendanceSection({ adminId }) {
         })
       });
       window.alert("Attendance edit request sent to the admin. Attendance will remain unchanged until approval.");
-    }catch(e){
-      setError(e.message);
-    }
+    }catch(e){setError(e.message);}
+  }
+
+  async function applyApprovedAttendanceEdit(request){
+    if(!request)return;
+    try{
+      await api("/test-batch/record-edit-requests/"+request.id+"/apply",{
+        method:"POST",
+        body:JSON.stringify({facultyId:adminId})
+      });
+      window.alert("Approved attendance edit applied successfully.");
+      await Promise.all([loadRows(),loadReport(),loadApprovedEditRequests()]);
+    }catch(e){setError(e.message);}
+  }
+
+  function approvedRequestForRow(row){
+    const rowDate=String(row.attendance_date||date).slice(0,10);
+    return approvedEditRequests.find(request=>
+      request.record_type==="attendance" &&
+      String(request.roll_no||"").trim().toUpperCase()===String(row.roll_no||"").trim().toUpperCase() &&
+      String(request.attendance_date||"").slice(0,10)===rowDate &&
+      request.status==="Approved"
+    );
   }
 
   const stats=useMemo(()=>{
@@ -1028,28 +1048,32 @@ function AttendanceSection({ adminId }) {
                   <td className="p-3">{r.test_series_name}</td>
                   <td className="p-3">{formatDate(r.attendance_date||date)}</td>
                   <td className="p-3">
-                    <select
-                      className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                      value={r.status||""}
-                      disabled={Boolean(r.id)}
-                      onChange={e=>setStatus(r.roll_no,e.target.value)}
-                    >
-                      <option value="">Not Marked</option>
-                      <option value="Present">Present</option>
-                      <option value="Absent">Absent</option>
-                    </select>
+                    {(() => {
+                      const approved=approvedRequestForRow(r);
+                      return <select
+                        className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        value={r.status||""}
+                        disabled={Boolean(r.id)&&!approved}
+                        onChange={e=>{
+                          if(approved)applyApprovedAttendanceEdit(approved);
+                          else setStatus(r.roll_no,e.target.value);
+                        }}
+                      >
+                        <option value="">Not Marked</option>
+                        <option value="Present">Present</option>
+                        <option value="Absent">Absent</option>
+                      </select>;
+                    })()}
                   </td>
                   <td className="p-3">
-                    {r.id ? (
-                      <select
-                        className="border rounded px-3 py-1"
-                        value=""
-                        onChange={e=>editStatus(r.id,e.target.value)}
-                      >
+                    {r.id && !approvedRequestForRow(r) ? (
+                      <select className="border rounded px-3 py-1" value="" onChange={e=>editStatus(r.id,e.target.value)}>
                         <option value="">Request Edit</option>
                         <option value="Present">Present</option>
                         <option value="Absent">Absent</option>
                       </select>
+                    ) : approvedRequestForRow(r) ? (
+                      <button onClick={()=>applyApprovedAttendanceEdit(approvedRequestForRow(r))} className="bg-green-600 text-white px-3 py-2 rounded">Apply Approved Edit</button>
                     ) : "-"}
                   </td>
                 </tr>
