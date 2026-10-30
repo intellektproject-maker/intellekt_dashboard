@@ -83,7 +83,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         studentName = result.rows[0].name;
         original = String(result.rows[0].status);
       }
-      if (original.toUpperCase() === requested.toUpperCase()) {
+      if (type === 'attendance' && original.toUpperCase() === requested.toUpperCase()) {
         return res.status(400).json({ error: 'The requested value is the same as the current value.' });
       }
       const pending = await pool.query(
@@ -130,6 +130,21 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     }
   });
 
+  app.get('/test-batch/record-edit-requests/mine', async (req, res) => {
+    const facultyId = cleanId(req.query.facultyId);
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    try {
+      await ensureSchema();
+      const result = await pool.query(
+        "SELECT * FROM test_batch_record_edit_requests WHERE requested_by=$1 ORDER BY created_at DESC",
+        [facultyId]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error('GET own Test Batch edit requests error:', error);
+      res.status(500).json({ error: 'Could not load your Test Batch edit requests.' });
+    }
+  });
   app.get('/test-batch/record-edit-requests/approved', async (req, res) => {
     const facultyId = cleanId(req.query.facultyId);
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
@@ -207,7 +222,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         return res.status(409).json({ error: 'This record changed after the request. Submit a new request.' });
       }
       if (request.record_type === 'marks') {
-        const next = String(request.requested_value).trim().toUpperCase();
+        const next = String(req.body?.newValue ?? request.requested_value).trim().toUpperCase();
         const total = Number(current.rows[0].total_marks);
         if (next !== 'A' && (!Number.isFinite(Number(next)) || Number(next) < 0 || Number(next) > total)) {
           await client.query('ROLLBACK');
