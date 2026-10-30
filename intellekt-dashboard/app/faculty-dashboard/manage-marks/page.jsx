@@ -46,6 +46,7 @@ export default function ManageMarks() {
   const [newMarks, setNewMarks] = useState("");
   const [editRequests, setEditRequests] = useState([]);
   const [requestingRow, setRequestingRow] = useState(null);
+  const [overallBusy, setOverallBusy] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
@@ -159,12 +160,49 @@ export default function ManageMarks() {
     }
   }
 
+  const overallApproved = editRequests.find((r) => r.record_type === 'marks' && r.roll_no === '*' && r.status === 'Approved' && String(r.test_code).trim().toUpperCase() === String(testCode).trim().toUpperCase());
+  const overallPending = editRequests.find((r) => r.record_type === 'marks' && r.roll_no === '*' && r.status === 'Pending' && String(r.test_code).trim().toUpperCase() === String(testCode).trim().toUpperCase());
+
+  async function requestOverallEdit() {
+    if (!testCode) { alert('Select a test code first.'); return; }
+    if (name.trim() || className) { alert('Clear the student name and class filters first. Overall edit covers every student under the selected test code.'); return; }
+    if (!marksData.length) { alert('Search the selected test code first.'); return; }
+    if (overallPending) { alert('An overall edit request is already pending with the admin.'); return; }
+    if (overallApproved) { alert('Admin has approved overall editing for this test code. You can now use the row-level Edit buttons.'); return; }
+    if (!window.confirm('Request admin approval to edit marks for ALL students under ' + testCode + '?')) return;
+    setOverallBusy(true);
+    try {
+      const facultyId = new URLSearchParams(window.location.search).get('id') || '';
+      const response = await fetch(API_BASE + '/record-edit-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facultyId, recordType: 'marks', roll_no: '*', test_code: testCode }) });
+      const result = await response.json();
+      if (!response.ok) { alert(result.error || 'Could not request overall edit.'); return; }
+      alert(result.message || 'Overall edit request sent to admin.');
+      await fetchMarks();
+    } catch (error) { console.error('Overall marks edit request failed:', error); alert('Could not request overall edit.'); }
+    finally { setOverallBusy(false); }
+  }
+
+  async function finishOverallEdit() {
+    if (!overallApproved) return;
+    if (!window.confirm('Finish overall editing for ' + testCode + '? Further changes will require a new admin approval.')) return;
+    setOverallBusy(true);
+    try {
+      const facultyId = new URLSearchParams(window.location.search).get('id') || '';
+      const response = await fetch(API_BASE + '/record-edit-requests/' + overallApproved.id + '/finish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facultyId }) });
+      const result = await response.json();
+      if (!response.ok) { alert(result.error || 'Could not finish overall edit.'); return; }
+      alert(result.message || 'Overall edit completed.');
+      await fetchMarks();
+    } catch (error) { console.error('Finish overall edit failed:', error); alert('Could not finish overall edit.'); }
+    finally { setOverallBusy(false); }
+  }
   async function startEdit(rowIndex, row) {
     const match = (request) => request.record_type === "marks" &&
       String(request.roll_no).trim().toUpperCase() === String(row.roll_no).trim().toUpperCase() &&
       String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase();
     const approved = editRequests.find((request) => match(request) && request.status === "Approved");
-    if (approved) {
+    const sharedApproved = editRequests.find((request) => request.record_type === 'marks' && request.roll_no === '*' && request.status === 'Approved' && String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase());
+    if (approved || sharedApproved) {
       setEditingRow(rowIndex);
       setNewMarks(String(row.marks_obtained ?? ""));
       return;
@@ -216,11 +254,13 @@ export default function ManageMarks() {
       const approved = editRequests.find((request) => request.record_type === "marks" && request.status === "Approved" &&
         String(request.roll_no).trim().toUpperCase() === String(row.roll_no).trim().toUpperCase() &&
         String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase());
-      if (!approved) { alert("Admin approval is required before changing marks."); setEditingRow(null); return; }
-      const res = await fetch(API_BASE + "/record-edit-requests/" + approved.id + "/apply", {
+      const sharedApproved = editRequests.find((request) => request.record_type === 'marks' && request.roll_no === '*' && request.status === 'Approved' && String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase());
+      const permission = approved || sharedApproved;
+      if (!permission) { alert("Admin approval is required before changing marks."); setEditingRow(null); return; }
+      const res = await fetch(API_BASE + "/record-edit-requests/" + permission.id + "/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ facultyId, newValue: String(normalizedMarks) }),
+        body: JSON.stringify({ facultyId, newValue: String(normalizedMarks), ...(permission.roll_no === "*" ? { roll_no: row.roll_no } : {}) }),
       });
 
       const data = await res.json();
@@ -231,7 +271,7 @@ export default function ManageMarks() {
 
       setEditingRow(null);
       setNewMarks("");
-      setEditRequests((current) => current.filter((request) => String(request.id) !== String(approved.id)));
+      if (permission.roll_no !== "*") setEditRequests((current) => current.filter((request) => String(request.id) !== String(permission.id)));
       alert(data.message || "Approved marks edit applied successfully.");
       await fetchMarks();
     } catch (err) {
@@ -386,6 +426,12 @@ export default function ManageMarks() {
             >
               Export As
             </button>
+          </div>
+          <div className="md:ml-auto flex gap-2">
+            <button onClick={requestOverallEdit} disabled={!testCode || !marksData.length || overallBusy || !!overallPending || !!overallApproved} className="bg-blue-700 text-white px-5 py-3 rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed">
+              {overallBusy ? "Processing..." : overallPending ? "Overall Request Pending" : overallApproved ? "Overall Edit Approved" : "Request Overall Edit"}
+            </button>
+            {overallApproved && <button onClick={finishOverallEdit} disabled={overallBusy} className="bg-gray-600 text-white px-4 py-3 rounded-lg disabled:opacity-50">Finish Edit</button>}
           </div>
         </div>
       </div>
