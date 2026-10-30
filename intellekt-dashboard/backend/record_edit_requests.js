@@ -94,7 +94,7 @@ function registerRecordEditRoutes(app, pool) {
             if (!Number.isFinite(n) || n < 0 || (Number.isFinite(total) && n > total)) return res.status(400).json({ error: 'Requested marks must be between 0 and the total marks, or A for absent.' });
           }
         }
-      } else {else {
+      } else {
         const date = String(attendance_date || '').trim();
         const subject = Number(subject_id);
         if (!date || !Number.isInteger(subject) || subject <= 0 || !['Present', 'Absent'].includes(requested)) {
