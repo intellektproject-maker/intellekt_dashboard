@@ -165,7 +165,7 @@ export default function ManageMarks() {
 
   async function requestOverallEdit() {
     if (!testCode) { alert('Select a test code first.'); return; }
-    if (name.trim() || className) { alert('Clear the student name and class filters first. Overall edit covers every student under the selected test code.'); return; }
+    if (name.trim()) { alert('Clear the student name filter first. Overall edit covers every student under the selected test code.'); return; }
     if (!marksData.length) { alert('Search the selected test code first.'); return; }
     if (overallPending) { alert('An overall edit request is already pending with the admin.'); return; }
     if (overallApproved) { alert('Admin has approved overall editing for this test code. You can now use the row-level Edit buttons.'); return; }
