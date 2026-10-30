@@ -148,6 +148,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [students, setStudents] = useState([]);
   const [originalStudents, setOriginalStudents] = useState([]);
   const [selectedWritingDate, setSelectedWritingDate] = useState("");
+  const [testBatchEditRequests, setTestBatchEditRequests] = useState([]);
+  const [editingMarkRoll, setEditingMarkRoll] = useState("");
   const markWritingDates = useMemo(() => [...new Set(students.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort(), [students]);
   const visibleMarkStudents = useMemo(() => selectedWritingDate ? students.filter((student) => String(student.registered_writing_date || "").slice(0, 10) === selectedWritingDate) : students, [students, selectedWritingDate]);
 
@@ -203,6 +205,22 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [message, setMessage] = useState("");
 
   const authorized = /^IG\d{3,}$/.test(adminId);
+  const isAdminUser = ADMIN_IDS.includes(adminId);
+  async function loadTestBatchEditRequests() {
+    if (!adminId || isAdminUser) { setTestBatchEditRequests([]); return; }
+    try {
+      const data = await api('/test-batch/record-edit-requests/mine?facultyId=' + encodeURIComponent(adminId));
+      setTestBatchEditRequests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Could not load Test Batch edit requests:', err);
+      setTestBatchEditRequests([]);
+    }
+  }
+
+  useEffect(() => {
+    loadTestBatchEditRequests();
+  }, [adminId]);
+
 
   async function loadTests() {
     setLoading(true);
@@ -1053,6 +1071,62 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       )
     );
     setMessage("");
+  }
+
+
+  function getStudentMarkEditRequest(student) {
+    return testBatchEditRequests.find((request) =>
+      request.record_type === 'marks' &&
+      String(request.roll_no).trim().toUpperCase() === String(student.roll_no).trim().toUpperCase() &&
+      String(request.test_code || '').trim().toUpperCase() === String(markTest?.test_code || '').trim().toUpperCase() &&
+      String(request.subject_name || '').trim().toLowerCase() === String(student.subject_name || markTest?.subject_name || '').trim().toLowerCase()
+    ) || null;
+  }
+
+  async function requestTestBatchMarkEdit(student) {
+    const existing = getStudentMarkEditRequest(student);
+    if (existing?.status === 'Pending') { setMessage('Your edit request is already waiting for admin approval.'); return; }
+    if (existing?.status === 'Approved') { setEditingMarkRoll(student.roll_no); setError(''); setMessage('Admin approved this mark edit. Update the mark and click Save.'); return; }
+    if (!String(student.marks_obtained ?? '').trim()) { setMessage('This student has no saved mark yet. Enter the initial mark and use Save / Finalize Marks.'); return; }
+    const confirmed = window.confirm('Send an edit request to the admin for ' + student.name + ' (' + student.roll_no + ') in test ' + markTest.test_code + '?');
+    if (!confirmed) return;
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const result = await api('/test-batch/record-edit-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          facultyId: adminId,
+          recordType: 'marks',
+          roll_no: student.roll_no,
+          test_code: markTest.test_code,
+          subject_name: student.subject_name || markTest.subject_name,
+          requested_value: String(student.marks_obtained),
+        }),
+      });
+      setMessage(result.message || 'Edit request sent to the admins.');
+      await loadTestBatchEditRequests();
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function saveApprovedTestBatchMark(student) {
+    const request = getStudentMarkEditRequest(student);
+    if (!request || request.status !== 'Approved') { setError('Admin approval is required before changing this mark.'); return; }
+    const value = String(student.marks_obtained ?? '').trim().toUpperCase();
+    const total = Number(markTest?.total_marks);
+    if (!value || (value !== 'A' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > total))) { setError('Enter marks between 0 and ' + total + ', or A for absent.'); return; }
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const result = await api('/test-batch/record-edit-requests/' + request.id + '/apply', {
+        method: 'POST',
+        body: JSON.stringify({ facultyId: adminId, newValue: value }),
+      });
+      setEditingMarkRoll('');
+      await loadMarkEntry(markTest.test_code);
+      await loadTestBatchEditRequests();
+      setMessage(result.message || 'Approved mark edit saved successfully.');
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
   }
 
   function resetUnsavedChanges() {
@@ -2109,9 +2183,16 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       </thead>
                       <tbody>
                         {visibleMarkStudents.map((student, index) => {
-                          const locked =
+                          const rowEditRequest = getStudentMarkEditRequest(student);
+                          const hasSavedMark = String(student.marks_obtained ?? "").trim() !== "";
+                          const rowApproved = rowEditRequest?.status === "Approved";
+                          const locked = !isAdminUser ? (
+                            ((hasSavedMark || markTest.marks_entry_status === "Finalized") &&
+                              !(rowApproved && editingMarkRoll === student.roll_no))
+                          ) : (
                             markTest.marks_entry_status === "Finalized" &&
-                            markTest.lock_marks_after_final_submission !== false;
+                            markTest.lock_marks_after_final_submission !== false
+                          );
 
                           return (
                             <tr
@@ -2151,14 +2232,19 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                               </td>
                               <td className="p-3">{markTest.total_marks}</td>
                               <td className="p-3">
-                                <button
-                                  type="button"
-                                  onClick={editMarks}
-                                  disabled={saving}
-                                  className="bg-yellow-500 text-white px-4 py-2 rounded-lg disabled:opacity-50"
-                                >
-                                  Edit
-                                </button>
+                                {isAdminUser ? (
+                                  <button type="button" onClick={editMarks} disabled={saving} className="bg-yellow-500 text-white px-4 py-2 rounded-lg disabled:opacity-50">Edit</button>
+                                ) : rowApproved ? (
+                                  editingMarkRoll === student.roll_no ? (
+                                    <button type="button" onClick={() => saveApprovedTestBatchMark(student)} disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded-lg disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                                  ) : (
+                                    <button type="button" onClick={() => requestTestBatchMarkEdit(student)} disabled={saving} className="bg-yellow-500 text-white px-4 py-2 rounded-lg disabled:opacity-50">Edit</button>
+                                  )
+                                ) : (
+                                  <button type="button" onClick={() => requestTestBatchMarkEdit(student)} disabled={saving || rowEditRequest?.status === "Pending" || !hasSavedMark} className="bg-yellow-500 text-white px-4 py-2 rounded-lg disabled:opacity-50">
+                                    {rowEditRequest?.status === "Pending" ? "Request Pending" : "Request Edit"}
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
