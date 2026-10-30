@@ -151,6 +151,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [testBatchEditRequests, setTestBatchEditRequests] = useState([]);
   const [editingMarkRoll, setEditingMarkRoll] = useState("");
   const [overallBulkEditing, setOverallBulkEditing] = useState(false);
+  const [scheduleEditRequestId, setScheduleEditRequestId] = useState(null);
   const markWritingDates = useMemo(() => [...new Set(students.map((student) => String(student.registered_writing_date || "").slice(0, 10)).filter(Boolean))].sort(), [students]);
   const visibleMarkStudents = useMemo(() => selectedWritingDate ? students.filter((student) => String(student.registered_writing_date || "").slice(0, 10) === selectedWritingDate) : students, [students, selectedWritingDate]);
 
@@ -207,6 +208,40 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
 
   const authorized = /^IG\d{3,}$/.test(adminId);
   const isAdminUser = ADMIN_IDS.includes(adminId);
+  function getScheduleEditRequest(test) {
+    return testBatchEditRequests.find((request) =>
+      request.record_type === "schedule" &&
+      String(request.test_code || "").trim().toUpperCase() === String(test.test_code || "").trim().toUpperCase()
+    ) || null;
+  }
+
+  async function requestScheduleEdit(test) {
+    const existing = getScheduleEditRequest(test);
+    if (existing?.status === "Pending") {
+      setMessage("A schedule edit request for this test is already waiting for admin approval.");
+      return;
+    }
+    if (existing?.status === "Approved") {
+      openPostTestScheduler(test, existing.id);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api("/test-batch/record-edit-requests/schedule", {
+        method: "POST",
+        body: JSON.stringify({ facultyId: adminId, test_id: test.id }),
+      });
+      await loadTestBatchEditRequests();
+      setMessage(result.message || "Schedule edit request sent to the admins.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function loadTestBatchEditRequests() {
     if (!adminId || isAdminUser) { setTestBatchEditRequests([]); return; }
     try {
@@ -316,7 +351,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     setMessage("");
   }
 
-  function openPostTestScheduler(test = null) {
+  function openPostTestScheduler(test = null, approvedRequestId = null) {
+    setScheduleEditRequestId(approvedRequestId);
     if (test) {
       const dateOnly = (value) => String(value || "").slice(0, 10);
       setScheduleForm({
@@ -384,23 +420,30 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
         status: form.status || "Scheduled",
       };
 
-      const response = await api(
-        editing
-          ? "/test-batch/tests/" + encodeURIComponent(form.id)
-          : "/test-batch/tests",
-        {
-          method: editing ? "PUT" : "POST",
-          body: JSON.stringify(payload),
-        }
-      );
+      const response = editing && scheduleEditRequestId
+        ? await api("/test-batch/record-edit-requests/" + encodeURIComponent(scheduleEditRequestId) + "/apply", {
+            method: "POST",
+            body: JSON.stringify({ facultyId: adminId, schedule: payload }),
+          })
+        : await api(
+            editing
+              ? "/test-batch/tests/" + encodeURIComponent(form.id)
+              : "/test-batch/tests",
+            {
+              method: editing ? "PUT" : "POST",
+              body: JSON.stringify(payload),
+            }
+          );
 
       await loadTests();
       await loadEligibleTests();
+      if (scheduleEditRequestId) await loadTestBatchEditRequests();
+      setScheduleEditRequestId(null);
       resetScheduleForm();
       setSection("list");
       setMessage(
         editing
-          ? "Test Batch Post Test schedule updated successfully."
+          ? (scheduleEditRequestId ? "Approved Test Batch schedule edit applied successfully." : "Test Batch Post Test schedule updated successfully.")
           : "Test Batch Post Test scheduled successfully."
       );
     } catch (err) {
@@ -2512,12 +2555,37 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       <td className="p-3">{test.status}</td>
                       <td className="p-3">{test.marks_entry_status}</td>
                       <td className="p-3 flex gap-2">
-                        <button
-                          onClick={() => openPostTestScheduler(test)}
-                          className="bg-yellow-500 text-white px-3 py-1 rounded"
-                        >
-                          Edit Schedule
-                        </button>
+                        {isAdminUser ? (
+                          <button
+                            onClick={() => openPostTestScheduler(test)}
+                            className="bg-yellow-500 text-white px-3 py-1 rounded"
+                          >
+                            Edit Schedule
+                          </button>
+                        ) : (
+                          (() => {
+                            const editRequest = getScheduleEditRequest(test);
+                            if (editRequest?.status === "Approved") {
+                              return (
+                                <button
+                                  onClick={() => openPostTestScheduler(test, editRequest.id)}
+                                  className="bg-green-600 text-white px-3 py-1 rounded"
+                                >
+                                  Edit Schedule
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                onClick={() => requestScheduleEdit(test)}
+                                disabled={saving || editRequest?.status === "Pending"}
+                                className="bg-yellow-500 text-white px-3 py-1 rounded disabled:opacity-50"
+                              >
+                                {editRequest?.status === "Pending" ? "Request Pending" : "Request Edit"}
+                              </button>
+                            );
+                          })()
+                        )}
                         <button
                           onClick={() => deleteTest(test)}
                           className="bg-red-600 text-white px-3 py-1 rounded"
