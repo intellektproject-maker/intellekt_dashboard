@@ -2530,6 +2530,10 @@ app.put('/posted-tests/:testCode', async (req, res) => {
 	const { testCode } = req.params;
 
 	try {
+		const editorId = String(req.body?.created_by || '').trim().toUpperCase();
+		if (!['IG001', 'IG002'].includes(editorId)) {
+			return res.status(403).json({ error: 'Faculty must receive admin approval before editing a posted test.' });
+		}
 		const {
     subject_id,
     test_date,
