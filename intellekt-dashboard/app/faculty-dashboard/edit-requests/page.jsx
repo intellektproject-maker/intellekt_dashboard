@@ -177,7 +177,7 @@ export default function EditRequestsPage() {
                     </td>
                     <td className="p-3">
                       <div className="font-semibold">{request.student_name || "-"}</div>
-                      <div className="text-xs text-gray-500">{request.roll_no === "*" ? "All students in test code" : request.roll_no}</div>
+                      <div className="text-xs text-gray-500">{request.roll_no === "*" ? (request.attendance_date ? "All students on selected writing date" : "All students in test code") : request.roll_no}</div>
                     </td>
                     <td className="p-3">{scopeLabel(request)}</td>
                     <td className="p-3">{recordLabel(request)}</td>
