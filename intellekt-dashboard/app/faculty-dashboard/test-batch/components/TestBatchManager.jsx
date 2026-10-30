@@ -847,6 +847,7 @@ function AttendanceSection({ adminId }) {
 
       const d=await api("/test-batch/attendance?"+p.toString());
       setRows(d.attendance||[]);
+      await loadApprovedEditRequests();
       setError("");
     }catch(e){
       setError(e.message);
