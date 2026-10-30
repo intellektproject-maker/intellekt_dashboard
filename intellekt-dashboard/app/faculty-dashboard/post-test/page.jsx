@@ -27,6 +27,9 @@ function PostTestInner() {
   const [classes, setClasses] = useState([]);
   const [postedTests, setPostedTests] = useState([]);
 const [editingTestCode, setEditingTestCode] = useState("");
+const [approvedScheduleRequestId, setApprovedScheduleRequestId] = useState("");
+const [scheduleEditRequests, setScheduleEditRequests] = useState([]);
+const isAdminUser = ["IG001", "IG002"].includes(String(facultyId).trim().toUpperCase());
 const [saving, setSaving] = useState(false);
 
 const [searchCode, setSearchCode] = useState("");
@@ -66,6 +69,53 @@ setPostedTests(Array.isArray(data) ? data : []);
   useEffect(() => {
     loadPostedTests();
   }, []);
+
+  async function loadScheduleEditRequests() {
+    if (!facultyId || isAdminUser) { setScheduleEditRequests([]); return; }
+    try {
+      const res = await fetch(`${API_BASE}/record-edit-requests/mine?facultyId=${encodeURIComponent(facultyId)}`, { cache: "no-store" });
+      const data = await res.json();
+      setScheduleEditRequests(res.ok && Array.isArray(data) ? data.filter((item) => item.record_type === "schedule") : []);
+    } catch (err) {
+      console.error("Posted test edit requests fetch failed:", err);
+      setScheduleEditRequests([]);
+    }
+  }
+
+  useEffect(() => {
+    loadScheduleEditRequests();
+  }, [facultyId]);
+
+  function getScheduleEditRequest(test) {
+    return scheduleEditRequests.find((request) =>
+      request.record_type === "schedule" &&
+      String(request.test_code || "").trim().toUpperCase() === String(test.test_code || "").trim().toUpperCase()
+    ) || null;
+  }
+
+  async function requestScheduleEdit(test) {
+    const existing = getScheduleEditRequest(test);
+    if (existing?.status === "Pending") return alert("Your edit request is already waiting for admin approval.");
+    if (existing?.status === "Approved") {
+      setApprovedScheduleRequestId(String(existing.id));
+      editTest(test);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/record-edit-requests/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ facultyId, test_code: test.test_code }),
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || "Could not send edit request.");
+      await loadScheduleEditRequests();
+      alert(data.message || "Edit request sent to the admins.");
+    } catch (err) {
+      console.error("Posted test edit request failed:", err);
+      alert("Could not send edit request.");
+    }
+  }
 
   function handleClassChange(e) {
     const val = e.target.value;
@@ -123,6 +173,7 @@ setPostedTests(Array.isArray(data) ? data : []);
     setRegistrationEndDate("");
     setWritingAllowedTill("");
     setEditingTestCode("");
+    setApprovedScheduleRequestId("");
     setChapter("");
   }
 
@@ -220,16 +271,7 @@ setPostedTests(Array.isArray(data) ? data : []);
     try {
       setSaving(true);
 
-      const url = editingTestCode
-        ? `${API_BASE}/posted-tests/${encodeURIComponent(editingTestCode)}`
-        : `${API_BASE}/post-test`;
-
-      const method = editingTestCode ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const payload = {
           test_code: testCode.trim().toUpperCase(),
           subject_id: Number(subject),
           test_date: date,
@@ -252,8 +294,20 @@ setPostedTests(Array.isArray(data) ? data : []);
           duration_minutes: Number(duration),
           registration_end_date: registrationEndDate,
           writing_allowed_till: writingAllowedTill,
-        }),
-      });
+        };
+      const res = approvedScheduleRequestId
+        ? await fetch(`${API_BASE}/record-edit-requests/${encodeURIComponent(approvedScheduleRequestId)}/apply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ facultyId, schedule: payload }),
+          })
+        : await fetch(editingTestCode
+            ? `${API_BASE}/posted-tests/${encodeURIComponent(editingTestCode)}`
+            : `${API_BASE}/post-test`, {
+            method: editingTestCode ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
       const data = await res.json();
 
@@ -262,8 +316,9 @@ setPostedTests(Array.isArray(data) ? data : []);
         return;
       }
 
-      alert(editingTestCode ? "Test updated successfully" : "Test posted successfully");
+      alert(editingTestCode ? (approvedScheduleRequestId ? "Approved test edit applied successfully" : "Test updated successfully") : "Test posted successfully");
       resetForm();
+      if (approvedScheduleRequestId) await loadScheduleEditRequests();
       await loadPostedTests();
 setCurrentPage(1);
     } catch (err) {
@@ -513,12 +568,38 @@ async function deleteTest(code) {
 
                   <td className="p-3">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => editTest(t)}
-                        className="bg-yellow-500 text-white px-3 py-1 rounded-lg hover:bg-yellow-600"
-                      >
-                        Edit
-                      </button>
+                      {isAdminUser ? (
+                        <button
+                          onClick={() => editTest(t)}
+                          className="bg-yellow-500 text-white px-3 py-1 rounded-lg hover:bg-yellow-600"
+                        >
+                          Edit
+                        </button>
+                      ) : (() => {
+                        const editRequest = getScheduleEditRequest(t);
+                        if (editRequest?.status === "Approved") {
+                          return (
+                            <button
+                              onClick={() => {
+                                setApprovedScheduleRequestId(String(editRequest.id));
+                                editTest(t);
+                              }}
+                              className="bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700"
+                            >
+                              Edit
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            onClick={() => requestScheduleEdit(t)}
+                            disabled={editRequest?.status === "Pending"}
+                            className="bg-yellow-500 text-white px-3 py-1 rounded-lg hover:bg-yellow-600 disabled:opacity-50"
+                          >
+                            {editRequest?.status === "Pending" ? "Request Pending" : "Request Edit"}
+                          </button>
+                        );
+                      })()}
 
                       <button
                         onClick={() => deleteTest(t.test_code)}
