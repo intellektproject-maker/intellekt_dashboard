@@ -247,6 +247,7 @@ const [classesLoading, setClassesLoading] = useState(false);
         : [];
 
       setRows(prepared);
+      await fetchApprovedEditRequests();
     } catch (err) {
       console.error("Fetch report error:", err);
       alert("Failed to fetch attendance report");
@@ -296,6 +297,7 @@ const [classesLoading, setClassesLoading] = useState(false);
       : [];
 
     setMarkedRows(prepared);
+    await fetchApprovedEditRequests();
   } catch (err) {
     console.error("Fetch marked attendance error:", err);
     alert("Failed to fetch marked attendance");
