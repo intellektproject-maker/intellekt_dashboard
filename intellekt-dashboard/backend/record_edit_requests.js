@@ -307,7 +307,8 @@ function registerRecordEditRoutes(app, pool) {
           const form = req.body?.schedule || {};
           if (!testCode || !snapshot || !form.subject_id || !form.test_date ||
               !Number.isFinite(Number(form.total_marks)) || Number(form.total_marks) <= 0 ||
-              !form.class_name || !form.board || !form.duration_minutes ||
+              !form.class_name || !form.board ||
+              !Number.isFinite(Number(form.duration_minutes)) || Number(form.duration_minutes) <= 0 ||
               !form.registration_end_date || !form.writing_allowed_till) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Complete and valid posted-test details are required.' });
@@ -326,7 +327,8 @@ function registerRecordEditRoutes(app, pool) {
           }
           const current = currentResult.rows[0];
           const fields = ['subject_id','test_date','total_marks','portion','chapter','class','board','duration_minutes','registration_end_date','writing_allowed_till'];
-          const unchanged = fields.every((field) => String(current[field] ?? '').slice(0,10) === String(snapshot[field] ?? '').slice(0,10));
+          const normalizeSnapshotValue = (value) => value instanceof Date ? value.toISOString().slice(0,10) : String(value ?? '').slice(0,10);
+          const unchanged = fields.every((field) => normalizeSnapshotValue(current[field]) === normalizeSnapshotValue(snapshot[field]));
           if (!unchanged) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: 'This posted test changed after the request. Submit a new request.' });
