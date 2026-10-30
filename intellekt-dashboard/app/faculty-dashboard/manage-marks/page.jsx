@@ -44,6 +44,8 @@ export default function ManageMarks() {
   const [marksData, setMarksData] = useState([]);
   const [editingRow, setEditingRow] = useState(null);
   const [newMarks, setNewMarks] = useState("");
+  const [editRequests, setEditRequests] = useState([]);
+  const [requestingRow, setRequestingRow] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
@@ -143,6 +145,12 @@ export default function ManageMarks() {
 
       setMarksData(Array.isArray(data) ? data : []);
       setEditingRow(null);
+      const facultyId = new URLSearchParams(window.location.search).get("id") || "";
+      if (facultyId) {
+        const requestsRes = await fetch(`${API_BASE}/record-edit-requests/mine?facultyId=${encodeURIComponent(facultyId)}`, { cache: "no-store" });
+        const requestsData = await requestsRes.json();
+        if (requestsRes.ok) setEditRequests(Array.isArray(requestsData) ? requestsData : []);
+      }
     } catch (err) {
       console.error("Error fetching marks:", err);
       alert("Unable to connect to server");
@@ -151,9 +159,37 @@ export default function ManageMarks() {
     }
   }
 
-  function startEdit(rowIndex, row) {
-    setEditingRow(rowIndex);
-    setNewMarks(String(row.marks_obtained ?? ""));
+  async function startEdit(rowIndex, row) {
+    const match = (request) => request.record_type === "marks" &&
+      String(request.roll_no).trim().toUpperCase() === String(row.roll_no).trim().toUpperCase() &&
+      String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase();
+    const approved = editRequests.find((request) => match(request) && request.status === "Approved");
+    if (approved) {
+      setEditingRow(rowIndex);
+      setNewMarks(String(row.marks_obtained ?? ""));
+      return;
+    }
+    if (editRequests.some((request) => match(request) && request.status === "Pending")) {
+      alert("Your edit permission request is already pending with the admin.");
+      return;
+    }
+    if (!window.confirm("Request admin approval to edit these marks?")) return;
+    setRequestingRow(rowIndex);
+    try {
+      const facultyId = new URLSearchParams(window.location.search).get("id") || "";
+      const res = await fetch(API_BASE + "/record-edit-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ facultyId, recordType: "marks", roll_no: row.roll_no, test_code: row.test_code }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to request edit permission"); return; }
+      alert(data.message || "Edit permission request sent to admin.");
+      await fetchMarks();
+    } catch (err) {
+      console.error("Edit permission request failed:", err);
+      alert("Failed to request edit permission.");
+    } finally { setRequestingRow(null); }
   }
 
   async function updateMarks(row) {
@@ -174,26 +210,17 @@ export default function ManageMarks() {
       return;
     }
 
-    const confirmEdit = window.confirm("Send this mark edit request to the admin for approval?");
-    if (!confirmEdit) return;
-
     try {
       const facultyId = new URLSearchParams(window.location.search).get("id") || "";
-      if (!facultyId.trim()) {
-        alert("Faculty ID is missing. Please reopen the dashboard and try again.");
-        return;
-      }
-
-      const res = await fetch(API_BASE + "/record-edit-requests", {
+      if (!facultyId.trim()) { alert("Faculty ID is missing. Please reopen the dashboard and try again."); return; }
+      const approved = editRequests.find((request) => request.record_type === "marks" && request.status === "Approved" &&
+        String(request.roll_no).trim().toUpperCase() === String(row.roll_no).trim().toUpperCase() &&
+        String(request.test_code).trim().toUpperCase() === String(row.test_code).trim().toUpperCase());
+      if (!approved) { alert("Admin approval is required before changing marks."); setEditingRow(null); return; }
+      const res = await fetch(API_BASE + "/record-edit-requests/" + approved.id + "/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          facultyId,
-          recordType: "marks",
-          roll_no: row.roll_no,
-          test_code: row.test_code,
-          requested_value: String(normalizedMarks),
-        }),
+        body: JSON.stringify({ facultyId, newValue: String(normalizedMarks) }),
       });
 
       const data = await res.json();
@@ -204,7 +231,9 @@ export default function ManageMarks() {
 
       setEditingRow(null);
       setNewMarks("");
-      alert(data.message || "Edit request sent to the admin. Marks remain unchanged until approval.");
+      setEditRequests((current) => current.filter((request) => String(request.id) !== String(approved.id)));
+      alert(data.message || "Approved marks edit applied successfully.");
+      await fetchMarks();
     } catch (err) {
       console.error("Update failed:", err);
       alert("Failed to update marks");
@@ -431,9 +460,10 @@ export default function ManageMarks() {
                     ) : (
                       <button
                         onClick={() => startEdit(i, m)}
-                        className="bg-yellow-500 text-white px-3 py-1 rounded-lg hover:bg-yellow-600"
+                        disabled={requestingRow === i}
+                        className="bg-yellow-500 text-white px-3 py-1 rounded-lg hover:bg-yellow-600 disabled:opacity-50"
                       >
-                        Edit
+                        {requestingRow === i ? "Requesting..." : editRequests.some((r) => r.record_type === "marks" && r.status === "Pending" && String(r.roll_no).trim().toUpperCase() === String(m.roll_no).trim().toUpperCase() && String(r.test_code).trim().toUpperCase() === String(m.test_code).trim().toUpperCase()) ? "Request Pending" : editRequests.some((r) => r.record_type === "marks" && r.status === "Approved" && String(r.roll_no).trim().toUpperCase() === String(m.roll_no).trim().toUpperCase() && String(r.test_code).trim().toUpperCase() === String(m.test_code).trim().toUpperCase()) ? "Edit (Approved)" : "Request Edit"}
                       </button>
                     )}
                   </td>
