@@ -556,9 +556,18 @@ function EnterAttendancePageInner() {
                           if (editingKeys[key]) {
                             return (
                               <div className="flex flex-wrap gap-2">
-                                <button onClick={() => requestAttendanceEdit(student)} className="bg-blue-700 text-white px-3 py-2 rounded-lg hover:bg-blue-800">
-                                  Send Request
-                                </button>
+                                {request?.status === 'Approved' ? (
+                                  <button
+                                    onClick={() => applyApprovedAttendanceEdit(student, request)}
+                                    className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700"
+                                  >
+                                    Apply Approved Edit
+                                  </button>
+                                ) : (
+                                  <button onClick={() => requestAttendanceEdit(student)} className="bg-blue-700 text-white px-3 py-2 rounded-lg hover:bg-blue-800">
+                                    Send Request
+                                  </button>
+                                )}
                                 <button onClick={() => cancelAttendanceEdit(student)} className="bg-gray-500 text-white px-3 py-2 rounded-lg">
                                   Cancel
                                 </button>
@@ -566,19 +575,9 @@ function EnterAttendancePageInner() {
                             );
                           }
                           if (request?.status === 'Pending') return <span className="text-amber-700 font-medium">Request Pending</span>;
-                          if (request?.status === 'Approved') {
-                            return (
-                              <button
-                                onClick={() => applyApprovedAttendanceEdit(student, request)}
-                                className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700"
-                              >
-                                Apply Approved Edit
-                              </button>
-                            );
-                          }
                           return (
                             <button onClick={() => beginAttendanceEdit(student)} className="bg-yellow-500 text-white px-3 py-2 rounded-lg hover:bg-yellow-600">
-                              Request Edit
+                              {request?.status === 'Approved' ? 'Edit Approved' : 'Request Edit'}
                             </button>
                           );
                         })()}
