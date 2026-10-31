@@ -5014,15 +5014,22 @@ app.get('/attendance-students', async (req, res) => {
       const result = await pool.query(
         `
         SELECT
-          roll_no,
-          student_name AS name,
-          class,
-          board,
-          subject_id,
-          test_code
-        FROM test_registrations
-        WHERE writing_date = $1
-        ORDER BY class, subject_id, roll_no
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+        ORDER BY tr.class, tr.subject_id, tr.roll_no
         `,
         [date]
       );
@@ -5062,18 +5069,25 @@ app.get('/attendance-students', async (req, res) => {
       const registrations = await pool.query(
         `
         SELECT
-          roll_no,
-          student_name AS name,
-          class,
-          board,
-          subject_id,
-          test_code
-        FROM test_registrations
-        WHERE writing_date = $1
-          AND TRIM(class) = TRIM($2)
-          AND UPPER(TRIM(board)) = UPPER(TRIM($3))
-          AND subject_id = $4
-        ORDER BY roll_no
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+          AND TRIM(tr.class) = TRIM($2)
+          AND UPPER(TRIM(tr.board)) = UPPER(TRIM($3))
+          AND tr.subject_id = $4
+        ORDER BY tr.roll_no
         `,
         [date, className, board, Number(subject_id)]
       );
@@ -5104,16 +5118,23 @@ app.get('/attendance-students', async (req, res) => {
         s.academic_year_to,
         s.parent_name,
         s.secondary_contact,
-        s.reference
+        s.reference,
+        a.status AS attendance_status,
+        a.updated_by AS attendance_marked_by,
+        a.marked_at AS attendance_marked_at
       FROM students s
       INNER JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      LEFT JOIN attendance a
+        ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+        AND a.subject_id = ss.subject_id
+        AND a.attendance_date = $4
       WHERE TRIM(s.class) = TRIM($1)
         AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
         AND ss.subject_id = $3
       ORDER BY s.roll_no ASC
       `,
-      [className, board, Number(subject_id)]
+      [className, board, Number(subject_id), date]
     );
 
     return res.json({
