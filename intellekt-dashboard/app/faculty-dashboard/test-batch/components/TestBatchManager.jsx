@@ -583,6 +583,7 @@ function StudentsSection({ adminId }) {
                   className="w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
                 >
                   <option value="">Select class</option>
+                  <option value="10">10</option>
                   <option value="11">11</option>
                   <option value="12">12</option>
                 </select>
