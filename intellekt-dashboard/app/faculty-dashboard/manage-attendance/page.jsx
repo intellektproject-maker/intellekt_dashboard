@@ -96,12 +96,9 @@ function ManageAttendancePageInner() {
   const [toDate, setToDate] = useState("");
 
   const [rows, setRows] = useState([]);
-  const [markedRows, setMarkedRows] = useState([]);
   const [approvedEditRequests, setApprovedEditRequests] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [markedLoading, setMarkedLoading] = useState(false);
-const [markedSearched, setMarkedSearched] = useState(false);
 const [classesLoading, setClassesLoading] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState("");
@@ -112,8 +109,6 @@ const [classesLoading, setClassesLoading] = useState(false);
     fetchClasses();
     if (facultyId) fetchApprovedEditRequests();
   }, [facultyId]);
-
-  // Removed auto fetch for marked attendance
 
   async function fetchApprovedEditRequests() {
     try {
@@ -153,7 +148,6 @@ const [classesLoading, setClassesLoading] = useState(false);
           : item
       );
       setRows(updateRows);
-      setMarkedRows(updateRows);
       await fetchApprovedEditRequests();
       alert(data.message || "Approved attendance edit applied successfully.");
     } catch (err) {
@@ -256,56 +250,6 @@ const [classesLoading, setClassesLoading] = useState(false);
     }
   }
 
-  async function fetchMarkedAttendance() {
-  if (!classBoard) {
-    alert("Please select class");
-    return;
-  }
-
-  if (!subject) {
-    alert("Please select subject");
-    return;
-  }
-
-  try {
-    setMarkedLoading(true);
-    setMarkedRows([]);
-    setMarkedSearched(true);
-
-    const params = new URLSearchParams();
-    params.append("mode", "markedToday");
-    params.append("class", classBoard);
-    params.append("subject", subjectMap[subject]);
-
-    const res = await fetch(`${API_BASE}/attendance?${params.toString()}`, {
-      cache: "no-store",
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error || "Failed to fetch marked attendance");
-      return;
-    }
-
-    const prepared = Array.isArray(data)
-      ? data.map((row) => ({
-          ...row,
-          isEditing: false,
-          editedStatus: row.status,
-        }))
-      : [];
-
-    setMarkedRows(prepared);
-    await fetchApprovedEditRequests();
-  } catch (err) {
-    console.error("Fetch marked attendance error:", err);
-    alert("Failed to fetch marked attendance");
-  } finally {
-    setMarkedLoading(false);
-  }
-}
-
   function getRowKey(row) {
     return `${row.roll_no}-${row.subject_id}-${toInputDate(
       row.attendance_date
@@ -313,7 +257,7 @@ const [classesLoading, setClassesLoading] = useState(false);
   }
 
   function startEdit(rowKey, type = "report") {
-    const setter = type === "marked" ? setMarkedRows : setRows;
+    const setter = setRows;
 
     setter((prev) =>
       prev.map((row) =>
@@ -325,7 +269,7 @@ const [classesLoading, setClassesLoading] = useState(false);
   }
 
   function cancelEdit(rowKey, type = "report") {
-    const setter = type === "marked" ? setMarkedRows : setRows;
+    const setter = setRows;
 
     setter((prev) =>
       prev.map((row) =>
@@ -337,7 +281,7 @@ const [classesLoading, setClassesLoading] = useState(false);
   }
 
   function handleEditedStatusChange(rowKey, value, type = "report") {
-    const setter = type === "marked" ? setMarkedRows : setRows;
+    const setter = setRows;
 
     setter((prev) =>
       prev.map((row) =>
@@ -347,7 +291,7 @@ const [classesLoading, setClassesLoading] = useState(false);
   }
 
   async function saveSingleRow(rowKey, type = "report") {
-    const sourceRows = type === "marked" ? markedRows : rows;
+    const sourceRows = rows;
     const row = sourceRows.find((item) => getRowKey(item) === rowKey);
 
     if (!row || !row.isEditing) return;
@@ -407,22 +351,6 @@ const [classesLoading, setClassesLoading] = useState(false);
       return textMatch && statusMatch && subjectMatch;
     });
   }, [rows, filterText, statusFilter, subjectFilter]);
-
-  const filteredMarkedRows = useMemo(() => {
-    const text = filterText.trim().toLowerCase();
-
-    return markedRows.filter((row) => {
-      const nameMatch = row.name?.toLowerCase().includes(text);
-      const rollMatch = row.roll_no?.toLowerCase().includes(text);
-      const textMatch = !text || nameMatch || rollMatch;
-
-      const statusMatch =
-        !statusFilter ||
-        row.status?.toLowerCase() === statusFilter.toLowerCase();
-
-      return textMatch && statusMatch;
-    });
-  }, [markedRows, filterText, statusFilter]);
 
   function exportExcel() {
     if (filteredRows.length === 0) {
@@ -575,16 +503,6 @@ const [classesLoading, setClassesLoading] = useState(false);
           Attendance Report
         </button>
 
-        <button
-          onClick={() => setActiveTab("marked")}
-          className={`px-5 py-2 rounded-lg font-semibold ${
-            activeTab === "marked"
-              ? "bg-blue-700 text-white"
-              : "bg-gray-100 text-blue-700 hover:bg-blue-50"
-          }`}
-        >
-          Marked Attendance
-        </button>
       </div>
 
       <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 mb-6">
@@ -624,23 +542,13 @@ const [classesLoading, setClassesLoading] = useState(false);
           />
 
           <div className="md:col-span-2 flex justify-start md:justify-end">
-            {activeTab === "report" ? (
-              <button
-                onClick={fetchReport}
-                disabled={loading}
-                className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto disabled:opacity-50"
-              >
-                {loading ? "Loading..." : "View Report"}
-              </button>
-            ) : (
-              <button
-                onClick={fetchMarkedAttendance}
-                disabled={markedLoading}
-                className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto disabled:opacity-50"
-              >
-                {markedLoading ? "Loading..." : "Refresh Marked Attendance"}
-              </button>
-            )}
+            <button
+              onClick={fetchReport}
+              disabled={loading}
+              className="bg-blue-700 text-white rounded-lg px-6 py-3 hover:bg-blue-800 w-full md:w-auto disabled:opacity-50"
+            >
+              {loading ? "Loading..." : "View Report"}
+            </button>
           </div>
         </div>
 
@@ -698,13 +606,6 @@ const [classesLoading, setClassesLoading] = useState(false);
           </div>
         )}
 
-        {activeTab === "marked" && (
-          <p className="text-gray-600">
-            This section shows only today’s marked attendance. Tomorrow it will
-            appear empty automatically, while old records still stay in the
-            database for reports.
-          </p>
-        )}
       </div>
 
       {activeTab === "report" && (
@@ -776,52 +677,6 @@ const [classesLoading, setClassesLoading] = useState(false);
         </>
       )}
 
-      {activeTab === "marked" && (
-        <>
-          {markedLoading && (
-            <p className="text-gray-600">Loading marked attendance...</p>
-          )}
-
-          {!markedLoading && markedRows.length > 0 && (
-            <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6 overflow-x-auto">
-              <div className="flex flex-wrap gap-3 mb-4">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="border rounded-lg px-4 py-2"
-                >
-                  <option value="">All Status</option>
-                  <option value="Present">Only Present</option>
-                  <option value="Absent">Only Absent</option>
-                </select>
-              </div>
-
-              {filteredMarkedRows.length === 0 ? (
-                <p className="text-gray-500">
-                  No marked records match the selected filters.
-                </p>
-              ) : (
-                <AttendanceTable
-                  rows={filteredMarkedRows}
-                  startEdit={startEdit}
-                  cancelEdit={cancelEdit}
-                  handleEditedStatusChange={handleEditedStatusChange}
-                  saveSingleRow={saveSingleRow}
-                  getApprovedRequest={getApprovedRequest}
-                  applyApprovedEdit={applyApprovedEdit}
-                  type="marked"
-                />
-              )}
-            </div>
-          )}
-
-          {!markedLoading && markedSearched && markedRows.length === 0 && (
-            <p className="text-gray-500">
-              No attendance marked today yet.
-            </p>
-          )}
-        </>
-      )}
 
       {showExportPopup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
