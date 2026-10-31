@@ -190,14 +190,14 @@ function EnterAttendancePageInner() {
     setEditingKeys((prev) => ({ ...prev, [key]: false }));
   }
 
-  async function requestAttendanceEdit(student) {
+  async function requestAttendanceEdit(student, requestedValue) {
     const key = getAttendanceKey(student);
     const request = getStudentEditRequest(student);
     if (request?.status === 'Pending') {
       alert('An edit request is already waiting for admin approval.');
       return;
     }
-    const requestedValue = attendance[key] || 'Present';
+    if (!['Present', 'Absent'].includes(requestedValue)) return;
     if (requestedValue === student.attendance_status) {
       alert('Select a different attendance status before requesting an edit.');
       return;
@@ -230,9 +230,9 @@ function EnterAttendancePageInner() {
     }
   }
 
-  async function applyApprovedAttendanceEdit(student, request) {
+  async function applyApprovedAttendanceEdit(student, request, newValue) {
     const key = getAttendanceKey(student);
-    const newValue = attendance[key] || student.attendance_status;
+    newValue = newValue || attendance[key] || student.attendance_status;
     if (newValue === student.attendance_status) {
       alert('Select the new attendance status before applying the approved edit.');
       return;
@@ -469,122 +469,83 @@ function EnterAttendancePageInner() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[700px]">
+            <table className="w-full border-collapse min-w-[900px]">
               <thead>
-                <tr className="border-b text-gray-700">
-                 <th className="text-left py-3 px-2 text-blue-700">Roll No</th>
-                <th className="text-left py-3 px-2 text-blue-700">Name</th>
-
-                 {isSunday && (
-                <>
-                <th className="text-left py-3 px-2 text-blue-700">Board-Class</th>
-                <th className="text-left py-3 px-2 text-blue-700">Subject</th>
-                <th className="text-left py-3 px-2 text-blue-700">Test Code</th>
-                </>
-                 )}
-
-<th className="text-left py-3 px-2 text-blue-700">Status</th>
-                {attendanceFrozen && <th className="text-left py-3 px-2 text-blue-700">Action</th>}
+                <tr className="bg-blue-700 text-white">
+                  <th className="p-3 text-left">Roll No</th>
+                  <th className="p-3 text-left">Name</th>
+                  {isSunday && (
+                    <>
+                      <th className="p-3 text-left">Board-Class</th>
+                      <th className="p-3 text-left">Subject</th>
+                      <th className="p-3 text-left">Test Code</th>
+                    </>
+                  )}
+                  <th className="p-3 text-left">Status</th>
+                  {attendanceFrozen && <th className="p-3 text-left">Request Edit</th>}
                 </tr>
               </thead>
-
               <tbody>
-                {students.map((student) => (
+                {students.map((student, index) => {
+                  const key = getAttendanceKey(student);
+                  const request = getStudentEditRequest(student);
+                  const approved = request?.status === 'Approved';
+                  return (
                     <tr
-  key={
-    isSunday
-      ? `${student.roll_no}_${student.subject_id}`
-      : student.roll_no
-  }
-  className="border-b"
->
-                    <td className="py-3 px-2">{student.roll_no}</td>
-                    <td className="py-3 px-2">{student.name}</td>
-                    {isSunday && (
-  <>
-    <td className="py-3 px-2">
-      {student.board}-{student.class}
-    </td>
-
-    <td className="py-3 px-2">
-      {student.subject_id === 1 ? 'MATHS' : 'PHYSICS'}
-    </td>
-
-    <td className="py-3 px-2">
-      {student.test_code}
-    </td>
-  </>
-)}
-                    <td className="py-3 px-2">
-                      <div className="flex gap-5">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`attendance-${
-  isSunday
-    ? `${student.roll_no}_${student.subject_id}`
-    : student.roll_no
-}`}
-                            checked={(attendance[getAttendanceKey(student)] || 'Present') === 'Present'}
-                            disabled={attendanceFrozen && !editingKeys[getAttendanceKey(student)]}
-                            onChange={() => handleAttendanceChange(getAttendanceKey(student), 'Present')}
-                          />
-                          Present
-                        </label>
-
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`attendance-${
-  isSunday
-    ? `${student.roll_no}_${student.subject_id}`
-    : student.roll_no
-}`}
-                            checked={attendance[getAttendanceKey(student)] === 'Absent'}
-                            disabled={attendanceFrozen && !editingKeys[getAttendanceKey(student)]}
-                            onChange={() => handleAttendanceChange(getAttendanceKey(student), 'Absent')}
-                          />
-                          Absent
-                        </label>
-                      </div>
-                    </td>
-                    {attendanceFrozen && (
-                      <td className="py-3 px-2">
-                        {(() => {
-                          const key = getAttendanceKey(student);
-                          const request = getStudentEditRequest(student);
-                          if (editingKeys[key]) {
-                            return (
-                              <div className="flex flex-wrap gap-2">
-                                {request?.status === 'Approved' ? (
-                                  <button
-                                    onClick={() => applyApprovedAttendanceEdit(student, request)}
-                                    className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700"
-                                  >
-                                    Apply Approved Edit
-                                  </button>
-                                ) : (
-                                  <button onClick={() => requestAttendanceEdit(student)} className="bg-blue-700 text-white px-3 py-2 rounded-lg hover:bg-blue-800">
-                                    Send Request
-                                  </button>
-                                )}
-                                <button onClick={() => cancelAttendanceEdit(student)} className="bg-gray-500 text-white px-3 py-2 rounded-lg">
-                                  Cancel
-                                </button>
-                              </div>
-                            );
-                          }
-                          if (request?.status === 'Pending') return <span className="text-amber-700 font-medium">Request Pending</span>;
-                          return (
-                            <button onClick={() => beginAttendanceEdit(student)} className="bg-yellow-500 text-white px-3 py-2 rounded-lg hover:bg-yellow-600">
-                              {request?.status === 'Approved' ? 'Edit Approved' : 'Request Edit'}
-                            </button>
-                          );
-                        })()}
+                      key={key}
+                      className={index % 2 === 0 ? 'bg-gray-50 border-b' : 'bg-white border-b'}
+                    >
+                      <td className="p-3 font-semibold">{student.roll_no}</td>
+                      <td className="p-3">{student.name}</td>
+                      {isSunday && (
+                        <>
+                          <td className="p-3">{student.board}-{student.class}</td>
+                          <td className="p-3">{student.subject_id === 1 ? 'MATHS' : 'PHYSICS'}</td>
+                          <td className="p-3 font-medium">{student.test_code || '-'}</td>
+                        </>
+                      )}
+                      <td className="p-3">
+                        <select
+                          className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                          value={attendance[key] || 'Present'}
+                          disabled={attendanceFrozen && !approved}
+                          onChange={(e) => handleAttendanceChange(key, e.target.value)}
+                        >
+                          <option value="Present">Present</option>
+                          <option value="Absent">Absent</option>
+                        </select>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {attendanceFrozen && (
+                        <td className="p-3">
+                          {request?.status === 'Pending' ? (
+                            <span className="text-amber-700 font-medium">Request Pending</span>
+                          ) : approved ? (
+                            <button
+                              onClick={() => applyApprovedAttendanceEdit(student, request)}
+                              disabled={(attendance[key] || 'Present') === student.attendance_status}
+                              className="bg-green-600 text-white px-3 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Apply Approved Edit
+                            </button>
+                          ) : (
+                            <select
+                              className="border rounded px-3 py-1 bg-white"
+                              value=""
+                              onChange={(e) => {
+                                const requestedValue = e.target.value;
+                                if (requestedValue) requestAttendanceEdit(student, requestedValue);
+                              }}
+                            >
+                              <option value="">Request Edit</option>
+                              <option value="Present">Change to Present</option>
+                              <option value="Absent">Change to Absent</option>
+                            </select>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
