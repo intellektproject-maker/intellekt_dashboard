@@ -38,6 +38,9 @@ function EnterAttendancePageInner() {
   const [submitting, setSubmitting] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [absentees, setAbsentees] = useState([]);
+  const [attendanceFrozen, setAttendanceFrozen] = useState(false);
+  const [editingKeys, setEditingKeys] = useState({});
+  const [editRequests, setEditRequests] = useState([]);
 
   useEffect(() => {
     setSelectedDate(new Date().toISOString().split('T')[0]);
@@ -90,6 +93,9 @@ function EnterAttendancePageInner() {
     setLoading(true);
     setStudents([]);
     setAttendance({});
+    setAttendanceFrozen(false);
+    setEditingKeys({});
+    setEditRequests([]);
 
     let params = new URLSearchParams();
 
@@ -123,16 +129,28 @@ function EnterAttendancePageInner() {
     setStudents(studentList);
 
     const map = {};
+    const hasSavedAttendance = studentList.some(
+      (student) => ['Present', 'Absent'].includes(student.attendance_status)
+    );
 
     studentList.forEach((student) => {
       const key = isSunday
         ? `${student.roll_no}_${student.subject_id}`
         : student.roll_no;
-
-      map[key] = 'Present';
+      map[key] = student.attendance_status || 'Present';
     });
 
     setAttendance(map);
+    setAttendanceFrozen(hasSavedAttendance);
+
+    if (facultyId) {
+      const requestsResponse = await fetch(
+        API_BASE + '/record-edit-requests/mine?facultyId=' + encodeURIComponent(facultyId),
+        { cache: 'no-store' }
+      );
+      const requestsData = await requestsResponse.json();
+      if (requestsResponse.ok && Array.isArray(requestsData)) setEditRequests(requestsData);
+    }
 
   } catch (err) {
     console.error('Load students error:', err);
@@ -142,11 +160,105 @@ function EnterAttendancePageInner() {
   }
 }
 
+  function getAttendanceKey(student) {
+    return isSunday ? `${student.roll_no}_${student.subject_id}` : student.roll_no;
+  }
+
+  function getStudentEditRequest(student) {
+    const subjectId = isSunday ? student.subject_id : subjectMap[subject];
+    return editRequests.find((request) =>
+      request.record_type === 'attendance' &&
+      String(request.roll_no).trim().toUpperCase() === String(student.roll_no).trim().toUpperCase() &&
+      Number(request.subject_id) === Number(subjectId) &&
+      String(request.attendance_date).slice(0, 10) === selectedDate &&
+      ['Pending', 'Approved'].includes(request.status)
+    );
+  }
+
   function handleAttendanceChange(rollNo, value) {
-    setAttendance((prev) => ({
-      ...prev,
-      [rollNo]: value,
-    }));
+    setAttendance((prev) => ({ ...prev, [rollNo]: value }));
+  }
+
+  function beginAttendanceEdit(student) {
+    const key = getAttendanceKey(student);
+    setEditingKeys((prev) => ({ ...prev, [key]: true }));
+  }
+
+  function cancelAttendanceEdit(student) {
+    const key = getAttendanceKey(student);
+    setAttendance((prev) => ({ ...prev, [key]: student.attendance_status || 'Present' }));
+    setEditingKeys((prev) => ({ ...prev, [key]: false }));
+  }
+
+  async function requestAttendanceEdit(student) {
+    const key = getAttendanceKey(student);
+    const request = getStudentEditRequest(student);
+    if (request?.status === 'Pending') {
+      alert('An edit request is already waiting for admin approval.');
+      return;
+    }
+    const requestedValue = attendance[key] || 'Present';
+    if (requestedValue === student.attendance_status) {
+      alert('Select a different attendance status before requesting an edit.');
+      return;
+    }
+    try {
+      const response = await fetch(API_BASE + '/record-edit-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facultyId,
+          recordType: 'attendance',
+          roll_no: student.roll_no,
+          subject_id: isSunday ? student.subject_id : subjectMap[subject],
+          attendance_date: selectedDate,
+          requested_value: requestedValue,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Failed to send attendance edit request.');
+        return;
+      }
+      setEditRequests((prev) => [...prev, data.request]);
+      setEditingKeys((prev) => ({ ...prev, [key]: false }));
+      setAttendance((prev) => ({ ...prev, [key]: student.attendance_status }));
+      alert(data.message || 'Edit request sent to the admin. Attendance remains unchanged until approval.');
+    } catch (error) {
+      console.error('Attendance edit request error:', error);
+      alert('Failed to send attendance edit request.');
+    }
+  }
+
+  async function applyApprovedAttendanceEdit(student, request) {
+    const key = getAttendanceKey(student);
+    const newValue = attendance[key] || student.attendance_status;
+    if (newValue === student.attendance_status) {
+      alert('Select the new attendance status before applying the approved edit.');
+      return;
+    }
+    try {
+      const response = await fetch(API_BASE + '/record-edit-requests/' + request.id + '/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facultyId, newValue }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Could not apply the approved attendance edit.');
+        return;
+      }
+      setStudents((prev) => prev.map((item) =>
+        getAttendanceKey(item) === key ? { ...item, attendance_status: newValue } : item
+      ));
+      setAttendance((prev) => ({ ...prev, [key]: newValue }));
+      setEditRequests((prev) => prev.filter((item) => item.id !== request.id));
+      setEditingKeys((prev) => ({ ...prev, [key]: false }));
+      alert(data.message || 'Approved attendance edit applied successfully.');
+    } catch (error) {
+      console.error('Apply approved attendance edit error:', error);
+      alert('Could not apply the approved attendance edit.');
+    }
   }
 
   function markAllPresent() {
@@ -188,6 +300,9 @@ function EnterAttendancePageInner() {
   setSubject('');
   setStudents([]);
   setAttendance({});
+  setAttendanceFrozen(false);
+  setEditingKeys({});
+  setEditRequests([]);
   setShowPopup(false);
   setAbsentees([]);
   setSelectedDate(today);
@@ -340,13 +455,17 @@ function EnterAttendancePageInner() {
 
       {!loading && students.length > 0 && (
         <div className="bg-white shadow-md rounded-xl border border-gray-200 p-6">
-          <div className="mb-4 flex justify-end">
-            <button
-              onClick={markAllPresent}
-              className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800"
-            >
-              Mark All as Present
-            </button>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            {attendanceFrozen ? (
+              <p className="text-amber-700 font-medium">
+                Attendance is saved and locked for {selectedDate}. Request admin approval to make changes.
+              </p>
+            ) : <span />}
+            {!attendanceFrozen && (
+              <button onClick={markAllPresent} className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800">
+                Mark All as Present
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -365,6 +484,7 @@ function EnterAttendancePageInner() {
                  )}
 
 <th className="text-left py-3 px-2 text-blue-700">Status</th>
+                {attendanceFrozen && <th className="text-left py-3 px-2 text-blue-700">Action</th>}
                 </tr>
               </thead>
 
@@ -405,23 +525,9 @@ function EnterAttendancePageInner() {
     ? `${student.roll_no}_${student.subject_id}`
     : student.roll_no
 }`}
-                            checked={
-  (
-    attendance[
-      isSunday
-        ? `${student.roll_no}_${student.subject_id}`
-        : student.roll_no
-    ] || 'Present'
-  ) === 'Present'
-}
-                            onChange={() =>
-                              handleAttendanceChange(
-  isSunday
-    ? `${student.roll_no}_${student.subject_id}`
-    : student.roll_no,
-  'Present'
-)
-                            }
+                            checked={(attendance[getAttendanceKey(student)] || 'Present') === 'Present'}
+                            disabled={attendanceFrozen && !editingKeys[getAttendanceKey(student)]}
+                            onChange={() => handleAttendanceChange(getAttendanceKey(student), 'Present')}
                           />
                           Present
                         </label>
@@ -434,38 +540,61 @@ function EnterAttendancePageInner() {
     ? `${student.roll_no}_${student.subject_id}`
     : student.roll_no
 }`}
-                            checked={
-  attendance[
-    isSunday
-      ? `${student.roll_no}_${student.subject_id}`
-      : student.roll_no
-  ] === 'Absent'
-}
-                            onChange={() =>
-                              handleAttendanceChange(
-  isSunday
-    ? `${student.roll_no}_${student.subject_id}`
-    : student.roll_no,
-  'Absent'
-)
-                            }
+                            checked={attendance[getAttendanceKey(student)] === 'Absent'}
+                            disabled={attendanceFrozen && !editingKeys[getAttendanceKey(student)]}
+                            onChange={() => handleAttendanceChange(getAttendanceKey(student), 'Absent')}
                           />
                           Absent
                         </label>
                       </div>
                     </td>
+                    {attendanceFrozen && (
+                      <td className="py-3 px-2">
+                        {(() => {
+                          const key = getAttendanceKey(student);
+                          const request = getStudentEditRequest(student);
+                          if (editingKeys[key]) {
+                            return (
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => requestAttendanceEdit(student)} className="bg-blue-700 text-white px-3 py-2 rounded-lg hover:bg-blue-800">
+                                  Send Request
+                                </button>
+                                <button onClick={() => cancelAttendanceEdit(student)} className="bg-gray-500 text-white px-3 py-2 rounded-lg">
+                                  Cancel
+                                </button>
+                              </div>
+                            );
+                          }
+                          if (request?.status === 'Pending') return <span className="text-amber-700 font-medium">Request Pending</span>;
+                          if (request?.status === 'Approved') {
+                            return (
+                              <button
+                                onClick={() => applyApprovedAttendanceEdit(student, request)}
+                                className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700"
+                              >
+                                Apply Approved Edit
+                              </button>
+                            );
+                          }
+                          return (
+                            <button onClick={() => beginAttendanceEdit(student)} className="bg-yellow-500 text-white px-3 py-2 rounded-lg hover:bg-yellow-600">
+                              Request Edit
+                            </button>
+                          );
+                        })()}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <button
-            onClick={handlePreview}
-            className="mt-6 bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800"
-          >
-            Preview & Submit
-          </button>
+          {!attendanceFrozen && (
+            <button onClick={handlePreview} className="mt-6 bg-blue-700 text-white px-6 py-3 rounded-lg hover:bg-blue-800">
+              Preview & Submit
+            </button>
+          )}
         </div>
       )}
 
