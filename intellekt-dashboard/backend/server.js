@@ -964,6 +964,7 @@ app.put('/faculty-notifications/read/:facultyId/:notificationId', async (req, re
 				SET is_read = TRUE
 				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
 				  AND id = $2
+				  AND archived_at IS NULL
 				RETURNING id
 				`,
 			[facultyId, notificationId]
@@ -1050,7 +1051,9 @@ app.put('/faculty-notifications/mark-read/:facultyId/:moduleName', async (req, r
 			`
 			UPDATE faculty_notifications
 			SET is_read = TRUE
-			WHERE faculty_id = $1 AND module_name = $2
+			WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+			  AND module_name = $2
+			  AND archived_at IS NULL
 			`,
 			[facultyId, moduleName]
 		);
@@ -8118,6 +8121,23 @@ async function startServer() {
       ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
       ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
   `);
+  // Keep faculty notification archive endpoints compatible with existing databases.
+  // The archived_at column is required by the inbox, archive, restore and 30-day cleanup routes.
+  await pool.query(`
+    ALTER TABLE public.faculty_notifications
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_active
+      ON public.faculty_notifications (faculty_id, created_at DESC)
+      WHERE archived_at IS NULL
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_archived
+      ON public.faculty_notifications (faculty_id, archived_at DESC)
+      WHERE archived_at IS NOT NULL
+  `);
+
   await ensureStudentDeviceTokensTable();
 
   const facultyNotificationService = require('./faculty-notification-service');
