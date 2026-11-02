@@ -903,52 +903,161 @@ app.put('/student-notifications/read', async (req, res) => {
 		res.status(500).json({ error: 'Failed to update notifications' });
 	}
 });
-app.get('/faculty-notifications/:facultyId', async (req, res) => {
+// Automatically archive read notifications after 30 days.
+app.get('/faculty-notifications/:facultyId/archived', async (req, res) => {
 	const { facultyId } = req.params;
-
 	try {
 		const result = await pool.query(
 			`
 				SELECT *
 				FROM faculty_notifications
-				WHERE faculty_id = $1
-				AND is_read = FALSE
-				ORDER BY created_at DESC
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND archived_at IS NOT NULL
+				ORDER BY archived_at DESC, created_at DESC
 				`,
-			[ facultyId ]
+			[facultyId]
 		);
-
 		res.json(result.rows);
 	} catch (err) {
-		console.error('GET faculty notifications error:', err);
-
-		res.status(500).json({
-			error: 'Failed to fetch faculty notifications'
-		});
+		console.error('GET archived faculty notifications error:', err);
+		res.status(500).json({ error: 'Failed to fetch archived notifications' });
 	}
 });
 
+app.get('/faculty-notifications/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+	try {
+		await pool.query(
+			`
+				UPDATE faculty_notifications
+				SET archived_at = created_at + INTERVAL '30 days'
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND is_read = TRUE
+				  AND archived_at IS NULL
+				  AND created_at <= NOW() - INTERVAL '30 days'
+				`,
+			[facultyId]
+		);
+		const result = await pool.query(
+			`
+				SELECT *
+				FROM faculty_notifications
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+			  AND archived_at IS NULL
+				ORDER BY created_at DESC
+				`,
+			[facultyId]
+		);
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET faculty notifications error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty notifications' });
+	}
+});
+
+app.put('/faculty-notifications/read/:facultyId/:notificationId', async (req, res) => {
+	const { facultyId, notificationId } = req.params;
+	try {
+		const result = await pool.query(
+			`
+				UPDATE faculty_notifications
+				SET is_read = TRUE
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND id = $2
+				RETURNING id
+				`,
+			[facultyId, notificationId]
+		);
+		if (!result.rowCount) {
+			return res.status(404).json({ error: 'Notification not found' });
+		}
+		res.json({ message: 'Notification marked as read' });
+	} catch (err) {
+		console.error('PUT faculty notification read error:', err);
+		res.status(500).json({ error: 'Failed to mark notification as read' });
+	}
+});
+
+app.put('/faculty-notifications/read-all/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+	try {
+		const result = await pool.query(
+			`
+				UPDATE faculty_notifications
+				SET is_read = TRUE
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND archived_at IS NULL
+				  AND is_read = FALSE
+				`,
+			[facultyId]
+		);
+		res.json({ message: 'All notifications marked as read', updated: result.rowCount || 0 });
+	} catch (err) {
+		console.error('PUT faculty notifications read-all error:', err);
+		res.status(500).json({ error: 'Failed to mark all notifications as read' });
+	}
+});
+
+app.put('/faculty-notifications/archive-all/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+	try {
+		const result = await pool.query(
+			`
+				UPDATE faculty_notifications
+				SET archived_at = NOW()
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND archived_at IS NULL
+				RETURNING id
+				`,
+			[facultyId]
+		);
+		res.json({ message: 'Notifications moved to archive', archived: result.rowCount || 0 });
+	} catch (err) {
+		console.error('PUT faculty notifications archive-all error:', err);
+		res.status(500).json({ error: 'Failed to archive notifications' });
+	}
+});
+
+app.put('/faculty-notifications/restore/:facultyId/:notificationId', async (req, res) => {
+	const { facultyId, notificationId } = req.params;
+	try {
+		const result = await pool.query(
+			`
+				UPDATE faculty_notifications
+				SET archived_at = NULL
+				WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+				  AND id = $2
+				  AND archived_at IS NOT NULL
+				RETURNING id
+				`,
+			[facultyId, notificationId]
+		);
+		if (!result.rowCount) {
+			return res.status(404).json({ error: 'Archived notification not found' });
+		}
+		res.json({ message: 'Notification restored' });
+	} catch (err) {
+		console.error('PUT faculty notification restore error:', err);
+		res.status(500).json({ error: 'Failed to restore notification' });
+	}
+});
+
+// Keep the legacy module-level endpoint for existing clients.
 app.put('/faculty-notifications/mark-read/:facultyId/:moduleName', async (req, res) => {
 	try {
 		const { facultyId, moduleName } = req.params;
-
 		await pool.query(
 			`
 			UPDATE faculty_notifications
 			SET is_read = TRUE
-			WHERE faculty_id = $1
-			  AND module_name = $2
+			WHERE faculty_id = $1 AND module_name = $2
 			`,
 			[facultyId, moduleName]
 		);
-
 		res.json({ message: 'Notifications marked as read' });
 	} catch (err) {
 		console.error('PUT /faculty-notifications/mark-read error:', err);
-
-		res.status(500).json({
-			error: 'Failed to mark notifications as read'
-		});
+		res.status(500).json({ error: 'Failed to mark notifications as read' });
 	}
 });
 
