@@ -262,7 +262,7 @@ app.post('/login', async (req, res) => {
 			});
 		}
 
-		if (prefix === 'IA') {
+		if (prefix === 'IA' || /^\d{2}IA/.test(idUpper)) {
 			const result = await pool.query(
 				`SELECT roll_no, password, must_reset_password FROM students WHERE roll_no = $1`,
 				[ idUpper ]
