@@ -4506,8 +4506,13 @@ app.put('/enquiries/:id', async (req, res) => {
 	const { id } = req.params;
 	const { status, comment, reason } = req.body;
 
-	if (!['Pending'].includes(String(status || 'Pending'))) {
+	const normalizedStatus = String(status || 'Pending').trim();
+	if (!['Pending', 'Rejected'].includes(normalizedStatus)) {
 		return res.status(400).json({ success: false, error: 'Use the admission workflow to change an enquiry to Admitted.' });
+	}
+	const rejectionReason = String(reason || comment || '').trim();
+	if (normalizedStatus === 'Rejected' && !rejectionReason) {
+		return res.status(400).json({ success: false, error: 'A rejection reason is required.' });
 	}
 
 	try {
@@ -4522,7 +4527,7 @@ app.put('/enquiries/:id', async (req, res) => {
 		WHERE id = $4 AND status <> 'Admitted'
 		RETURNING *
 		`,
-			[ status || 'Pending', comment || null, reason || null, id ]
+			[ normalizedStatus, normalizedStatus === 'Rejected' ? rejectionReason : (comment || null), normalizedStatus === 'Rejected' ? rejectionReason : (reason || null), id ]
 		);
 
 		if (result.rowCount === 0) {
