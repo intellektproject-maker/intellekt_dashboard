@@ -223,13 +223,13 @@ function MarksPageContent() {
   async function requestStudentEdit(student) {
     const roll = String(student.roll_no).trim();
     const request = requestForStudent(roll);
-    if (request?.status === "Pending") {
-      alert("Your edit request is already pending with the admin.");
-      return;
-    }
-    if (request?.status === "Approved") {
+    if (overallApproved || request?.status === "Approved") {
       setEditingRoll(roll);
       setEditDraft(String(marks[roll] ?? ""));
+      return;
+    }
+    if (request?.status === "Pending") {
+      alert("Your edit request is already pending with the admin.");
       return;
     }
     if (!window.confirm(`Request admin approval to edit marks for ${student.name} (${roll})?`)) return;
