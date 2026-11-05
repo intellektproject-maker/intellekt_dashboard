@@ -297,7 +297,7 @@ function StudentsSection({ adminId }) {
       }
 
       resetForm();
-      if (admissionEnquiryId) router.replace("/faculty-dashboard/test-batch?id=" + encodeURIComponent(adminId) + "&section=students");
+      if (admissionEnquiryId) router.replace("/faculty-dashboard/manage-test-batch-students?id=" + encodeURIComponent(adminId) + "&batch=test");
       await Promise.all([loadStudents(), loadNextRoll()]);
     } catch (e) {
       if (admissionEnquiryId && admissionToken) {
@@ -326,7 +326,7 @@ function StudentsSection({ adminId }) {
       } catch (e) {
         setError(e.message);
       }
-      router.replace("/faculty-dashboard/test-batch?id=" + encodeURIComponent(adminId) + "&section=students");
+      router.replace("/faculty-dashboard/manage-test-batch-students?id=" + encodeURIComponent(adminId) + "&batch=test");
     }
     resetForm();
   }
