@@ -29,6 +29,7 @@ function FacultyProfileInner() {
   const [testCodes, setTestCodes] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
   const [activeSection, setActiveSection] = useState('');
+  const [selectedBatch, setSelectedBatch] = useState('Regular Batch');
 
   const canAccessAllTasks =
     loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
@@ -678,6 +679,34 @@ function FacultyProfileInner() {
         <h2 className="mb-6 text-center text-3xl font-bold text-blue-700 md:text-4xl">
           {profileTitle}
         </h2>
+
+        <div className="mb-8 flex justify-center">
+          <div
+            className="inline-flex w-full max-w-md rounded-full border border-blue-100 bg-white p-1.5 shadow-sm"
+            role="group"
+            aria-label="Select student batch"
+          >
+            {['Regular Batch', 'Test Batch'].map((batch) => {
+              const isSelected = selectedBatch === batch;
+
+              return (
+                <button
+                  key={batch}
+                  type="button"
+                  onClick={() => setSelectedBatch(batch)}
+                  aria-pressed={isSelected}
+                  className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition-all duration-200 sm:text-base ${
+                    isSelected
+                      ? 'bg-blue-700 text-white shadow-md'
+                      : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
+                >
+                  {batch}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="mb-8 space-y-4 rounded-2xl bg-white p-6 shadow-md md:p-8">
           <p className="text-gray-700 text-base md:text-lg">
