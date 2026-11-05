@@ -33,28 +33,13 @@ function AttendanceContent() {
           </p>
         </div>
 
-        {/* Manage Attendance */}
-        <div
-          onClick={() =>
-            router.push(`/faculty-dashboard/manage-attendance?id=${facultyId}`)
-          }
-          className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 
-          hover:shadow-lg hover:scale-[1.02] transition duration-200"
-        >
-          <h2 className="text-lg font-semibold text-blue-700 mb-2">
-            Manage Attendance
-          </h2>
-          <p className="text-gray-600">
-            View, edit and download attendance report.
-          </p>
-        </div>
         {/* Test Batch Attendance */}
         <div
           onClick={() =>
             router.push("/faculty-dashboard/test-batch?section=attendance&id=" + facultyId)
           }
           className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 
-          hover:shadow-lg hover:scale-[1.02] transition duration-200 md:col-span-2"
+          hover:shadow-lg hover:scale-[1.02] transition duration-200"
         >
           <h2 className="text-lg font-semibold text-blue-700 mb-2">
             Test Batch Attendance
