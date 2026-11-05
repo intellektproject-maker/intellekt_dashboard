@@ -836,7 +836,7 @@ function AttendanceTable({
 export default function AttendanceReport() {
   return (
     <Suspense fallback={<div className="p-6">Loading...</div>}>
-      <ManageAttendancePageInner />
+      <AttendanceReportContent />
     </Suspense>
   );
 }
