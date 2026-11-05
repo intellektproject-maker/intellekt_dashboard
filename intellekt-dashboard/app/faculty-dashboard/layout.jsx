@@ -9,7 +9,7 @@ function FacultyLayoutContent({ children }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const facultyId = searchParams.get("id") || "";
-  const selectedBatch = searchParams.get("batch") === "test" ? "test" : "regular";
+  const selectedBatch = searchParams.get("batch") === "test" || pathname.startsWith("/faculty-dashboard/test-batch") ? "test" : "regular";
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -68,7 +68,7 @@ function FacultyLayoutContent({ children }) {
 
         <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 px-6 pb-4">
           <Link
-            href={`/faculty-dashboard/profile?id=${facultyId}`}
+            href={`/faculty-dashboard/profile?id=${facultyId}&batch=${selectedBatch}`}
             onClick={() => setMenuOpen(false)}
             className={linkClass(isActive("/faculty-dashboard/profile"))}
           >
@@ -87,7 +87,7 @@ function FacultyLayoutContent({ children }) {
             </>
           )}
           <Link
-  href={`/faculty-dashboard/syllabus?id=${facultyId}`}
+  href={`/faculty-dashboard/syllabus?id=${facultyId}&batch=${selectedBatch}`}
   onClick={() => setMenuOpen(false)}
   className={linkClass(isActive("/faculty-dashboard/syllabus"))}
 >
@@ -111,7 +111,7 @@ function FacultyLayoutContent({ children }) {
             {manageOpen && (
               <div className="mt-2 ml-3 flex flex-col gap-2 border-l-2 border-gray-200 pl-3">
                 <Link
-                  href={`/faculty-dashboard/manage/students?id=${facultyId}`}
+                  href={`/faculty-dashboard/manage/students?id=${facultyId}&batch=${selectedBatch}`}
                   onClick={() => setMenuOpen(false)}
                   className={subLinkClass(
                     isActive("/faculty-dashboard/manage/students")
@@ -121,7 +121,7 @@ function FacultyLayoutContent({ children }) {
                 </Link>
 
                 <Link
-                  href={`/faculty-dashboard/manage/faculty?id=${facultyId}`}
+                  href={`/faculty-dashboard/manage/faculty?id=${facultyId}&batch=${selectedBatch}`}
                   onClick={() => setMenuOpen(false)}
                   className={subLinkClass(
                     isActive("/faculty-dashboard/manage/faculty")
@@ -139,21 +139,21 @@ function FacultyLayoutContent({ children }) {
             <>
 
               <Link
-                href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}`}
+                href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
                 onClick={() => setMenuOpen(false)}
                 className={linkClass(isActive("/faculty-dashboard/student-record"))}
               >
                 Student Record
               </Link>
               <Link
-                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}`}
+                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
                 onClick={() => setMenuOpen(false)}
                 className={linkClass(isActive("/faculty-dashboard/enquiries"))}
               >
                 Enquiries
               </Link>
               <Link
-                href={`/faculty-dashboard/requests?id=${encodeURIComponent(facultyId)}`}
+                href={`/faculty-dashboard/requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
                 onClick={() => setMenuOpen(false)}
                 className={subLinkClass(isActive("/faculty-dashboard/requests"))}
               >
@@ -164,7 +164,7 @@ function FacultyLayoutContent({ children }) {
 
           {/^IG\d{3,}$/.test(facultyId.trim()) && (
             <Link
-              href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}`}
+              href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
               onClick={() => setMenuOpen(false)}
               className={linkClass(isActive("/faculty-dashboard/edit-requests"))}
             >
