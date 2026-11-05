@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -10,6 +10,7 @@ const API_BASE =
 
 function FacultyProfileInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const facultyId = searchParams.get('id');
   const loginFacultyId = searchParams.get('loginId') || facultyId;
 
@@ -29,7 +30,14 @@ function FacultyProfileInner() {
   const [testCodes, setTestCodes] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
   const [activeSection, setActiveSection] = useState('');
-  const [selectedBatch, setSelectedBatch] = useState('Regular Batch');
+  const selectedBatch = searchParams.get('batch') === 'test' ? 'Test Batch' : 'Regular Batch';
+
+  function handleBatchChange(batch) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('id', facultyId || '');
+    params.set('batch', batch === 'Test Batch' ? 'test' : 'regular');
+    router.replace('/faculty-dashboard/profile?' + params.toString());
+  }
 
   const canAccessAllTasks =
     loginFacultyId === 'IG001' || loginFacultyId === 'IG002';
@@ -693,7 +701,7 @@ function FacultyProfileInner() {
                 <button
                   key={batch}
                   type="button"
-                  onClick={() => setSelectedBatch(batch)}
+                  onClick={() => handleBatchChange(batch)}
                   aria-pressed={isSelected}
                   className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition-all duration-200 sm:text-base ${
                     isSelected
