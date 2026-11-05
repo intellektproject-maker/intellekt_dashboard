@@ -15,38 +15,16 @@ function AttendanceContent() {
         Attendance Management
       </h1>
 
-      {/* Cards */}
+      {/* Regular Batch attendance */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Enter Attendance */}
         <div
           onClick={() =>
             router.push(`/faculty-dashboard/enter-attendance?id=${facultyId}`)
           }
-          className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 
-          hover:shadow-lg hover:scale-[1.02] transition duration-200"
+          className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 hover:shadow-lg hover:scale-[1.02] transition duration-200"
         >
-          <h2 className="text-lg font-semibold text-blue-700 mb-2">
-            Enter Attendance
-          </h2>
-          <p className="text-gray-600">
-            Mark daily attendance for students.
-          </p>
-        </div>
-
-        {/* Test Batch Attendance */}
-        <div
-          onClick={() =>
-            router.push("/faculty-dashboard/test-batch?section=attendance&id=" + facultyId)
-          }
-          className="cursor-pointer p-6 bg-white shadow-md rounded-xl border border-gray-200 
-          hover:shadow-lg hover:scale-[1.02] transition duration-200"
-        >
-          <h2 className="text-lg font-semibold text-blue-700 mb-2">
-            Test Batch Attendance
-          </h2>
-          <p className="text-gray-600">
-            Mark and manage attendance only for Test Batch students who have a registered test application on the selected date.
-          </p>
+          <h2 className="text-lg font-semibold text-blue-700 mb-2">Enter Attendance</h2>
+          <p className="text-gray-600">Mark daily attendance for Regular Batch students.</p>
         </div>
       </div>
     </div>
