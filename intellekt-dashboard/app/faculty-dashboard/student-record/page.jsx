@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import AttendanceReport from "../components/AttendanceReport";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/backend-api";
 
@@ -468,6 +469,10 @@ doc.text(`Attendance % : ${attendancePercent}%`, 150, 240, {
       ) : (
         <div className="text-gray-500 text-center">No students found</div>
       )}
+
+      <div className="mt-10">
+        <AttendanceReport />
+      </div>
     </div>
   );
 }
