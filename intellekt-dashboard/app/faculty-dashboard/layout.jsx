@@ -84,6 +84,15 @@ function FacultyLayoutContent({ children }) {
             <>
               <Link href={`/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&section=attendance&batch=test`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/test-batch") && searchParams.get("section") === "attendance")}>Attendance</Link>
               <Link href={`/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&batch=test`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/test-batch") && searchParams.get("section") !== "attendance")}>Test</Link>
+              {isPrivilegedFaculty && (
+                <Link
+                  href={`/faculty-dashboard/manage-test-batch-students?id=${encodeURIComponent(facultyId)}&batch=test`}
+                  onClick={() => setMenuOpen(false)}
+                  className={linkClass(isActive("/faculty-dashboard/manage-test-batch-students"))}
+                >
+                  Manage Test Batch Students
+                </Link>
+              )}
             </>
           )}
           <Link
