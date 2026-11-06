@@ -102,6 +102,9 @@ const INVALID_TOKEN_CODES = new Set([
   'messaging/registration-token-not-registered',
   'messaging/invalid-registration-token',
   'messaging/invalid-argument',
+  // A token from another Firebase project can never receive this project's
+  // messages. Remove it so the app can register a fresh matching token.
+  'messaging/mismatched-credential',
 ]);
 
 /**
