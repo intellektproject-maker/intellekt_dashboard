@@ -418,6 +418,83 @@ function MarksPageContent() {
       (!filterSubject || String(test.subject_name || test.subject) === String(filterSubject));
   });
 
+  const exportRows = students.map((student) => {
+    const roll = String(student.roll_no).trim();
+    return {
+      roll,
+      name: student.name || "",
+      marks: marks[roll] ?? "",
+      comments: comments[roll] || "",
+      status: savedMarks[roll] ? "Saved" : "New",
+    };
+  });
+
+  function exportExcel() {
+    if (!exportRows.length) return;
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[char]));
+    const subject = selectedTest?.subject_name || selectedTest?.subject || "";
+    const rows = exportRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.roll)}</td>
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.marks)}</td>
+        <td>${escapeHtml(row.comments)}</td>
+        <td>${escapeHtml(row.status)}</td>
+      </tr>`).join("");
+    const html = `<html><head><meta charset="UTF-8"></head><body>
+      <table>
+        <tr><th colspan="5">INTELLEKT - Marks Report</th></tr>
+        <tr><td>Test Code</td><td>${escapeHtml(testCode)}</td></tr>
+        <tr><td>Class</td><td>${escapeHtml(selectedTest?.class)}</td></tr>
+        <tr><td>Board</td><td>${escapeHtml(selectedTest?.board)}</td></tr>
+        <tr><td>Subject</td><td>${escapeHtml(subject)}</td></tr>
+        <tr><td>Total Marks</td><td>${escapeHtml(totalMarks)}</td></tr>
+        <tr><td>Exported On</td><td>${escapeHtml(new Date().toLocaleString())}</td></tr>
+        <tr><th>Roll No</th><th>Student Name</th><th>Marks</th><th>Comment</th><th>Status</th></tr>
+        ${rows}
+      </table></body></html>`;
+    const blob = new Blob(["\\uFEFF", html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Marks_${String(testCode).replace(/[^a-z0-9_-]/gi, "_")}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportPdf() {
+    if (!exportRows.length) return;
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const doc = new jsPDF({ orientation: "landscape" });
+      const subject = selectedTest?.subject_name || selectedTest?.subject || "";
+      doc.setFontSize(16);
+      doc.text("INTELLEKT - Marks Report", 14, 16);
+      doc.setFontSize(10);
+      doc.text(`Test Code: ${testCode}    Class: ${selectedTest?.class || "-"}    Board: ${selectedTest?.board || "-"}`, 14, 24);
+      doc.text(`Subject: ${subject || "-"}    Total Marks: ${totalMarks}    Exported: ${new Date().toLocaleString()}`, 14, 31);
+      autoTable(doc, {
+        startY: 38,
+        head: [["Roll No", "Student Name", "Marks", "Comment", "Status"]],
+        body: exportRows.map((row) => [row.roll, row.name, row.marks, row.comments, row.status]),
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: [29, 78, 216] },
+        margin: { left: 14, right: 14 },
+      });
+      doc.save(`Marks_${String(testCode).replace(/[^a-z0-9_-]/gi, "_")}.pdf`);
+    } catch (err) {
+      console.error("Marks PDF export failed:", err);
+      alert("Could not export PDF. Please try again.");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 px-6 py-10">
       <div className="mx-auto max-w-6xl">
@@ -503,6 +580,21 @@ function MarksPageContent() {
                 </div>
               </div>
             )}
+
+            <div className="mb-5 flex flex-wrap items-center justify-end gap-3">
+              <button
+                onClick={exportPdf}
+                className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={exportExcel}
+                className="rounded-lg bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700"
+              >
+                Export Excel
+              </button>
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[850px] border-collapse">
