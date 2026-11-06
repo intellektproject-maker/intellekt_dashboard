@@ -45,8 +45,18 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
       }
      }))
     );
+    const inserted=results.filter(item=>item&&item.inserted).length;
     const delivered=results.reduce((sum,item)=>sum+Number(item.sent||0),0);
-    console.log('[Test Batch Push] Admin reminder '+roll+'/'+code+': '+delivered+' push delivery result(s)');
+    if(inserted===0){
+      await pool.query(
+       'DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',
+       ['admin_3_day',code,roll,target]
+      );
+      console.warn('[Test Batch Push] Admin reminder not recorded; will retry '+roll+'/'+code);
+    }else{
+      console.log('[Test Batch Push] Admin reminder '+roll+'/'+code+': '+inserted+' in-app notification(s), '+delivered+' push delivery result(s)');
+      if(delivered===0) console.warn('[Test Batch Push] Admin in-app notification exists, but no push was delivered for '+roll+'/'+code);
+    }
    }catch(e){
     await pool.query(
      'DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',
@@ -89,7 +99,13 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
     const roll=String(row.roll_no||'').trim().toUpperCase();
     if(!code||!roll||!(await claim('registration_close_2_day',code,roll,target)))continue;
     try{
-      await sendToStudent(pool,roll,{title:'Test Registration Closing Soon',body:'Registration for '+code+' closes on '+target+'. Register before the close date.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,close_date:target,reminder_type:'registration_close_2_day'}});
+      const result=await sendToStudent(pool,roll,{title:'Test Registration Closing Soon',body:'Registration for '+code+' closes on '+target+'. Register before the close date.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,close_date:target,reminder_type:'registration_close_2_day'}});
+      if(Number(result&&result.successCount||0)===0){
+        await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['registration_close_2_day',code,roll,target]);
+        console.warn('[Test Batch Push] Registration-close push not delivered; will retry '+roll+'/'+code+' (tokens: '+Number(result&&result.tokenCount||0)+')');
+      }else{
+        console.log('[Test Batch Push] Registration-close '+roll+'/'+code+': '+result.successCount+' delivered');
+      }
     }catch(e){
       await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['registration_close_2_day',code,roll,target]);
       console.error('[Test Batch Push] Registration-close reminder failed:',e.message);
@@ -99,7 +115,7 @@ function createTestBatchPushWorker({pool,sendToStudent,sendToFaculty,createFacul
 async function students(today){
   const target=dateShift(today,1);
   const q=await pool.query(`SELECT DISTINCT r.roll_no,r.test_code FROM test_batch_registrations r JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code)) JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) WHERE r.writing_date=$1 AND COALESCE(t.status,'Scheduled')<>'Cancelled' ORDER BY r.roll_no,r.test_code`,[target]);
-  for(const row of q.rows){const roll=String(row.roll_no||'').trim().toUpperCase(),code=String(row.test_code||'').trim().toUpperCase();if(!roll||!code||!(await claim('student_1_day',code,roll,target)))continue;try{const r=await sendToStudent(pool,roll,{title:'Test Reminder',body:code+' is scheduled tomorrow.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,reminder_type:'student_1_day'}});console.log('[Test Batch Push] Student '+roll+'/'+code+': '+(r.successCount||0)+' delivered');}catch(e){await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['student_1_day',code,roll,target]);console.error('[Test Batch Push] Student failed:',e.message);}}
+  for(const row of q.rows){const roll=String(row.roll_no||'').trim().toUpperCase(),code=String(row.test_code||'').trim().toUpperCase();if(!roll||!code||!(await claim('student_1_day',code,roll,target)))continue;try{const r=await sendToStudent(pool,roll,{title:'Test Reminder',body:code+' is scheduled tomorrow.',data:{module_name:'test-batch-student-test',test_code:code,roll_no:roll,reminder_type:'student_1_day'}});if(Number(r&&r.successCount||0)===0){await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['student_1_day',code,roll,target]);console.warn('[Test Batch Push] Student push not delivered; will retry '+roll+'/'+code+' (tokens: '+Number(r&&r.tokenCount||0)+')');}else{console.log('[Test Batch Push] Student '+roll+'/'+code+': '+r.successCount+' delivered');}}catch(e){await pool.query('DELETE FROM test_batch_push_reminder_runs WHERE reminder_type=$1 AND test_code=$2 AND roll_no=$3 AND target_date=$4',['student_1_day',code,roll,target]);console.error('[Test Batch Push] Student failed:',e.message);}}
  }
  async function tick(){if(running||stopped)return;running=true;try{const n=parts(),today=n.year+'-'+n.month+'-'+n.day;if(Number(n.hour)>=notificationHour){await ensureTable();await admins(today);await students(today);await registrationClosingReminders(today);}}catch(e){console.error('[Test Batch Push] Worker cycle failed:',e);}finally{running=false;}}
  function start(){if(timer)return;stopped=false;console.log('[Test Batch Push] Worker started');void tick();timer=setInterval(()=>void tick(),intervalMs);timer.unref();}
