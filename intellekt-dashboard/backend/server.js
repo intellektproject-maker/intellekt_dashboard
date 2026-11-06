@@ -1034,7 +1034,23 @@ app.put('/faculty-notifications/restore/:facultyId/:notificationId', async (req,
 			[facultyId, notificationId]
 		);
 		if (!result.rowCount) {
-			return res.status(404).json({ error: 'Archived notification not found' });
+			// Make restore idempotent: if this notification already belongs to
+			// the faculty member and is active, the requested end state is met.
+			const existing = await pool.query(
+				`
+					SELECT id
+					FROM faculty_notifications
+					WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM($1))
+					  AND id = $2
+					  AND archived_at IS NULL
+					LIMIT 1
+				`,
+				[facultyId, notificationId]
+			);
+			if (!existing.rowCount) {
+				return res.status(404).json({ error: 'Archived notification not found' });
+			}
+			return res.json({ message: 'Notification already restored' });
 		}
 		res.json({ message: 'Notification restored' });
 	} catch (err) {
