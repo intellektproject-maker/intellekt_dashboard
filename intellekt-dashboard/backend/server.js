@@ -3252,7 +3252,7 @@ app.get('/students', async (req, res) => {
 
     if (board) {
       values.push(board);
-      query += ` AND UPPER(REGEXP_REPLACE(TRIM(s.board), '\\s+', '', 'g')) = UPPER(REGEXP_REPLACE(TRIM(${values.length}), '\\s+', '', 'g'))`;
+      query += ` AND UPPER(REGEXP_REPLACE(TRIM(s.board), '\\s+', '', 'g')) = UPPER(REGEXP_REPLACE(TRIM($${values.length}), '\\s+', '', 'g'))`;
     }
 
     if (subject_id) {
