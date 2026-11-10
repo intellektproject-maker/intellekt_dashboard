@@ -4462,7 +4462,7 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
        WHERE id=$1
          AND (
            status IS NULL
-           OR status IN ('Pending', 'Admission In Progress')
+           OR status IN ('New', 'Pending', 'Admission In Progress')
            OR (
              status='Admitted'
              AND NOT EXISTS (
