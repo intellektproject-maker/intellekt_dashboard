@@ -316,10 +316,20 @@ export default function EnquiriesPage() {
         students = Array.isArray(result) ? result : [];
       }
 
-      const count = students.filter((student) =>
-        normalizeCountClass(student.class) === normalizeCountClass(className) &&
-        normalizeCountBoard(student.board) === normalizeCountBoard(board)
-      ).length;
+      const isTestBatch = String(item.batch || '').trim().toLowerCase() === 'test batch';
+      const count = students.filter((student) => {
+        const sameClass = normalizeCountClass(student.class) === normalizeCountClass(className);
+        const sameBoard = normalizeCountBoard(student.board) === normalizeCountBoard(board);
+
+        // Regular Batch records live in public.students and must also match
+        // the batch column. Test Batch records are fetched only from
+        // public.test_batch_students above, so their table itself isolates batch.
+        const sameBatch = isTestBatch
+          ? true
+          : String(student.batch || '').trim().toLowerCase() === 'regular batch';
+
+        return sameClass && sameBoard && sameBatch;
+      }).length;
 
       setAdmissionReview({ item, count, className, board });
     } catch (err) {
