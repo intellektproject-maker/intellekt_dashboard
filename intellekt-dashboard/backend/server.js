@@ -3228,7 +3228,11 @@ app.get('/student-count', async (req, res) => {
   try {
     const result = normalizedBatch === 'test batch'
       ? await pool.query(
-          `SELECT COUNT(*)::int AS count
+          `SELECT
+             COUNT(*)::int AS count,
+             COUNT(*) FILTER (WHERE subjects IN ('Mathematics', 'Both'))::int AS mathematics_count,
+             COUNT(*) FILTER (WHERE subjects IN ('Physics', 'Both'))::int AS physics_count,
+             COUNT(*) FILTER (WHERE subjects = 'Both')::int AS both_count
            FROM test_batch_students
            WHERE UPPER(TRIM(class)) = UPPER(TRIM($1))
              AND UPPER(REGEXP_REPLACE(TRIM(board), '\\s+', '', 'g')) =
@@ -3236,17 +3240,42 @@ app.get('/student-count', async (req, res) => {
           [className, board]
         )
       : await pool.query(
-          `SELECT COUNT(*)::int AS count
-           FROM students
-           WHERE UPPER(TRIM(class)) = UPPER(TRIM($1))
-             AND UPPER(REGEXP_REPLACE(TRIM(board), '\\s+', '', 'g')) =
-                 UPPER(REGEXP_REPLACE(TRIM($2), '\\s+', '', 'g'))
-             AND LOWER(TRIM(COALESCE(batch, ''))) = 'regular batch'`,
+          `WITH matched_students AS (
+             SELECT s.roll_no
+             FROM students s
+             WHERE UPPER(TRIM(s.class)) = UPPER(TRIM($1))
+               AND UPPER(REGEXP_REPLACE(TRIM(s.board), '\\s+', '', 'g')) =
+                   UPPER(REGEXP_REPLACE(TRIM($2), '\\s+', '', 'g'))
+               AND LOWER(TRIM(COALESCE(s.batch, ''))) = 'regular batch'
+           ),
+           subject_flags AS (
+             SELECT
+               ms.roll_no,
+               BOOL_OR(LOWER(TRIM(sub.subject_name)) IN ('mathematics', 'maths')) AS has_mathematics,
+               BOOL_OR(LOWER(TRIM(sub.subject_name)) = 'physics') AS has_physics
+             FROM matched_students ms
+             JOIN student_subjects ss
+               ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(ms.roll_no))
+             JOIN subjects sub ON sub.subject_id = ss.subject_id
+             GROUP BY ms.roll_no
+           )
+           SELECT
+             (SELECT COUNT(*)::int FROM matched_students) AS count,
+             COUNT(*) FILTER (WHERE has_mathematics)::int AS mathematics_count,
+             COUNT(*) FILTER (WHERE has_physics)::int AS physics_count,
+             COUNT(*) FILTER (WHERE has_mathematics AND has_physics)::int AS both_count
+           FROM subject_flags`,
           [className, board]
         );
 
+    const counts = result.rows[0] || {};
     return res.json({
-      count: Number(result.rows[0]?.count || 0),
+      count: Number(counts.count || 0),
+      subject_counts: {
+        mathematics: Number(counts.mathematics_count || 0),
+        physics: Number(counts.physics_count || 0),
+        both: Number(counts.both_count || 0),
+      },
       batch: normalizedBatch === 'test batch' ? 'Test Batch' : 'Regular Batch',
       class: String(className).trim(),
       board: String(board).trim(),
