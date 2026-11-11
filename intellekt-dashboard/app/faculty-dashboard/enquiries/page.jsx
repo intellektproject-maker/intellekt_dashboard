@@ -740,7 +740,7 @@ const filteredData = useMemo(() => {
             </div>
             <div className="mt-5 rounded-lg bg-blue-50 px-5 py-6 text-center">
               <p className="text-4xl font-extrabold text-blue-800">{admissionReview.totalEnrollments}</p>
-              <p className="mt-1 text-sm font-medium text-blue-900">Currently enrolled students</p>
+              <p className="mt-1 text-sm font-medium text-blue-900">Total subject enrollments</p>
             </div>
             <div className="mt-4 space-y-3 rounded-lg border border-gray-200 p-4">
               <div className="flex items-center justify-between text-sm">
@@ -750,10 +750,6 @@ const filteredData = useMemo(() => {
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium text-gray-700">Physics Enrolled</span>
                 <span className="font-bold text-blue-800">{admissionReview.physicsCount}</span>
-              </div>
-              <div className="border-t border-gray-200 pt-3 flex items-center justify-between text-sm">
-                <span className="font-semibold text-gray-900">Total Subject Enrollments</span>
-                <span className="font-extrabold text-blue-800">{admissionReview.totalEnrollments}</span>
               </div>
             </div>
             <p className="mt-4 text-sm text-gray-600">
