@@ -157,6 +157,8 @@ export default function EnquiriesPage() {
   const [dropdownLoading, setDropdownLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [admissionReview, setAdmissionReview] = useState(null);
+  const [admissionBusy, setAdmissionBusy] = useState(false);
 
   const [classFilter, setClassFilter] = useState('');
   const [boardFilter, setBoardFilter] = useState('');
@@ -278,16 +280,104 @@ export default function EnquiriesPage() {
     }
   }
 
-  async function handleAdmit(item, admissionToken = null) {
-    const token = admissionToken || (window.crypto?.randomUUID ? window.crypto.randomUUID() : `admission-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  function normalizeCountBoard(value) {
+    const normalized = String(value || '').toUpperCase().replace(/\\s+/g, '');
+    return normalized === 'STATEBOARD' || normalized === 'SB' ? 'SB' : normalized;
+  }
+
+  function normalizeCountClass(value) {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  async function handleAdmit(item) {
     try {
-      const res = await fetch(`${API_BASE}/enquiries/${item.id}/admission/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admission_token: token }) });
+      const classBoard = String(item.class_board || '');
+      const separator = classBoard.lastIndexOf('-');
+      if (separator < 1 || separator === classBoard.length - 1) {
+        throw new Error('Could not identify the class and board from this enquiry.');
+      }
+
+      const board = classBoard.slice(0, separator).trim();
+      const className = classBoard.slice(separator + 1).trim();
+      const adminId = new URLSearchParams(window.location.search).get('id') || 'IG001';
+      let students = [];
+
+      if (String(item.batch || '').trim().toLowerCase() === 'test batch') {
+        const params = new URLSearchParams({ adminId, class: className });
+        const res = await fetch(`${API_BASE}/test-batch/students?${params.toString()}`, { cache: 'no-store' });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Unable to fetch Test Batch students');
+        students = Array.isArray(result.students) ? result.students : [];
+      } else {
+        const params = new URLSearchParams({ class: className, board });
+        const res = await fetch(`${API_BASE}/students?${params.toString()}`, { cache: 'no-store' });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Unable to fetch Regular Batch students');
+        students = Array.isArray(result) ? result : [];
+      }
+
+      const count = students.filter((student) =>
+        normalizeCountClass(student.class) === normalizeCountClass(className) &&
+        normalizeCountBoard(student.board) === normalizeCountBoard(board)
+      ).length;
+
+      setAdmissionReview({ item, count, className, board });
+    } catch (err) {
+      console.error('Load enquiry student count error:', err);
+      alert(err.message || 'Unable to load the current student count. Please try again.');
+    }
+  }
+
+  async function handleAdmissionDecision(decision) {
+    if (!admissionReview || admissionBusy) return;
+    const { item } = admissionReview;
+    setAdmissionBusy(true);
+
+    try {
+      if (decision === 'pending') {
+        const res = await fetch(`${API_BASE}/enquiries/${item.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Pending', comment: '', reason: '' }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Could not move enquiry to Pending');
+
+        setAdmissionReview(null);
+        await loadData();
+        alert('Enquiry moved to Pending.');
+        return;
+      }
+
+      const token = window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : `admission-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const res = await fetch(`${API_BASE}/enquiries/${item.id}/admission/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admission_token: token }),
+      });
       const result = await res.json();
-      if (!res.ok) { alert(result.error || 'Could not start admission'); return; }
-      const params = new URLSearchParams({ id: new URLSearchParams(window.location.search).get('id') || 'IG001', admitEnquiryId: String(item.id), admissionToken: token });
-      if (item.batch === 'Test Batch') { params.set('section', 'students'); window.location.href = `/faculty-dashboard/test-batch?${params.toString()}`; }
-      else { window.location.href = `/faculty-dashboard/manage/students?${params.toString()}`; }
-    } catch (err) { console.error('Start admission error:', err); alert('Unable to start admission. Please try again.'); }
+      if (!res.ok) throw new Error(result.error || 'Could not start admission');
+
+      const params = new URLSearchParams({
+        id: new URLSearchParams(window.location.search).get('id') || 'IG001',
+        admitEnquiryId: String(item.id),
+        admissionToken: token,
+      });
+      setAdmissionReview(null);
+      if (item.batch === 'Test Batch') {
+        params.set('section', 'students');
+        window.location.href = `/faculty-dashboard/test-batch?${params.toString()}`;
+      } else {
+        window.location.href = `/faculty-dashboard/manage/students?${params.toString()}`;
+      }
+    } catch (err) {
+      console.error('Enquiry admission decision error:', err);
+      alert(err.message || 'Unable to continue. Please try again.');
+    } finally {
+      setAdmissionBusy(false);
+    }
   }
 
   async function handleCancelAdmission(item) {
@@ -646,6 +736,45 @@ const filteredData = useMemo(() => {
           {pdfLoading ? 'Generating PDF...' : `Export (${filteredData.length})`}
         </button>
       </div>
+
+      {admissionReview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-blue-800">Current Student Count</h3>
+            <div className="mt-4 space-y-2 text-sm text-gray-700">
+              <p><span className="font-semibold">Student:</span> {admissionReview.item.student_name || '-'}</p>
+              <p><span className="font-semibold">Batch:</span> {admissionReview.item.batch || 'Regular Batch'}</p>
+              <p><span className="font-semibold">Board:</span> {admissionReview.board}</p>
+              <p><span className="font-semibold">Class:</span> {admissionReview.className}</p>
+            </div>
+            <div className="mt-5 rounded-lg bg-blue-50 px-5 py-6 text-center">
+              <p className="text-4xl font-extrabold text-blue-800">{admissionReview.count}</p>
+              <p className="mt-1 text-sm font-medium text-blue-900">Currently enrolled students</p>
+            </div>
+            <p className="mt-4 text-sm text-gray-600">
+              Proceed to the existing Add Student form or move this enquiry to Pending.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={admissionBusy}
+                onClick={() => handleAdmissionDecision('pending')}
+                className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Pending
+              </button>
+              <button
+                type="button"
+                disabled={admissionBusy}
+                onClick={() => handleAdmissionDecision('proceed')}
+                className="rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {admissionBusy ? 'Please wait...' : 'Proceed'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
