@@ -281,7 +281,7 @@ export default function EnquiriesPage() {
   }
 
   function normalizeCountBoard(value) {
-    const normalized = String(value || '').toUpperCase().replace(/\\s+/g, '');
+    const normalized = String(value || '').toUpperCase().replace(/\s+/g, '');
     return normalized === 'STATEBOARD' || normalized === 'SB' ? 'SB' : normalized;
   }
 
