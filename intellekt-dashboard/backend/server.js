@@ -3216,6 +3216,47 @@ app.delete('/faculty/:faculty_id', async (req, res) => {
 	}
 });
 	
+// Return the enrolled-student count directly from the relevant student table.
+app.get('/student-count', async (req, res) => {
+  const { class: className, board, batch } = req.query;
+  const normalizedBatch = String(batch || '').trim().toLowerCase();
+
+  if (!className || !board || !['regular batch', 'test batch'].includes(normalizedBatch)) {
+    return res.status(400).json({ error: 'class, board and a valid batch are required' });
+  }
+
+  try {
+    const result = normalizedBatch === 'test batch'
+      ? await pool.query(
+          `SELECT COUNT(*)::int AS count
+           FROM test_batch_students
+           WHERE UPPER(TRIM(class)) = UPPER(TRIM($1))
+             AND UPPER(REGEXP_REPLACE(TRIM(board), '\\s+', '', 'g')) =
+                 UPPER(REGEXP_REPLACE(TRIM($2), '\\s+', '', 'g'))`,
+          [className, board]
+        )
+      : await pool.query(
+          `SELECT COUNT(*)::int AS count
+           FROM students
+           WHERE UPPER(TRIM(class)) = UPPER(TRIM($1))
+             AND UPPER(REGEXP_REPLACE(TRIM(board), '\\s+', '', 'g')) =
+                 UPPER(REGEXP_REPLACE(TRIM($2), '\\s+', '', 'g'))
+             AND LOWER(TRIM(COALESCE(batch, ''))) = 'regular batch'`,
+          [className, board]
+        );
+
+    return res.json({
+      count: Number(result.rows[0]?.count || 0),
+      batch: normalizedBatch === 'test batch' ? 'Test Batch' : 'Regular Batch',
+      class: String(className).trim(),
+      board: String(board).trim(),
+    });
+  } catch (err) {
+    console.error('GET /student-count error:', err);
+    return res.status(500).json({ error: 'Failed to fetch enrolled student count' });
+  }
+});
+
 app.get('/students', async (req, res) => {
   const { class: className, board, subject_id } = req.query;
 
