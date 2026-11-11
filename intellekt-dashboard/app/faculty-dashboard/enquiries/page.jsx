@@ -307,9 +307,12 @@ export default function EnquiriesPage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Unable to fetch current enrolled student count');
 
-      const count = Number(result.count || 0);
+      const subjectCounts = result.subject_counts || {};
+      const mathematicsCount = Number(subjectCounts.mathematics || 0);
+      const physicsCount = Number(subjectCounts.physics || 0);
+      const totalEnrollments = mathematicsCount + physicsCount;
 
-      setAdmissionReview({ item, count, className, board });
+      setAdmissionReview({ item, totalEnrollments, mathematicsCount, physicsCount, className, board });
     } catch (err) {
       console.error('Load enquiry student count error:', err);
       alert(err.message || 'Unable to load the current student count. Please try again.');
@@ -736,8 +739,22 @@ const filteredData = useMemo(() => {
               <p><span className="font-semibold">Class:</span> {admissionReview.className}</p>
             </div>
             <div className="mt-5 rounded-lg bg-blue-50 px-5 py-6 text-center">
-              <p className="text-4xl font-extrabold text-blue-800">{admissionReview.count}</p>
+              <p className="text-4xl font-extrabold text-blue-800">{admissionReview.totalEnrollments}</p>
               <p className="mt-1 text-sm font-medium text-blue-900">Currently enrolled students</p>
+            </div>
+            <div className="mt-4 space-y-3 rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-700">Mathematics Enrolled</span>
+                <span className="font-bold text-blue-800">{admissionReview.mathematicsCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-700">Physics Enrolled</span>
+                <span className="font-bold text-blue-800">{admissionReview.physicsCount}</span>
+              </div>
+              <div className="border-t border-gray-200 pt-3 flex items-center justify-between text-sm">
+                <span className="font-semibold text-gray-900">Total Subject Enrollments</span>
+                <span className="font-extrabold text-blue-800">{admissionReview.totalEnrollments}</span>
+              </div>
             </div>
             <p className="mt-4 text-sm text-gray-600">
               Proceed to the existing Add Student form or move this enquiry to Pending.
