@@ -299,37 +299,15 @@ export default function EnquiriesPage() {
 
       const board = classBoard.slice(0, separator).trim();
       const className = classBoard.slice(separator + 1).trim();
-      const adminId = new URLSearchParams(window.location.search).get('id') || 'IG001';
-      let students = [];
+      const batch = String(item.batch || '').trim().toLowerCase() === 'test batch'
+        ? 'Test Batch'
+        : 'Regular Batch';
+      const params = new URLSearchParams({ class: className, board, batch });
+      const res = await fetch(`${API_BASE}/student-count?${params.toString()}`, { cache: 'no-store' });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Unable to fetch current enrolled student count');
 
-      if (String(item.batch || '').trim().toLowerCase() === 'test batch') {
-        const params = new URLSearchParams({ adminId, class: className });
-        const res = await fetch(`${API_BASE}/test-batch/students?${params.toString()}`, { cache: 'no-store' });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || 'Unable to fetch Test Batch students');
-        students = Array.isArray(result.students) ? result.students : [];
-      } else {
-        const params = new URLSearchParams({ class: className, board });
-        const res = await fetch(`${API_BASE}/students?${params.toString()}`, { cache: 'no-store' });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || 'Unable to fetch Regular Batch students');
-        students = Array.isArray(result) ? result : [];
-      }
-
-      const isTestBatch = String(item.batch || '').trim().toLowerCase() === 'test batch';
-      const count = students.filter((student) => {
-        const sameClass = normalizeCountClass(student.class) === normalizeCountClass(className);
-        const sameBoard = normalizeCountBoard(student.board) === normalizeCountBoard(board);
-
-        // Regular Batch records live in public.students and must also match
-        // the batch column. Test Batch records are fetched only from
-        // public.test_batch_students above, so their table itself isolates batch.
-        const sameBatch = isTestBatch
-          ? true
-          : String(student.batch || '').trim().toLowerCase() === 'regular batch';
-
-        return sameClass && sameBoard && sameBatch;
-      }).length;
+      const count = Number(result.count || 0);
 
       setAdmissionReview({ item, count, className, board });
     } catch (err) {
