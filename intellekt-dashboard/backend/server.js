@@ -38,7 +38,7 @@ function parseRegularTestCode(testCode) {
 	const subjectCode = subjectCodeRaw.toUpperCase();
 	const subjectMap = { M: 'Mathematics', P: 'Physics' };
 	const subjectName = subjectMap[subjectCode];
-	if (!subjectName) return null;
+	if (!subjectName || Number(marksCode) <= 0) return null;
 	const chapter = String(chapterRaw || '').trim();
 	if (!chapter) return null;
 	return {
