@@ -3327,7 +3327,14540 @@ app.get('/enter-marks-students', async (req, res) => {
     let subjectFilter = '';
     if (testCode && String(testCode).trim()) {
       values.push(String(testCode).trim().toUpperCase());
-      codeFilter = `AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(${values.length}))`;
+      codeFilter = 'AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(
+    }
+    if (subjectId && String(subjectId).trim()) {
+      values.push(Number(subjectId));
+      subjectFilter = 'AND EXISTS (
+        SELECT 1 FROM student_subjects ss
+        WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+          AND ss.subject_id = 
+    }
+
+    const result = await pool.query(
+      `SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+       FROM students s
+       LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no)) ${codeFilter}
+       WHERE TRIM(s.class) = TRIM($1)
+         AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+         AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+         ${subjectFilter}
+       ORDER BY s.roll_no ASC`,
+      values
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('GET /enter-marks-students error:', err);
+    return res.status(500).json({ error: 'Failed to fetch students', details: err.message });
+  }
+});
+
+
+app.get('/students/:value', async (req, res) => {
+	const { value } = req.params;
+	const upperValue = String(value).toUpperCase();
+
+	try {
+		const matchingRoll = await pool.query(
+			`SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1`,
+			[value]
+		);
+
+		// Look up existing students by their actual roll number, regardless of format.
+		if (matchingRoll.rows.length > 0) {
+			const studentResult = await pool.query(
+				`
+			SELECT 
+			s.roll_no,
+			s.name,
+			s.class,
+			s.board,
+			s.phone,
+			s.email,
+			s.school_name,
+			s.password,
+			s.date_of_birth,
+			s.batch,
+			s.academic_year_from,
+			s.academic_year_to,
+			s.parent_name,
+			s.secondary_contact,
+			s.reference,
+			COALESCE(f.total_fee, 0) AS total_fee,
+			COALESCE(f.fee_paid, 0) AS fee_paid,
+			f.next_due
+			FROM students s
+			LEFT JOIN fees f ON s.roll_no = f.roll_no
+			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+			`,
+				[ upperValue ]
+			);
+
+			if (studentResult.rows.length === 0) {
+				return res.status(404).json({ error: 'Student not found' });
+			}
+
+			const subjectsResult = await pool.query(
+				`
+			SELECT
+			ss.subject_id,
+			sub.subject_name
+			FROM student_subjects ss
+			JOIN subjects sub ON ss.subject_id = sub.subject_id
+			WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM($1))
+			ORDER BY ss.subject_id ASC
+			`,
+				[ upperValue ]
+			);
+
+			return res.json({
+				...studentResult.rows[0],
+				subjects: subjectsResult.rows
+			});
+		}
+
+		const classResult = await pool.query(
+			`
+		SELECT roll_no, name
+		FROM students
+		WHERE class = $1
+		ORDER BY roll_no ASC
+		`,
+			[ value ]
+		);
+
+		return res.json(classResult.rows);
+	} catch (err) {
+		console.error('GET /students/:value error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student data',
+			details: err.message
+		});
+	}
+});
+app.post('/students', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const {
+			enquiry_id,
+			admission_token,
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		const cleanRollNo = String(roll_no || '').trim();
+		if (!cleanRollNo) {
+			return res.status(400).json({ error: 'Roll number is required' });
+		}
+
+		if (!name || !className || !board || !phone || !email || !school_name) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		if (enquiry_id) {
+			const admissionLock = await client.query(
+				`SELECT id FROM enquiries
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 FOR UPDATE`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admissionLock.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+			}
+		}
+
+		const duplicateRoll = await client.query(
+			'SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+			[cleanRollNo]
+		);
+		if (duplicateRoll.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(409).json({ error: 'This roll number already exists. Please enter a different roll number.' });
+		}
+
+		const newRoll = cleanRollNo;
+		const finalPassword = password && String(password).trim() !== '' ? String(password).trim() : newRoll;
+
+		await client.query(
+			`
+		INSERT INTO students (
+			roll_no,
+			name,
+			class,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		`,
+			[
+				newRoll,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				finalPassword,
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null
+			]
+		);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRoll, Number(subjectId) ]
+			);
+		}
+
+		await client.query(
+			`
+		INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+		)
+		VALUES ($1,$2,$3,$4)
+		`,
+			[
+				newRoll,
+				total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+				fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+				next_due || null
+			]
+		);
+
+		if (enquiry_id) {
+			const admitted = await client.query(
+				`UPDATE enquiries
+				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 RETURNING id`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admitted.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+			}
+		}
+
+		await client.query('COMMIT');
+
+		res.status(201).json({
+			message: 'Student added successfully',
+			roll_no: newRoll,
+			admitted_enquiry_id: enquiry_id || null
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /students error:', err);
+
+		if (err.code === '23505') {
+			return res.status(409).json({
+				error: 'This roll number or another unique student field already exists. Please check the details and try again.'
+			});
+		}
+
+		res.status(500).json({
+			error: 'Failed to add student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+app.put('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
+
+		const {
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		if (
+			!roll_no ||
+			!name ||
+			!className ||
+			!board ||
+			!phone ||
+			!email ||
+			!school_name ||
+			!password
+		) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ oldRollNo ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const newRollNo = String(roll_no).trim().toUpperCase();
+
+		if (oldRollNo !== newRollNo) {
+			const duplicateCheck = await client.query(
+				`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[ newRollNo ]
+			);
+
+			if (duplicateCheck.rows.length > 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({ error: 'New roll number already exists' });
+			}
+
+			// Subject mappings reference students.roll_no with a foreign key.
+			// Remove the old mappings inside this transaction; the selected subjects
+			// are validated and reinserted under the new roll number after the student update.
+			await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ oldRollNo ]);
+			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+		}
+
+		await client.query(
+			`
+		UPDATE students
+		SET
+			roll_no = $1,
+			name = $2,
+			class = $3,
+			board = $4,
+			phone = $5,
+			email = $6,
+			school_name = $7,
+			password = $8,
+			date_of_birth = $9,
+			batch = $10,
+			academic_year_from = $11,
+			academic_year_to = $12,
+			parent_name = $13,
+			secondary_contact = $14,
+			reference = $15
+		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($16))
+		`,
+			[
+				newRollNo,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				String(password).trim(),
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null,
+				oldRollNo
+			]
+		);
+
+		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ newRollNo ]);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRollNo, Number(subjectId) ]
+			);
+		}
+
+		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [ newRollNo ]);
+
+		if (feeCheck.rows.length > 0) {
+			await client.query(
+				`
+			UPDATE fees
+			SET total_fee = $1,
+				fee_paid = $2,
+				next_due = $3
+			WHERE roll_no = $4
+			`,
+				[
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null,
+					newRollNo
+				]
+			);
+		} else {
+			await client.query(
+				`
+			INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+			)
+			VALUES ($1,$2,$3,$4)
+			`,
+				[
+					newRollNo,
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null
+				]
+			);
+		}
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to update student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.delete('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+	const { roll_no } = req.params;
+
+	try {
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ roll_no ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student deleted successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('DELETE /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to delete student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.get('/student-class-board-options', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT DISTINCT class, board
+		FROM students
+		ORDER BY board, class
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-class-board-options error:', err);
+		res.status(500).json({ error: 'Failed to fetch class/board options' });
+	}
+});
+/* =========================================================
+	FACULTY TASKS
+	========================================================= */
+
+async function ensureDailyTasksForToday() {
+	const today = new Date().toISOString().slice(0, 10);
+
+	const templates = await pool.query(`
+			SELECT *
+			FROM faculty_tasks
+			WHERE task_type = 'Daily'
+			AND parent_daily_task_id IS NULL
+		`);
+
+	for (const template of templates.rows) {
+		const existing = await pool.query(
+			`
+				SELECT id
+				FROM faculty_tasks
+				WHERE parent_daily_task_id = $1
+				AND task_date = $2
+				LIMIT 1
+				`,
+			[ template.id, today ]
+		);
+
+		if (existing.rows.length === 0) {
+			await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					`,
+				[
+					template.faculty_id,
+					template.faculty_name,
+					template.class_name,
+					template.subject_name || '',
+					template.total_test_note || '',
+					template.other_tasks || '',
+					today,
+					template.priority || 'Medium',
+					template.assigned_by,
+					template.id,
+					today
+				]
+			);
+		}
+	}
+}
+
+app.get('/faculty-tasks/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+
+	try {
+		await cleanupCompletedTasks();
+		await ensureDailyTasksForToday();
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE faculty_id = $1
+	AND (
+		task_type = 'Weekly'
+		OR task_type IS NULL
+		OR (
+		task_type = 'Daily'
+		AND parent_daily_task_id IS NOT NULL
+		AND is_completed = FALSE
+		)
+	)
+				ORDER BY created_at DESC
+				`,
+			[ facultyId ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks/:facultyId error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty tasks'
+			});
+		}
+
+		await cleanupCompletedTasks();
+
+		const result = await pool.query(`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Weekly'
+				OR task_type IS NULL
+				ORDER BY created_at DESC
+			`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch all faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-daily-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty daily tasks'
+			});
+		}
+
+		await ensureDailyTasksForToday();
+
+		const today = new Date().toISOString().slice(0, 10);
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Daily'
+				AND parent_daily_task_id IS NOT NULL
+				AND task_date = $1
+				ORDER BY faculty_id ASC, created_at DESC
+				`,
+			[ today ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-daily-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch daily tasks',
+			details: err.message
+		});
+	}
+});
+
+app.post('/faculty-tasks', async (req, res) => {
+	const {
+		loginFacultyId,
+		faculty_id,
+		faculty_name,
+		class_name,
+		subject_name,
+		total_test_note,
+		other_tasks,
+		due_date,
+		priority,
+		task_type
+	} = req.body;
+
+	try {
+		if (!faculty_id || !faculty_name || !class_name) {
+			return res.status(400).json({
+				error: 'Faculty Name and Class are required'
+			});
+		}
+
+		if (!subject_name && !other_tasks) {
+			return res.status(400).json({
+				error: 'Please select Test Code or enter Other Tasks'
+			});
+		}
+
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can assign tasks'
+			});
+		}
+
+		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
+		const today = new Date().toISOString().slice(0, 10);
+
+		// =========================================================
+		// DAILY TASK
+		// =========================================================
+
+		if (finalTaskType === 'Daily') {
+			const templateResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					priority || 'Medium',
+					loginFacultyId
+				]
+			);
+
+			const template = templateResult.rows[0];
+
+			const todayTaskResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					today,
+					priority || 'Medium',
+					loginFacultyId,
+					template.id,
+					today
+				]
+			);
+
+			// Create in-app notification and send Firebase push notification
+			await createFacultyNotification(pool, {
+				facultyId: faculty_id,
+				moduleName: 'tasks',
+				message: 'New task assigned by admin'
+			});
+
+			return res.json({
+				message: 'Daily task assigned successfully',
+				task: todayTaskResult.rows[0]
+			});
+		}
+
+		// =========================================================
+		// WEEKLY TASK
+		// =========================================================
+
+		const result = await pool.query(
+			`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
+				RETURNING *
+			`,
+			[
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name || '',
+				total_test_note || '',
+				other_tasks || '',
+				due_date || null,
+				priority || 'Medium',
+				loginFacultyId
+			]
+		);
+
+		// Create in-app notification and send Firebase push notification
+		await createFacultyNotification(pool, {
+			facultyId: faculty_id,
+			moduleName: 'tasks',
+			message: 'New task assigned by admin'
+		});
+
+		return res.json({
+			message: 'Task assigned successfully',
+			task: result.rows[0]
+		});
+	} catch (err) {
+		console.error('POST /faculty-tasks error:', err);
+
+		res.status(500).json({
+			error: 'Failed to assign task',
+			details: err.message
+		});
+	}
+});
+
+
+app.put('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const { is_completed, faculty_id, faculty_name } = req.body;
+
+	try {
+		let result;
+
+		if (faculty_id && faculty_name) {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET faculty_id = $1,
+						faculty_name = $2,
+						is_completed = FALSE,
+						completed_at = NULL
+					WHERE id = $3
+					RETURNING *
+				`,
+				[ faculty_id, faculty_name, id ]
+			);
+		} else if (typeof is_completed === 'boolean') {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET is_completed = $1,
+						completed_at = CASE
+							WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+							ELSE NULL
+						END
+					WHERE id = $2
+					RETURNING *
+				`,
+				[ is_completed, id ]
+			);
+		} else {
+			return res.status(400).json({
+				error: 'No valid update data provided'
+			});
+		}
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const updatedTask = result.rows[0];
+
+		if (updatedTask.is_completed === true) {
+			const moduleName =
+				updatedTask.task_type === 'Daily'
+					? 'daily-tasks'
+					: 'all-tasks';
+
+			const message =
+				updatedTask.task_type === 'Daily'
+					? `${updatedTask.faculty_name} completed a daily task`
+					: `${updatedTask.faculty_name} completed a weekly task`;
+
+			await pool.query(
+				`
+					INSERT INTO faculty_notifications
+					(faculty_id, module_name, message)
+					VALUES ($1, $2, $3), ($4, $5, $6)
+				`,
+				[
+					'IG001',
+					moduleName,
+					message,
+					'IG002',
+					moduleName,
+					message
+				]
+			);
+		}
+
+		res.json(updatedTask);
+	} catch (err) {
+		console.error('PUT /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to update task',
+			details: err.message
+		});
+	}
+});
+
+
+app.delete('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can delete faculty tasks'
+			});
+		}
+
+		const taskResult = await pool.query(
+			`
+				SELECT id, parent_daily_task_id, task_type
+				FROM faculty_tasks
+				WHERE id = $1
+			`,
+			[ id ]
+		);
+
+		if (taskResult.rows.length === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const task = taskResult.rows[0];
+
+		const deleteId = task.parent_daily_task_id
+			? task.parent_daily_task_id
+			: task.id;
+
+		const result = await pool.query(
+			`
+				DELETE FROM faculty_tasks
+				WHERE id = $1
+				   OR parent_daily_task_id = $1
+				RETURNING *
+			`,
+			[ deleteId ]
+		);
+
+		res.json({
+			message: 'Task deleted successfully',
+			deletedCount: result.rowCount
+		});
+	} catch (err) {
+		console.error('DELETE /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to delete task',
+			details: err.message
+		});
+	}
+});
+
+/* =========================================================
+	ENQUIRIES
+	========================================================= */
+app.get('/enquiries/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id,enq_id,student_name,mobile_number,class_board,school_name,subjects,
+              academic_year_from,academic_year_to,batch,date_of_birth,parent_name,
+              secondary_contact,reference,status,comment,reason,created_at,admission_started_at
+       FROM enquiries WHERE id=$1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Enquiry not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /enquiries/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch enquiry' });
+  }
+});
+
+app.post('/enquiries/:id/admission/start', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  if (!token || token.length > 200) return res.status(400).json({ error: 'A valid admission session token is required' });
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
+       WHERE id=$1
+         AND (
+           status IS NULL
+           OR status IN ('Pending', 'Admission In Progress')
+           OR (
+             status='Admitted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM students s
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(s.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(s.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM test_batch_students t
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(t.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(t.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+           )
+         )
+       RETURNING id,batch,status,admission_started_at`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'This enquiry is already admitted or another admin is currently processing it. Try again after the current admission is cancelled or expires.' });
+    }
+    res.json({ success: true, enquiry: result.rows[0] });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/start error:', err);
+    res.status(500).json({ error: 'Failed to start admission' });
+  }
+});
+
+app.post('/enquiries/:id/admission/cancel', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Pending', admission_token=NULL, admission_started_at=NULL
+       WHERE id=$1 AND status='Admission In Progress'
+         AND (admission_token=$2 OR $2='')
+       RETURNING id`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'Admission could not be cancelled because it is no longer yours to cancel or is being processed by another admin.' });
+    }
+    res.json({ success: true, status: 'Pending' });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel admission' });
+  }
+});
+
+app.put('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status, comment, reason } = req.body;
+
+	const normalizedStatus = String(status || 'Pending').trim();
+	if (!['Pending', 'Rejected'].includes(normalizedStatus)) {
+		return res.status(400).json({ success: false, error: 'Use the admission workflow to change an enquiry to Admitted.' });
+	}
+	const rejectionReason = String(reason || comment || '').trim();
+	if (normalizedStatus === 'Rejected' && !rejectionReason) {
+		return res.status(400).json({ success: false, error: 'A rejection reason is required.' });
+	}
+
+	try {
+		const result = await pool.query(
+			`
+		UPDATE enquiries
+		SET status = $1,
+			comment = $2,
+			reason = $3,
+			admission_token = NULL,
+			admission_started_at = NULL
+		WHERE id = $4 AND status <> 'Admitted'
+		RETURNING *
+		`,
+			[ normalizedStatus, normalizedStatus === 'Rejected' ? rejectionReason : (comment || null), normalizedStatus === 'Rejected' ? rejectionReason : (reason || null), id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry updated successfully',
+			enquiry: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to update enquiry'
+		});
+	}
+});
+
+app.delete('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM enquiries
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry deleted successfully',
+			deleted: result.rows[0]
+		});
+	} catch (err) {
+		console.error('DELETE /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to delete enquiry',
+			details: err.message
+		});
+	}
+});
+
+app.post('/enquiries', async (req, res) => {
+	try {
+		const {
+			studentName,
+			classBoard,
+			schoolName,
+			subjects,
+			academicYearFrom,
+			academicYearTo,
+			batch,
+			dateOfBirth,
+			parentName,
+			mobileNumber,
+			secondaryContact,
+			reference
+		} = req.body;
+
+		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
+		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
+
+		if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year From must contain 4 digits'
+			});
+		}
+
+		if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
+			return res.status(400).json({
+				message: 'Academic Year To must contain 4 digits'
+			});
+		}
+
+		if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year To must be greater than From'
+			});
+		}
+
+		if (!['Test Batch', 'Regular Batch'].includes(String(batch || '').trim())) {
+			return res.status(400).json({ message: 'Please select Test Batch or Regular Batch' });
+		}
+
+		const cleanDateOfBirth = String(dateOfBirth || '').trim();
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+			return res.status(400).json({ message: 'Please provide a valid date of birth' });
+		}
+
+		if (!/^\d{10}$/.test(cleanMobile)) {
+			return res.status(400).json({
+				message: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		if (!cleanSecondary) {
+			return res.status(400).json({
+				message: 'Secondary contact is required'
+			});
+		}
+
+		if (!/^\d{10}$/.test(cleanSecondary)) {
+			return res.status(400).json({
+				message: 'Secondary contact must contain exactly 10 digits'
+			});
+		}
+
+		if (cleanMobile === cleanSecondary) {
+			return res.status(400).json({
+				message: 'Primary and Secondary contact numbers cannot be the same'
+			});
+		}
+
+		const result = await pool.query(
+			`
+		INSERT INTO enquiries
+		(
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			area,
+			reference,
+			batch,
+			date_of_birth
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		RETURNING *
+		`,
+			[
+				studentName,
+				cleanMobile,
+				classBoard,
+				schoolName,
+				subjects,
+				cleanAcademicYearFrom,
+				cleanAcademicYearTo,
+				parentName,
+				cleanSecondary,
+				null, // area is optional on the public enquiry form
+				reference || null,
+				String(batch).trim(),
+				cleanDateOfBirth
+			]
+		);
+
+		res.status(201).json(result.rows[0]);
+	} catch (err) {
+		console.error('POST /enquiries error:', err);
+		res.status(500).json({ message: 'Failed to submit enquiry' });
+	}
+});
+
+app.get('/enquiries', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT
+			enq_id,
+			id,
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			batch,
+			date_of_birth,
+			parent_name,
+			secondary_contact,
+			created_at,
+			status,
+			comment,
+			reason,
+			area,
+			reference,
+			admission_started_at
+		FROM enquiries
+		ORDER BY created_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enquiries error:', err);
+		res.status(500).json({ error: err.message });
+	}
+});
+/* =========================================================
+	ANSWER SHEET REQUESTS
+	========================================================= */
+app.get('/student-answer-sheet-data/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	try {
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ rollNo ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const testsResult = await pool.query(
+			`
+		SELECT test_code, test_date, subject_id, total_marks, portion
+		FROM tests
+		WHERE class = $1 AND board = $2
+		ORDER BY test_date DESC, test_code ASC
+		`,
+			[ student.class, student.board ]
+		);
+
+		res.json({
+			student,
+			tests: testsResult.rows
+		});
+	} catch (error) {
+		console.error('GET /student-answer-sheet-data/:rollNo error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching data'
+		});
+	}
+});
+
+app.post('/answer-sheet-requests', async (req, res) => {
+	const { roll_no, test_code, requested_phone } = req.body;
+
+	try {
+		if (!roll_no || !test_code || !requested_phone) {
+			return res.status(400).json({
+				error: 'roll_no, test_code and requested_phone are required'
+			});
+		}
+
+		const cleanPhone = String(requested_phone).replace(/\D/g, '').trim();
+
+		if (!/^\d{10}$/.test(cleanPhone)) {
+			return res.status(400).json({
+				error: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ roll_no ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const validTestResult = await pool.query(
+			`
+		SELECT test_code
+		FROM tests
+		WHERE test_code = $1
+			AND class = $2
+			AND board = $3
+		`,
+			[ test_code, student.class, student.board ]
+		);
+
+		if (validTestResult.rows.length === 0) {
+			return res.status(400).json({
+				error: 'Selected test code is not valid for this student'
+			});
+		}
+
+		const duplicateResult = await pool.query(
+			`
+		SELECT id
+		FROM answer_sheet_requests
+		WHERE roll_no = $1
+			AND test_code = $2
+			AND status = 'Pending'
+		`,
+			[ roll_no, test_code ]
+		);
+
+		if (duplicateResult.rows.length > 0) {
+			return res.status(400).json({
+				error: 'You already have a pending request for this test code'
+			});
+		}
+
+		const insertResult = await pool.query(
+			`
+		INSERT INTO answer_sheet_requests
+		(
+			roll_no,
+			student_name,
+			class_name,
+			board,
+			test_code,
+			requested_phone,
+			status
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,'Pending')
+		RETURNING *
+		`,
+			[ student.roll_no, student.name, student.class, student.board, test_code, cleanPhone ]
+		);
+
+		res.status(201).json({
+			message: 'Answer sheet request submitted successfully',
+			request: insertResult.rows[0]
+		});
+	} catch (error) {
+		console.error('POST /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while saving request'
+		});
+	}
+});
+
+app.get('/answer-sheet-requests', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT *
+		FROM answer_sheet_requests
+		ORDER BY requested_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (error) {
+		console.error('GET /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching requests',
+			details: error.message
+		});
+	}
+});
+
+app.put('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status } = req.body;
+
+	try {
+		if (!status) {
+			return res.status(400).json({ error: 'status is required' });
+		}
+
+		const result = await pool.query(
+			`
+		UPDATE answer_sheet_requests
+		SET status = $1
+		WHERE id = $2
+		RETURNING *
+		`,
+			[ status, id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request updated successfully',
+			request: result.rows[0]
+		});
+	} catch (error) {
+		console.error('PUT /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while updating request'
+		});
+	}
+});
+
+app.delete('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM answer_sheet_requests
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request completed and deleted successfully',
+			deletedRequest: result.rows[0]
+		});
+	} catch (error) {
+		console.error('DELETE /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while deleting request',
+			details: error.message
+		});
+	}
+});
+
+/* =========================================================
+	REGISTERED STUDENTS REPORT
+	========================================================= */
+
+	app.get('/registered-students', async (req, res) => {
+	const { className, board, date } = req.query;
+
+	try {
+		await pool.query(`
+			DELETE FROM test_registrations
+			WHERE test_date < CURRENT_DATE
+		`);
+
+		let query = `
+			SELECT
+				tr.id,
+				tr.roll_no,
+				tr.student_name,
+				TRIM(tr.class) AS class,
+				TRIM(tr.board) AS board,
+				tr.test_code,
+				TO_CHAR(tr.test_date, 'YYYY-MM-DD') AS test_date,
+				TO_CHAR(tr.writing_date, 'YYYY-MM-DD') AS writing_date,
+				tr.slot_start,
+				tr.slot_end,
+				tr.duration_minutes,
+				COALESCE(s.subject_name, 'Unknown') AS subject_name
+			FROM test_registrations tr
+			LEFT JOIN subjects s
+				ON tr.subject_id = s.subject_id
+			WHERE 1=1
+		`;
+
+		const values = [];
+		let index = 1;
+
+		if (className) {
+			query += ` AND TRIM(tr.class) = TRIM($${index})`;
+			values.push(className);
+			index++;
+		}
+
+		if (board) {
+			query += ` AND UPPER(TRIM(tr.board)) = UPPER(TRIM($${index}))`;
+			values.push(board);
+			index++;
+		}
+
+		if (date) {
+			query += ` AND tr.test_date = $${index}`;
+			values.push(date);
+			index++;
+		}
+
+		query += `
+			ORDER BY
+				tr.test_date ASC,
+				tr.writing_date ASC NULLS LAST,
+				tr.class ASC,
+				tr.roll_no ASC
+		`;
+
+		const result = await pool.query(query, values);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /registered-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch registered students',
+			details: err.message
+		});
+	}
+});
+app.put('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
+
+	const {
+		test_code,
+		subject_id,
+		test_date,
+		total_marks,
+		portion,
+		class_name,
+		board,
+		duration_minutes,
+		registration_end_date,
+		writing_allowed_till
+	} = req.body;
+
+	try {
+		const result = await pool.query(
+			`
+UPDATE tests
+SET
+    subject_id = $1,
+    test_date = $2,
+    total_marks = $3,
+    portion = $4,
+    chapter = $5,
+    class = $6,
+    board = $7,
+    duration_minutes = $8,
+    registration_end_date = $9,
+    writing_allowed_till = $10
+WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($11))
+RETURNING *
+      `,
+			[
+				subject_id,
+				test_date,
+				total_marks,
+				portion,
+				class_name,
+				board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till,
+				testCode
+			]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		res.json({ message: 'Test updated successfully', test: result.rows[0] });
+	} catch (err) {
+		console.error('PUT /posted-tests/:testCode error:', err);
+		res.status(500).json({ error: 'Failed to update test' });
+	}
+});
+app.get('/faculty-roles', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT role_id, role_name
+			FROM faculty_roles
+			ORDER BY role_id ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-roles error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty roles' });
+	}
+});
+app.get('/attendance-students', async (req, res) => {
+  const {
+    date,
+    class: className,
+    board,
+    subject_id
+  } = req.query;
+
+  if (!date) {
+    return res.status(400).json({
+      error: 'date is required'
+    });
+  }
+
+  try {
+    const dayOfWeek = new Date(date).getDay();
+
+    // ==========================
+    // SUNDAY MODE
+    // ==========================
+    if (dayOfWeek === 0) {
+      const result = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+        ORDER BY tr.class, tr.subject_id, tr.roll_no
+        `,
+        [date]
+      );
+
+      return res.json({
+        mode: 'sunday',
+        students: result.rows
+      });
+    }
+
+    // ==========================
+    // WEEKDAY MODE
+    // ==========================
+    if (!className || !board || !subject_id) {
+      return res.status(400).json({
+        error: 'class, board and subject_id are required'
+      });
+    }
+
+    const testCheck = await pool.query(
+      `
+      SELECT 1
+      FROM tests
+      WHERE test_date = $1
+        AND TRIM(class) = TRIM($2)
+        AND UPPER(TRIM(board)) = UPPER(TRIM($3))
+        AND subject_id = $4
+      LIMIT 1
+      `,
+      [date, className, board, Number(subject_id)]
+    );
+
+    // ==========================
+    // TEST EXISTS
+    // ==========================
+    if (testCheck.rows.length > 0) {
+      const registrations = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+          AND TRIM(tr.class) = TRIM($2)
+          AND UPPER(TRIM(tr.board)) = UPPER(TRIM($3))
+          AND tr.subject_id = $4
+        ORDER BY tr.roll_no
+        `,
+        [date, className, board, Number(subject_id)]
+      );
+
+      return res.json({
+        mode: 'test',
+        students: registrations.rows
+      });
+    }
+
+    // ==========================
+    // NORMAL ATTENDANCE
+    // ==========================
+    const students = await pool.query(
+      `
+      SELECT DISTINCT
+        s.roll_no,
+        s.name,
+        s.class,
+        s.board,
+        s.phone,
+        s.email,
+        s.school_name,
+        s.password,
+        s.date_of_birth,
+        s.batch,
+        s.academic_year_from,
+        s.academic_year_to,
+        s.parent_name,
+        s.secondary_contact,
+        s.reference,
+        a.status AS attendance_status,
+        a.updated_by AS attendance_marked_by,
+        a.marked_at AS attendance_marked_at
+      FROM students s
+      INNER JOIN student_subjects ss
+        ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      LEFT JOIN attendance a
+        ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+        AND a.subject_id = ss.subject_id
+        AND a.attendance_date = $4
+      WHERE TRIM(s.class) = TRIM($1)
+        AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+        AND ss.subject_id = $3
+      ORDER BY s.roll_no ASC
+      `,
+      [className, board, Number(subject_id), date]
+    );
+
+    return res.json({
+      mode: 'normal',
+      students: students.rows
+    });
+
+  } catch (err) {
+    console.error('GET /attendance-students error:', err);
+
+    return res.status(500).json({
+      error: 'Failed to load attendance students',
+      details: err.message
+    });
+  }
+});
+app.delete('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    const result = await pool.query(
+      `
+      DELETE FROM syllabus
+      WHERE syllabus_id = $1
+      RETURNING *
+      `,
+      [syllabusId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    res.json({
+      message: 'Syllabus chapter deleted successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('DELETE /syllabus/:id error:', err);
+
+    res.status(500).json({
+      error: 'Failed to delete syllabus',
+      details: err.message
+    });
+  }
+});
+app.put('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log(
+      'PUT /syllabus BODY:',
+      req.params.id,
+      req.body
+    );
+
+    // -----------------------------
+    // Validate ID
+    // -----------------------------
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    // -----------------------------
+    // Validate fields
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check record exists
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE syllabus_id = $1
+      `,
+      [syllabusId]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const duplicate = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+        AND syllabus_id <> $5
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        syllabusId
+      ]
+    );
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Another syllabus chapter already uses this chapter number'
+      });
+    }
+
+    // -----------------------------
+    // Update
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      UPDATE syllabus
+      SET
+        class = $1,
+        board = $2,
+        subject_id = $3,
+        chapter_no = $4,
+        chapter_name = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE syllabus_id = $6
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName,
+        syllabusId
+      ]
+    );
+
+    res.json({
+      message: 'Syllabus chapter updated successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('PUT /syllabus/:id error:', err);
+
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to update syllabus',
+      details: err.message
+    });
+  }
+});
+app.post('/syllabus', async (req, res) => {
+  try {
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log('POST /syllabus BODY:', req.body);
+
+    // -----------------------------
+    // Validation
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo
+      ]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // -----------------------------
+    // Insert
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      INSERT INTO syllabus (
+        class,
+        board,
+        subject_id,
+        chapter_no,
+        chapter_name
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Syllabus chapter added successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('POST /syllabus error:', err);
+
+    // PostgreSQL unique violation
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // Foreign key violation
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create syllabus',
+      details: err.message
+    });
+  }
+});
+app.get('/syllabus', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        sy.syllabus_id,
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        s.subject_name,
+        sy.chapter_no,
+        sy.chapter_name,
+        sy.created_at,
+        sy.updated_at
+      FROM syllabus sy
+      JOIN subjects s
+        ON s.subject_id = sy.subject_id
+      ORDER BY
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        sy.chapter_no
+    `);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.error('GET /syllabus error:', err);
+
+    res.status(500).json({
+      error: 'Failed to fetch syllabus',
+      details: err.message
+    });
+  }
+});
+
+/* =========================================================
+   FACULTY DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/faculty/device-token', async (req, res) => {
+  const {
+    faculty_id,
+    token,
+    platform = 'android',
+  } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const faculty = await pool.query(
+      `
+      SELECT faculty_id
+      FROM faculty
+      WHERE UPPER(TRIM(faculty_id)) = $1
+      LIMIT 1
+      `,
+      [facultyId]
+    );
+
+    if (faculty.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Faculty not found',
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO faculty_device_tokens
+        (faculty_id, token, platform, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (token)
+      DO UPDATE SET
+        faculty_id = EXCLUDED.faculty_id,
+        platform = EXCLUDED.platform,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [facultyId, deviceToken, devicePlatform]
+    );
+
+    console.log(
+      '[Faculty Token] Registered device token for faculty:',
+      facultyId
+    );
+
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.error(
+      'POST /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to register faculty notification device',
+    });
+  }
+});
+
+app.delete('/faculty/device-token', async (req, res) => {
+  const { faculty_id, token } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM faculty_device_tokens
+      WHERE UPPER(TRIM(faculty_id)) = $1
+        AND token = $2
+      `,
+      [facultyId, deviceToken]
+    );
+
+    return res.json({
+      success: true,
+      removed: result.rowCount || 0,
+    });
+  } catch (error) {
+    console.error(
+      'DELETE /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to remove faculty notification device',
+    });
+  }
+});
+
+
+
+/* =========================================================
+   TEST BATCH STUDENTS / MARKS / ATTENDANCE
+   Completely separate from Regular Student tables.
+========================================================= */
+
+const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
+
+// Verify an existing IG faculty account for Test Batch operational access.
+// This middleware is used by dashboard reads, student management, attendance,
+// and marks workflows. Test Batch series/configuration administration remains
+// protected by requireTestBatchAdmin where applicable.
+async function requireTestBatchAttendanceMarksAccess(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.get('x-faculty-id') ||
+      req.query.adminId ||
+      req.query.facultyId ||
+      (req.body && (req.body.adminId || req.body.facultyId)) ||
+      ''
+    ).toUpperCase().trim();
+
+    const match = candidate.match(/^IG(\d{3,})$/);
+    const sequence = match ? Number(match[1]) : NaN;
+    if (!Number.isInteger(sequence) || sequence < 1) {
+      return res.status(403).json({ error: 'Authorized faculty access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Faculty account not found or not authorized' });
+    }
+
+    // Any existing IG faculty may record attendance/marks. Test Batch
+    // administration/configuration routes remain protected by requireTestBatchAdmin.
+    req.testBatchFacultyId = candidate;
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch faculty attendance/marks authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify faculty access' });
+  }
+}
+
+async function requireTestBatchAdmin(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.query.adminId ||
+      (req.body && req.body.adminId) ||
+      ''
+    ).toUpperCase().trim();
+
+    if (!TEST_BATCH_ADMIN_IDS.has(candidate)) {
+      return res.status(403).json({ error: 'Test Batch administrator access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Unauthorized administrator' });
+    }
+
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch admin authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify administrator access' });
+  }
+}
+
+async function generateNextTestBatchRollNo(client) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['intellekt_test_batch_roll_no']);
+  const result = await client.query(
+    'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+    ['^IAT[0-9]+$']
+  );
+  const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+  return 'IAT' + String(nextNumber).padStart(3, '0');
+}
+
+async function validateTestBatchSeries(seriesId) {
+  const result = await pool.query(
+    'SELECT id, name FROM test_series WHERE id = $1',
+    [Number(seriesId)]
+  );
+  return result.rows[0] || null;
+}
+
+function validateTestBatchSubjects(subjects) {
+  const value = String(subjects || '').trim();
+  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+}
+
+function isTestBatchSubjectEligible(studentSubjects, testSubject) {
+  const subjects = String(studentSubjects || '').trim().toLowerCase();
+  const subject = String(testSubject || '').trim().toLowerCase();
+
+  if (!['mathematics', 'physics'].includes(subject)) return false;
+  return subjects === 'both' || subjects === subject;
+}
+
+function validateTestBatchMarks(totalMarks, obtained) {
+  const total = Number(totalMarks);
+  const raw = String(obtained ?? '').trim().toUpperCase();
+  if (!Number.isFinite(total) || total <= 0) return { ok:false, error:'Total marks must be greater than zero' };
+  if (!raw) return { ok:false, error:'Obtained marks are required' };
+  if (raw === 'A') return { ok:true, obtained:'A' };
+  const numeric = Number(raw);
+  if (!/^([0-9]+)(\\.[0-9]+)?$/.test(raw)) {
+    return { ok:false, error:'Obtained marks must be a valid number, or A' };
+  }
+  if (/^0+[0-9]/.test(raw)) {
+    return { ok:false, error:'Obtained marks cannot contain unnecessary leading zeros' };
+  }
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > total) {
+    return { ok:false, error:'Obtained marks must be between 0 and total marks, or A' };
+  }
+  return { ok:true, obtained:String(numeric) };
+}
+
+function marksComputedFields(row) {
+  const total = Number(row.total_marks || 0);
+  const raw = String(row.marks_obtained || '').trim().toUpperCase();
+  if (raw === 'A') return { ...row, percentage:null, result_status:'Absent' };
+  const percentage = total > 0 ? (Number(raw) / total) * 100 : 0;
+  return { ...row, percentage:Number(percentage.toFixed(2)), result_status:percentage >= 40 ? 'Pass' : 'Fail' };
+}
+
+app.get('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, search, status, from, to } = req.query;
+    const values=[]; let where='WHERE 1=1';
+    if(seriesId){ values.push(Number(seriesId)); where+=' AND t.test_series_id=$'+values.length; }
+    if(search){ values.push('%'+String(search).trim()+'%'); where+=' AND (t.test_code ILIKE $'+values.length+' OR t.subject_name ILIKE $'+values.length+')'; }
+    if(status){ values.push(String(status)); where+=' AND t.status=$'+values.length; }
+    if(from){ values.push(from); where+=' AND t.writing_date >= $'+values.length; }
+    if(to){ values.push(to); where+=' AND t.writing_date <= $'+values.length; }
+    const result=await pool.query(
+      'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
+      ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
+    res.json({tests:result.rows});
+  } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
+});
+
+app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
+      return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
+    }
+    const series=await validateTestBatchSeries(test_series_id);
+    if(!series)return res.status(400).json({error:'Invalid Test Series'});
+
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status,created_by) '+
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (test_code) DO NOTHING RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+    if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
+    res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('POST /test-batch/tests error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to create Test Batch test',details:err.message});
+  }
+});
+
+app.put('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    if (!TEST_BATCH_ADMIN_IDS.has(String(req.testBatchAdminId || '').toUpperCase().trim())) {
+      return res.status(403).json({error:'Faculty must receive admin approval before editing a Test Batch schedule'});
+    }
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,writing_close_date=$14,status=$15,updated_at=CURRENT_TIMESTAMP WHERE id=$16 RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test updated successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('PUT /test-batch/tests/:id error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to update Test Batch test',details:err.message});
+  }
+});
+
+
+/* =========================================================
+   TEST BATCH STUDENT REGISTRATION
+   Students can register only inside the configured application window.
+========================================================= */
+
+app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
+  try {
+    const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const studentRow = student.rows[0];
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,t.writing_close_date,
+         t.status,
+         CASE
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'absent'
+             )
+             THEN true
+           ELSE false
+         END AS is_absent,
+         CASE
+           WHEN (r.id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM test_batch_attendance a
+             WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+               AND a.attendance_date=COALESCE(r.writing_date,t.writing_date)
+               AND LOWER(TRIM(a.status))='absent'
+           )) OR (r.id IS NULL AND t.application_close_date IS NOT NULL AND t.application_close_date < CURRENT_DATE)
+           THEN true ELSE false
+         END AS is_lapsed,
+         CASE
+           WHEN t.status IN ('Completed','Returned') THEN true
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'present'
+             )
+             THEN true
+           ELSE false
+         END AS is_completed,
+         CASE WHEN r.id IS NOT NULL AND r.status='Registered' THEN true ELSE false END AS is_registered,
+         r.registered_at,r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,r.slot_end AS registered_slot_end
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+       WHERE t.test_series_id=$2
+         AND t.status IN ('Scheduled','Active','Completed','Returned')
+       ORDER BY
+         CASE WHEN t.status IN ('Scheduled','Active') THEN 0 ELSE 1 END,
+         t.application_open_date ASC,
+         t.test_code ASC`,
+      [rollNo, studentRow.test_series_id]
+    );
+
+    const studentBoard = normalizeTestBatchBoard(studentRow.board);
+    const studentClass = String(studentRow.class || '').trim();
+
+    const filteredTests = result.rows.filter((test) => {
+      const parsed = parseTestBatchCode(test.test_code);
+      if (!parsed) return false;
+
+      const testBoard = normalizeTestBatchBoard(parsed.board);
+      const matchesBoardAndClass =
+        testBoard === studentBoard &&
+        String(parsed.className) === studentClass;
+
+      if (!matchesBoardAndClass) return false;
+
+      // Subject eligibility is an additional layer on top of the existing
+      // Test Series + board + class + status rules.
+      return isTestBatchSubjectEligible(studentRow.subjects, parsed.subject);
+    });
+
+    res.json({tests:filteredTests});
+  } catch(err) {
+    console.error('GET /test-batch/student-tests/:rollNo error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch test schedule'});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/register', async (req,res) => {
+  try {
+    const testCode = String(req.params.testCode || '').trim().toUpperCase();
+    const rollNo = String(req.body?.roll_no || '').trim().toUpperCase();
+    if (!rollNo) return res.status(400).json({error:'Roll number is required'});
+
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const testResult = await pool.query(
+      `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+              duration_minutes,application_open_date,application_close_date,writing_close_date,status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const test = testResult.rows[0];
+    if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
+      return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
+    }
+
+    const parsedTest = parseTestBatchCode(testCode);
+    if (!parsedTest) {
+      return res.status(400).json({error:'Invalid Test Batch test code format'});
+    }
+
+    const studentBoard = normalizeTestBatchBoard(student.rows[0].board);
+    const requiredBoard = normalizeTestBatchBoard(parsedTest.board);
+    const studentClass = String(student.rows[0].class || '').trim();
+    if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
+      return res.status(403).json({
+        error:'This test is not assigned to the student\'s board and class'
+      });
+    }
+
+    if (!isTestBatchSubjectEligible(student.rows[0].subjects, parsedTest.subject)) {
+      return res.status(403).json({
+        error:'This student is not registered for the test subject'
+      });
+    }
+
+    const selectedWritingDate = String(req.body?.writing_date || '').trim();
+    const selectedSlotStart = req.body?.slot_start ? String(req.body.slot_start).trim() : null;
+    const selectedSlotEnd = req.body?.slot_end ? String(req.body.slot_end).trim() : null;
+
+    if (!selectedWritingDate) {
+      return res.status(400).json({error:'Select a test date'});
+    }
+    if (!selectedSlotStart || !selectedSlotEnd) {
+      return res.status(400).json({error:'Select a test slot'});
+    }
+    if (!['Scheduled','Active'].includes(test.status)) {
+      return res.status(400).json({error:'Registration is not available for this test'});
+    }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const open = new Date(test.application_open_date);
+    const close = new Date(test.application_close_date);
+    const writingClose = new Date(test.writing_close_date);
+    const chosenDate = new Date(selectedWritingDate);
+    open.setHours(0,0,0,0);
+    close.setHours(0,0,0,0);
+    writingClose.setHours(0,0,0,0);
+    chosenDate.setHours(0,0,0,0);
+
+    if (today < open || today > close) {
+      return res.status(400).json({error:'Registration period is closed for this test'});
+    }
+    if (Number.isNaN(chosenDate.getTime()) || Number.isNaN(writingClose.getTime()) || chosenDate < open || chosenDate > writingClose) {
+      return res.status(400).json({error:'Selected writing date must be between the opening date and Writing Close Date'});
+    }
+
+    const durationMinutes = Number(test.duration_minutes);
+    const slotStartMinutes = timeStringToMinutes(selectedSlotStart);
+    const slotEndMinutes = timeStringToMinutes(selectedSlotEnd);
+
+    if (
+      !Number.isFinite(slotStartMinutes) ||
+      !Number.isFinite(slotEndMinutes) ||
+      slotEndMinutes <= slotStartMinutes ||
+      slotEndMinutes - slotStartMinutes !== durationMinutes
+    ) {
+      return res.status(400).json({error:'Selected slot does not match the test duration'});
+    }
+
+    // Test date must be at least 3 calendar days after the registration date.
+    const registrationToday = new Date();
+    registrationToday.setHours(0,0,0,0);
+    const minimumWritingDate = new Date(registrationToday);
+    minimumWritingDate.setDate(minimumWritingDate.getDate() + 3);
+
+    if (chosenDate < minimumWritingDate) {
+      return res.status(400).json({
+        error:'Test date must be at least 3 days after registration'
+      });
+    }
+
+    const fixedSlots = getTestBatchSlots(durationMinutes, selectedWritingDate);
+    if (
+      fixedSlots.length === 0 ||
+      !fixedSlots.some(
+        slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
+      )
+    ) {
+      return res.status(400).json({
+        error:'Invalid Test Batch slot for the selected date and test duration'
+      });
+    }
+
+    const registered = await pool.query(
+      `INSERT INTO test_batch_registrations
+       (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
+       VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
+       ON CONFLICT(test_code,roll_no)
+       DO UPDATE SET
+         writing_date=EXCLUDED.writing_date,
+         slot_start=EXCLUDED.slot_start,
+         slot_end=EXCLUDED.slot_end,
+         status='Registered',
+         updated_at=CURRENT_TIMESTAMP
+       RETURNING *, (xmax = 0) AS is_new_registration`,
+      [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
+    );
+
+    const registration = registered.rows[0];
+
+    // Notify both Test Batch admins immediately for a newly created registration.
+    // Notification failures must never make a successful student registration fail.
+    if (registration?.is_new_registration === true) {
+      const registeredAt = formatTestBatchRegistrationDateTime(registration.registered_at);
+      const studentNameResult = await pool.query(
+        'SELECT name FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+        [rollNo]
+      );
+      const studentName = String(studentNameResult.rows[0]?.name || '').trim() || rollNo;
+      const notificationMessage =
+        `Test Reminder - ${testCode} is scheduled by ${studentName}. Registered on ${registeredAt}.`;
+
+      try {
+        await Promise.all(
+          ['IG001','IG002'].map((adminId) =>
+            createFacultyNotification(pool, {
+              facultyId: adminId,
+              moduleName: 'test-batch',
+              title: 'Test Batch Registration',
+              message: notificationMessage,
+              data: {
+                module_name: 'test-batch-admin-registration',
+                test_code: testCode,
+                roll_no: rollNo,
+                registered_at: String(registration.registered_at || ''),
+                notification_type: 'test_batch_registration'
+              }
+            })
+          )
+        );
+      } catch (notificationError) {
+        console.error(
+          'Test Batch registration notification failed:',
+          notificationError
+        );
+      }
+    }
+
+    res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/register error:',err);
+    res.status(500).json({error:'Failed to register for Test Batch test',details:err.message});
+  }
+});
+
+app.delete('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test deleted successfully',test:result.rows[0]});
+  } catch(err){ console.error('DELETE /test-batch/tests/:id error:',err); res.status(500).json({error:'Failed to delete Test Batch test'}); }
+});
+
+/* =========================================================
+   TEST BATCH POST-TEST CONFIGURATION
+   Available only after a test is Completed or Returned.
+========================================================= */
+
+app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.portion,t.chapter,
+         t.application_open_date,t.application_close_date,t.status,
+         t.manual_mark_entry_enabled,t.bulk_mark_upload_enabled,
+         t.passing_percentage,t.grade_boundaries,
+         t.result_publication_mode,t.show_detailed_breakdown,
+         t.reevaluation_enabled,t.lock_marks_after_final_submission,
+         t.post_test_export_enabled,t.result_publication_status,
+         t.result_published_at,t.marks_entry_status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test is available only for completed or returned tests'});
+    }
+
+    res.json({test});
+  } catch(err) {
+    console.error('GET /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to load Test Batch post-test settings'});
+  }
+});
+
+app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const body = req.body || {};
+    const result = await pool.query(
+      `SELECT id,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test settings can only be changed for completed or returned tests'});
+    }
+
+    const passing = Number(body.passing_percentage);
+    if (!Number.isFinite(passing) || passing < 0 || passing > 100) {
+      return res.status(400).json({error:'Passing percentage must be between 0 and 100'});
+    }
+
+    const boundaries = body.grade_boundaries || {A:90,B:75,C:60,D:40};
+    if (!boundaries || typeof boundaries !== 'object' || Array.isArray(boundaries)) {
+      return res.status(400).json({error:'Grade boundaries must be an object'});
+    }
+
+    for (const grade of ['A','B','C','D']) {
+      const value = Number(boundaries[grade]);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return res.status(400).json({error:'Each grade boundary must be between 0 and 100'});
+      }
+    }
+
+    const publicationMode = body.result_publication_mode === 'immediate' ? 'immediate' : 'approval';
+
+    const updated = await pool.query(
+      `UPDATE test_batch_tests
+       SET manual_mark_entry_enabled=$1,
+           bulk_mark_upload_enabled=$2,
+           passing_percentage=$3,
+           grade_boundaries=$4::jsonb,
+           result_publication_mode=$5,
+           show_detailed_breakdown=$6,
+           reevaluation_enabled=$7,
+           lock_marks_after_final_submission=$8,
+           post_test_export_enabled=$9,
+           result_publication_status=CASE WHEN $5='immediate' THEN 'Published' ELSE result_publication_status END,
+           result_published_at=CASE WHEN $5='immediate' THEN COALESCE(result_published_at,CURRENT_TIMESTAMP) ELSE result_published_at END,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$10
+       RETURNING *`,
+      [
+        body.manual_mark_entry_enabled !== false,
+        body.bulk_mark_upload_enabled === true,
+        passing,
+        JSON.stringify({A:Number(boundaries.A),B:Number(boundaries.B),C:Number(boundaries.C),D:Number(boundaries.D)}),
+        publicationMode,
+        body.show_detailed_breakdown === true,
+        body.reevaluation_enabled === true,
+        body.lock_marks_after_final_submission !== false,
+        body.post_test_export_enabled !== false,
+        test.id
+      ]
+    );
+
+    res.json({message:'Test Batch Post Test settings saved successfully',test:updated.rows[0]});
+  } catch(err) {
+    console.error('PUT /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to save Test Batch post-test settings',details:err.message});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET result_publication_status='Published',
+           result_published_at=CURRENT_TIMESTAMP,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+         AND status IN ('Completed','Returned')
+         AND result_publication_mode='approval'
+       RETURNING id,test_code,result_publication_status,result_published_at`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) {
+      return res.status(400).json({error:'Test must be completed/returned and configured for admin approval before publishing'});
+    }
+
+    res.json({message:'Test Batch results published successfully',test:result.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/post-test/publish error:',err);
+    res.status(500).json({error:'Failed to publish Test Batch results'});
+  }
+});
+
+app.get('/test-batch/tests/:testCode/results', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const testResult = await pool.query(
+      `SELECT passing_percentage,grade_boundaries,result_publication_status,
+              show_detailed_breakdown,post_test_export_enabled
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const config = testResult.rows[0];
+    const result=await pool.query(
+      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
+      'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
+      [req.params.testCode]);
+
+    const passing = Number(config.passing_percentage ?? 40);
+    const boundaries = config.grade_boundaries || {A:90,B:75,C:60,D:40};
+    const results = result.rows.map(row => {
+      const base = marksComputedFields(row);
+      if (base.result_status === 'Absent') return {...base, grade:null};
+      const percentage = Number(base.percentage || 0);
+      let grade = 'F';
+      for (const [label, minimum] of Object.entries(boundaries).sort((a,b)=>Number(b[1])-Number(a[1]))) {
+        if (percentage >= Number(minimum)) { grade = label; break; }
+      }
+      return {
+        ...base,
+        result_status: percentage >= passing ? 'Pass' : 'Fail',
+        grade,
+      };
+    });
+
+    res.json({
+      results,
+      settings: {
+        passing_percentage: passing,
+        grade_boundaries: boundaries,
+        result_publication_status: config.result_publication_status,
+        show_detailed_breakdown: config.show_detailed_breakdown,
+        post_test_export_enabled: config.post_test_export_enabled,
+      }
+    });
+  } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
+});
+
+
+/* =========================================================
+   TEST BATCH MARK ENTRY
+   Only completed/returned tests are eligible.
+   Marks are stored only in test_batch_marks.
+========================================================= */
+
+app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { seriesId, search } = req.query;
+    const values = [];
+    let where = "WHERE t.status IN ('Draft','Scheduled','Active','Completed','Returned')";
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND t.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (t.test_code ILIKE $' + values.length + ' OR t.subject_name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,
+         COUNT(r.id) FILTER (WHERE r.status='Registered')::int AS registered_students
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code
+       ${where}
+       GROUP BY
+         t.id,t.test_code,t.test_series_id,s.name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+       ORDER BY t.application_open_date DESC,t.test_code ASC`,
+      values
+    );
+
+    res.json({ tests: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/tests error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch posted tests' });
+  }
+});
+
+app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = String(req.query.seriesId || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const categoryFilter = String(req.query.category || '').trim().toLowerCase();
+    const testValues = [];
+    let testWhere = "WHERE t.status <> 'Cancelled'";
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+    const registrationValues = [];
+    let registrationWhere = "WHERE r.status = 'Registered'";
+
+    if (seriesId) {
+      const parsed = Number(seriesId);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      testValues.push(parsed);
+      testWhere += ' AND t.test_series_id=$' + testValues.length;
+      studentValues.push(parsed);
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+      registrationValues.push(parsed);
+      registrationWhere += ' AND t.test_series_id=$' + registrationValues.length;
+    }
+    if (categoryFilter === 'registered') {
+      registrationWhere += " AND (r.writing_date IS NULL OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW())";
+    }
+    if (classFilter) {
+      studentValues.push(classFilter);
+      studentWhere += ' AND TRIM(s.class)=TRIM($' + studentValues.length + ')';
+      registrationValues.push(classFilter);
+      registrationWhere += ' AND TRIM(s.class)=TRIM($' + registrationValues.length + ')';
+    }
+    if (boardFilter) {
+      studentValues.push(boardFilter);
+      studentWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + studentValues.length + "), '[^a-zA-Z]', '', 'g'))";
+      registrationValues.push(boardFilter);
+      registrationWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + registrationValues.length + "), '[^a-zA-Z]', '', 'g'))";
+    }
+
+    const [seriesResult, testsResult, studentsResult, registrationsResult] = await Promise.all([
+      pool.query('SELECT id,name FROM test_series ORDER BY id'),
+      pool.query(
+        'SELECT t.*,ts.name AS test_series_name FROM test_batch_tests t JOIN test_series ts ON ts.id=t.test_series_id ' +
+        testWhere + ' ORDER BY t.writing_date DESC,t.test_code ASC',
+        testValues
+      ),
+      pool.query(
+        'SELECT s.roll_no,s.name,s.class,s.board,s.subjects,s.test_series_id,ts.name AS test_series_name ' +
+        'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+        studentWhere + ' ORDER BY s.roll_no ASC',
+        studentValues
+      ),
+      pool.query(
+        `SELECT
+           t.test_code, t.test_series_id, t.subject_name, ts.name AS test_series_name,
+           s.roll_no, s.name, s.class, s.board, s.subjects,
+           s.test_series_id AS student_test_series_id,
+           r.writing_date AS registered_writing_date,
+           r.slot_start AS registered_slot_start,
+           r.slot_end AS registered_slot_end,
+           r.registered_at,
+           a.status AS attendance_status
+         FROM test_batch_registrations r
+         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+         JOIN test_series ts ON ts.id=t.test_series_id
+         JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+         LEFT JOIN test_batch_attendance a
+           ON UPPER(TRIM(a.roll_no))=UPPER(TRIM(r.roll_no))
+          AND a.attendance_date=r.writing_date
+         ${registrationWhere}
+         ORDER BY t.test_code ASC,r.writing_date ASC,s.roll_no ASC`,
+        registrationValues
+      )
+    ]);
+
+    res.json({
+      series: seriesResult.rows,
+      tests: testsResult.rows,
+      students: studentsResult.rows,
+      registrations: registrationsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/student-status error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch student statuses' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,
+         t.test_code,
+         t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name,
+         t.duration_minutes,
+         t.total_marks,
+         t.status,
+         t.application_open_date,
+         t.application_close_date
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    const category = String(req.query.category || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const seriesFilter = String(req.query.seriesId || '').trim();
+    const registeredVisibilityFilter = category === 'Registered'
+      ? `AND (
+           r.writing_date IS NULL
+           OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW()
+         )`
+      : '';
+
+    const values = [code, test.test_series_id, test.subject_name];
+    let studentFilters = '';
+    if (classFilter) {
+      values.push(classFilter);
+      studentFilters += ` AND TRIM(s.class) = TRIM($${values.length})`;
+    }
+    if (boardFilter) {
+      values.push(boardFilter);
+      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM($${values.length}), '[^a-zA-Z]', '', 'g'))`;
+    }
+    if (seriesFilter) {
+      const parsedSeriesId = Number(seriesFilter);
+      if (!Number.isSafeInteger(parsedSeriesId) || parsedSeriesId <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      values.push(parsedSeriesId);
+      studentFilters += ` AND s.test_series_id = $${values.length}`;
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.registered_at,
+         r.status AS registration_status
+       FROM test_batch_registrations r
+       JOIN test_batch_students s
+         ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+       WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
+         AND r.status='Registered'
+         AND s.test_series_id=$2
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($3))
+         )
+         ${studentFilters}
+         ${registeredVisibilityFilter}
+       ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
+      values
+    );
+
+    res.json({
+      test,
+      students: studentsResult.rows,
+      registered_students: studentsResult.rows.length
+    });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/registered-students error:', err);
+    res.status(500).json({ error: 'Failed to fetch registered Test Batch students' });
+  }
+});
+
+app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = Number(req.params.seriesId);
+    if (!Number.isInteger(seriesId) || seriesId <= 0) {
+      return res.status(400).json({ error: 'Invalid Test Series' });
+    }
+
+    const seriesResult = await pool.query(
+      `SELECT id, name
+       FROM test_series
+       WHERE id=$1
+       LIMIT 1`,
+      [seriesId]
+    );
+
+    if (seriesResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Series not found' });
+    }
+
+    const testsResult = await pool.query(
+      `SELECT
+         t.id, t.test_code, t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name, t.duration_minutes, t.total_marks, t.status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE t.test_series_id=$1
+         AND t.status <> 'Cancelled'
+       ORDER BY t.created_at DESC, t.id DESC`,
+      [seriesId]
+    );
+
+    const studentsResult = await pool.query(
+      `SELECT DISTINCT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       WHERE s.test_series_id=$1
+         AND r.status='Registered'
+       ORDER BY s.roll_no ASC`,
+      [seriesId]
+    );
+
+    res.json({
+      series: seriesResult.rows[0],
+      tests: testsResult.rows,
+      students: studentsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/series/:seriesId error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch students for Test Series' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.status,t.marks_entry_status,
+         t.marks_finalized_at,t.manual_mark_entry_enabled,
+         t.lock_marks_after_final_submission
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Draft','Scheduled','Active','Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'This Test Batch test is not available for mark entry'
+      });
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.status AS registration_status,
+         a.status AS attendance_status,
+         COALESCE(m.marks_obtained, '') AS marks_obtained,
+         COALESCE(m.comments, '') AS remarks,
+         m.updated_at AS marks_updated_at
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.test_code=$1
+        AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       LEFT JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=r.writing_date
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($2))
+         )
+       ORDER BY s.roll_no ASC`,
+      [code, test.subject_name, test.test_series_id]
+    );
+
+    res.json({ test, students: studentsResult.rows });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/mark-entry error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch mark entry' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       RETURNING test_code,marks_entry_status`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    res.json({
+      message: 'Marks unlocked for editing',
+      marks_entry_status: result.rows[0].marks_entry_status
+    });
+  } catch (err) {
+    console.error('POST /test-batch/tests/:testCode/marks/edit error:', err);
+    res.status(400).json({ error: err.message || 'Failed to unlock marks for editing' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'At least one mark record is required' });
+    }
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can receive marks'
+      });
+    }
+
+    if (test.manual_mark_entry_enabled === false) {
+      return res.status(400).json({
+        error: 'Manual mark entry is disabled for this Test Batch test. Use the configured bulk-upload workflow.'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized' && test.lock_marks_after_final_submission !== false) {
+      return res.status(400).json({
+        error: 'Marks for this test have already been finalized and are locked'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const rollNo = String(record.roll_no || '').trim().toUpperCase();
+      const rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
+      const remarks = String(record.remarks ?? record.comments ?? '').trim();
+
+      if (!/^IAT[0-9]{3,}$/.test(rollNo)) {
+        throw new Error('Invalid Test Batch roll number: ' + rollNo);
+      }
+
+      const eligible = await client.query(
+        `SELECT s.roll_no
+         FROM test_batch_students s
+         JOIN test_batch_registrations r
+           ON r.roll_no=s.roll_no
+          AND UPPER(TRIM(r.test_code))=UPPER(TRIM($2))
+          AND r.status='Registered'
+         JOIN test_batch_attendance a
+           ON a.roll_no=s.roll_no
+          AND a.attendance_date=r.writing_date
+          AND r.writing_date=$4::date
+          AND a.status='Present'
+         WHERE s.roll_no=$1
+           AND s.test_series_id=$3
+         LIMIT 1`,
+        [rollNo, code, test.test_series_id, writingDate]
+      );
+
+      if (eligible.rows.length === 0) {
+        throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
+      }
+
+      // Empty marks mean the student has not been marked yet.
+      // Preserve any previously saved mark and allow partial saves.
+      if (!rawMarks) continue;
+
+      const validation = validateTestBatchMarks(test.total_marks, rawMarks);
+      if (!validation.ok) {
+        throw new Error(rollNo + ': ' + validation.error);
+      }
+
+      await client.query(
+        `INSERT INTO test_batch_marks
+          (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT (roll_no,test_code,subject_name)
+         DO UPDATE SET
+           total_marks=EXCLUDED.total_marks,
+           marks_obtained=EXCLUDED.marks_obtained,
+           comments=EXCLUDED.comments,
+           updated_at=CURRENT_TIMESTAMP`,
+        [rollNo, code, test.subject_name, Number(test.total_marks), validation.obtained, remarks || null]
+      );
+    }
+
+    // Saving marks is a draft operation. Do not require every student on
+    // this writing date to have completed the test or entered marks.
+    // Finalization is handled by the separate /marks/finalize endpoint.
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Marks saved for the selected writing date. You can save remaining students later.',
+      marks_entry_status: 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks error:', err);
+    res.status(400).json({ error: err.message || 'Failed to save Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can be finalized'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized') {
+      return res.json({ message: 'Marks are already finalized' });
+    }
+
+    const result = await client.query(
+      `SELECT
+         s.roll_no,
+         COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($3))
+        AND r.status='Registered'
+        AND r.writing_date=$2::date
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=$2::date
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($3))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($4))
+       WHERE s.test_series_id=$1
+       ORDER BY s.roll_no ASC`,
+      [test.test_series_id, writingDate, code, test.subject_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        error: 'No Test Batch students marked Present for this writing date'
+      });
+    }
+
+    const missing = result.rows.filter(row => !row.marks_obtained);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        error: 'Enter marks for all students on the selected writing date before finalizing',
+        missing_roll_numbers: missing.map(row => row.roll_no)
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const remaining = await client.query(
+      `SELECT s.roll_no FROM test_batch_students s
+       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
+       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
+       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
+      [code, test.subject_name, test.test_series_id]
+    );
+    const allDatesComplete = remaining.rows.length === 0;
+    await client.query(
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
+       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: allDatesComplete ? 'All writing-date marks finalized successfully' : 'Selected writing date checked; other writing dates still need marks',
+      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks/finalize error:', err);
+    res.status(400).json({ error: err.message || 'Failed to finalize Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await client.query(
+      `SELECT id,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    if (testResult.rows[0].marks_entry_status === 'Finalized') {
+      return res.status(400).json({ error: 'Finalized marks cannot be reset' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `DELETE FROM test_batch_marks
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))`,
+      [code]
+    );
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Pending',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [testResult.rows[0].id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ message: 'Test Batch draft marks reset successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/tests/:testCode/marks/draft error:', err);
+    res.status(500).json({ error: 'Failed to reset Test Batch draft marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
+    res.json({ series: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/series error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch series' });
+  }
+});
+
+app.get('/test-batch/students/next-roll', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+      ['^IAT[0-9]+$']
+    );
+    const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+    res.json({ roll_no: 'IAT' + String(nextNumber).padStart(3, '0') });
+  } catch (err) {
+    console.error('GET /test-batch/students/next-roll error:', err);
+    res.status(500).json({ error: 'Failed to generate next Test Batch roll number' });
+  }
+});
+
+app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { search, seriesId, class: className } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id = $' + values.length;
+    }
+
+    if (className) {
+      values.push(String(className).trim());
+      where += ' AND s.class = $' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
+      'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+      where + ' ORDER BY s.roll_no ASC',
+      values
+    );
+
+    const classValues = [];
+    let classWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      classValues.push(Number(seriesId));
+      classWhere += ' AND s.test_series_id = $' + classValues.length;
+    }
+
+    if (search) {
+      classValues.push('%' + String(search).trim() + '%');
+      classWhere += ' AND (s.roll_no ILIKE $' + classValues.length + ' OR s.name ILIKE $' + classValues.length + ')';
+    }
+
+    const classResult = await pool.query(
+      'SELECT DISTINCT TRIM(s.class) AS class FROM test_batch_students s ' +
+      classWhere +
+      " AND s.class IS NOT NULL AND TRIM(s.class) <> '' " +
+      'ORDER BY TRIM(s.class) ASC',
+      classValues
+    );
+
+    res.json({
+      students: result.rows,
+      available_classes: classResult.rows
+        .map((row) => String(row.class).trim())
+        .filter(Boolean)
+    });
+  } catch (err) {
+    console.error('GET /test-batch/students error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch students' });
+  }
+});
+
+app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      enquiry_id, admission_token, roll_no,
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    const cleanRollNo = String(roll_no || '').trim().toUpperCase();
+    if (!cleanRollNo) return res.status(400).json({ error:'Roll number is required; enter it manually.' });
+    if (!/^IAT[0-9]{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Test Batch roll number must use the IAT format, for example IAT014.' });
+    if (!name || !className || !test_series_id || !subjects) {
+      return res.status(400).json({ error:'Roll number, student name, class, subjects and test series are required' });
+    }
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+
+    if (!await validateTestBatchSeries(test_series_id)) {
+      return res.status(400).json({ error:'Invalid Test Series' });
+    }
+
+    // Normalize optional email values so whitespace is stored as NULL, not an empty string.
+    const normalizedEmail = email == null ? null : (String(email).trim().toLowerCase() || null);
+
+    await client.query('BEGIN');
+
+    if (enquiry_id) {
+      const admissionLock = await client.query(
+        `SELECT id FROM enquiries
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         FOR UPDATE`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admissionLock.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+      }
+    }
+
+    const duplicateRoll = await client.query(
+      'SELECT 1 FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [cleanRollNo]
+    );
+    if (duplicateRoll.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'This Test Batch roll number already exists. Please enter a different roll number.' });
+    }
+
+    const rollNo = cleanRollNo;
+    const finalPassword = password && String(password).trim()
+      ? String(password).trim()
+      : rollNo;
+
+    const inserted = await client.query(
+      'INSERT INTO test_batch_students ' +
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to,parent_name,secondary_contact,reference) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING RETURNING roll_no',
+      [
+        rollNo,
+        String(name).trim(),
+        className ? String(className).trim() : null,
+        board ? String(board).trim() : null,
+        mode_of_education ? String(mode_of_education).trim() : null,
+        phone ? String(phone).trim() : null,
+        normalizedEmail,
+        school_name ? String(school_name).trim() : null,
+        validSubjects,
+        finalPassword,
+        Number(test_series_id),
+        req.testBatchAdminId,
+        date_of_birth || null,
+        academic_year_from || null,
+        academic_year_to || null,
+        parent_name || null,
+        secondary_contact || null,
+        reference || null
+      ]
+    );
+
+    if (!inserted.rows.length) {
+      const emailExists = normalizedEmail
+        ? await client.query(
+            'SELECT 1 FROM test_batch_students WHERE LOWER(TRIM(email))=LOWER(TRIM($1)) LIMIT 1',
+            [normalizedEmail]
+          )
+        : { rows: [] };
+      await client.query('ROLLBACK');
+      if (emailExists.rows.length) {
+        return res.status(409).json({ error:'Email already exists in Test Batch' });
+      }
+      return res.status(409).json({ error:'Could not allocate a unique Test Batch roll number. Please retry.' });
+    }
+
+    if (enquiry_id) {
+      const admitted = await client.query(
+        `UPDATE enquiries
+         SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         RETURNING id`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admitted.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo, admitted_enquiry_id:enquiry_id || null });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/students error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Duplicate Test Batch student data' });
+    if (err.code === '23503') return res.status(400).json({ error:'Invalid Test Series or administrator' });
+    res.status(500).json({ error:'Failed to add Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const oldRoll = String(req.params.roll_no).toUpperCase().trim();
+    const {
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+    if (!await validateTestBatchSeries(test_series_id)) return res.status(400).json({ error:'Invalid Test Series' });
+
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [oldRoll]
+    );
+
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const values = [
+      String(name).trim(),
+      className ? String(className).trim() : null,
+      board ? String(board).trim() : null,
+      mode_of_education ? String(mode_of_education).trim() : null,
+      phone ? String(phone).trim() : null,
+      email ? String(email).trim() : null,
+      school_name ? String(school_name).trim() : null,
+      validSubjects,
+      Number(test_series_id),
+      date_of_birth || null,
+      academic_year_from || null,
+      academic_year_to || null,
+      parent_name || null,
+      secondary_contact || null,
+      reference || null
+    ];
+
+    let query =
+      'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
+      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,date_of_birth=$10,' +
+      'academic_year_from=$11,academic_year_to=$12,parent_name=$13,secondary_contact=$14,reference=$15,' +
+      'updated_at=CURRENT_TIMESTAMP';
+
+    if (password && String(password).trim()) {
+      values.push(String(password).trim(), oldRoll);
+      query += ',password=$16,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$17 RETURNING roll_no';
+    } else {
+      values.push(oldRoll);
+      query += ' WHERE UPPER(TRIM(roll_no))=$16 RETURNING roll_no';
+    }
+
+    const result = await client.query(query, values);
+    await client.query('COMMIT');
+
+    res.json({ message:'Test Batch student updated successfully', roll_no:result.rows[0].roll_no });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /test-batch/students/:roll_no error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Email already exists in Test Batch' });
+    res.status(500).json({ error:'Failed to update Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const roll = String(req.params.roll_no).toUpperCase().trim();
+    await client.query('BEGIN');
+    const found = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [roll]
+    );
+    if (found.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+    await client.query('DELETE FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1', [roll]);
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch student deleted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/students/:roll_no error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch student' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { search, seriesId, testCode } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+    if (testCode) {
+      values.push('%' + String(testCode).trim() + '%');
+      where += ' AND m.test_code ILIKE $' + values.length;
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.roll_no,s.name,ts.name AS test_series_name,m.test_code,m.subject_name,' +
+      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
+      ' ORDER BY m.created_at DESC,m.id DESC',
+      values
+    );
+
+    res.json({ marks:result.rows.map(marksComputedFields) });
+  } catch (err) {
+    console.error('GET /test-batch/marks error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch marks' });
+  }
+});
+
+app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { roll_no,test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    if (!roll_no || !test_code || !subject_name) return res.status(400).json({ error:'Student, test code and subject are required' });
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll_no]
+    );
+    if (student.rows.length === 0) return res.status(404).json({ error:'Test Batch student not found' });
+
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'INSERT INTO test_batch_marks(roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
+      'VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      [
+        String(roll_no).trim().toUpperCase(),
+        String(test_code).trim(),
+        String(subject_name).trim(),
+        Number(total_marks),
+        validation.obtained,
+        comments ? String(comments).trim() : null
+      ]
+    );
+
+    res.status(201).json({ message:'Test Batch mark added successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('POST /test-batch/marks error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to add Test Batch mark', details:err.message });
+  }
+});
+
+app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const { test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'UPDATE test_batch_marks SET test_code=$1,subject_name=$2,total_marks=$3,marks_obtained=$4,' +
+      'comments=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$6 RETURNING *',
+      [String(test_code).trim(),String(subject_name).trim(),Number(total_marks),validation.obtained,comments ? String(comments).trim() : null,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark updated successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /test-batch/marks/:id error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to update Test Batch mark' });
+  }
+});
+
+app.delete('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query('DELETE FROM test_batch_marks WHERE id=$1 RETURNING id', [Number(req.params.id)]);
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark deleted successfully' });
+  } catch (err) {
+    console.error('DELETE /test-batch/marks/:id error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch mark' });
+  }
+});
+
+app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0,10);
+    const { search, seriesId } = req.query;
+    const values = [date];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    // Test Batch attendance is date-eligible only.
+    // A student appears on the marking screen only when they have
+    // a registered test application for the selected writing date.
+    const result = await pool.query(
+      `SELECT
+          s.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          (
+            SELECT STRING_AGG(DISTINCT TRIM(tr.test_code), ', ' ORDER BY TRIM(tr.test_code))
+            FROM test_batch_registrations tr
+            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+              AND tr.writing_date = $1
+          ) AS test_codes,
+          a.id,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_students s
+        JOIN test_series ts
+          ON ts.id = s.test_series_id
+        LEFT JOIN test_batch_attendance a
+          ON a.roll_no = s.roll_no
+         AND a.attendance_date = $1
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+            AND tr.writing_date = $1
+        )
+        ORDER BY s.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance' });
+  }
+});
+
+app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const { records, attendanceDate } = req.body || {};
+    if (!attendanceDate || !Array.isArray(records) || records.length===0) {
+      return res.status(400).json({ error:'attendanceDate and records are required' });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const roll = String(record.roll_no || '').trim().toUpperCase();
+      const status = String(record.status || '').trim();
+
+      if (!roll || !['Present','Absent'].includes(status)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error:'Each attendance record needs a valid roll number and status' });
+      }
+
+      const student = await client.query(
+        'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+        [roll]
+      );
+
+      if (student.rows.length===0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error:'Test Batch student not found: ' + roll });
+      }
+
+      // Enforce the same eligibility rule on the server so an API caller
+      // cannot create attendance for a Test Batch student who did not
+      // register for a test on the selected attendance date.
+      const registration = await client.query(
+        `SELECT 1
+         FROM test_batch_registrations tr
+         WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
+           AND tr.writing_date = $2
+         LIMIT 1`,
+        [roll, attendanceDate]
+      );
+
+      if (registration.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `No registered test application found for ${roll} on ${attendanceDate}`
+        });
+      }
+
+      await client.query(
+        'INSERT INTO test_batch_attendance(roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at) ' +
+        'VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,NULL,NULL) ' +
+        'ON CONFLICT(roll_no,attendance_date) DO NOTHING',
+        [roll,attendanceDate,status,req.testBatchAdminId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch attendance saved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to save Test Batch attendance', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const status = String(req.body?.status || '').trim();
+    if (!['Present','Absent'].includes(status)) {
+      return res.status(400).json({ error:'Invalid attendance status' });
+    }
+
+    const result = await pool.query(
+      `UPDATE test_batch_attendance a
+       SET status=$1,
+           edited_by=$2,
+           edited_at=CURRENT_TIMESTAMP
+       WHERE a.id=$3
+         AND EXISTS (
+           SELECT 1
+           FROM test_batch_registrations tr
+           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+             AND tr.writing_date = a.attendance_date
+         )
+       RETURNING a.*`,
+      [status,req.testBatchAdminId,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) {
+      return res.status(404).json({
+        error:'Eligible Test Batch attendance record not found'
+      });
+    }
+
+    res.json({ message:'Test Batch attendance updated successfully', attendance:result.rows[0] });
+  } catch (err) {
+    console.error('PUT /test-batch/attendance/:id error:', err);
+    res.status(500).json({ error:'Failed to update Test Batch attendance' });
+  }
+});
+
+app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const from = req.query.from || new Date().toISOString().slice(0,10);
+    const to = req.query.to || from;
+    const { search, seriesId } = req.query;
+    const values = [from,to];
+    let where = 'WHERE a.attendance_date BETWEEN $1 AND $2';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+          a.id,
+          a.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_attendance a
+        JOIN test_batch_students s
+          ON s.roll_no=a.roll_no
+        JOIN test_series ts
+          ON ts.id=s.test_series_id
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+            AND tr.writing_date = a.attendance_date
+        )
+        ORDER BY a.attendance_date DESC,a.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance-report error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance report' });
+  }
+});
+
+app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, from, to } = req.query;
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      studentValues.push(Number(seriesId));
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+    }
+
+    const totalResult = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM test_batch_students s ' + studentWhere,
+      studentValues
+    );
+
+    const seriesCounts = await pool.query(
+      'SELECT ts.id,ts.name,COUNT(s.roll_no)::int AS count FROM test_series ts ' +
+      'LEFT JOIN test_batch_students s ON s.test_series_id=ts.id ' +
+      'GROUP BY ts.id,ts.name ORDER BY ts.id'
+    );
+
+    const recent = await pool.query(
+      'SELECT s.roll_no,s.name,s.created_at,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + studentWhere +
+      ' ORDER BY s.created_at DESC LIMIT 10',
+      studentValues
+    );
+
+    const dateFrom = from || '1900-01-01';
+    const dateTo = to || '2999-12-31';
+
+    const attendance = await pool.query(
+      'SELECT COUNT(*) FILTER(WHERE a.status IN (\'Present\',\'Absent\'))::int AS total,' +
+      'COUNT(*) FILTER(WHERE a.status=\'Present\')::int AS present ' +
+      'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
+      'WHERE a.attendance_date BETWEEN $1 AND $2 ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date = a.attendance_date' +
+      ') ' +
+      (seriesId ? 'AND s.test_series_id=$3' : ''),
+      seriesId ? [dateFrom,dateTo,Number(seriesId)] : [dateFrom,dateTo]
+    );
+
+    const marks = await pool.query(
+      'SELECT COALESCE(SUM(CASE WHEN UPPER(TRIM(m.marks_obtained))=\'A\' THEN 0 ELSE CAST(m.marks_obtained AS NUMERIC) END),0) AS obtained,' +
+      'COALESCE(SUM(m.total_marks),0) AS total ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'WHERE 1=1 ' + (seriesId ? 'AND s.test_series_id=$1' : ''),
+      seriesId ? [Number(seriesId)] : []
+    );
+
+    const attTotal=Number(attendance.rows[0].total||0);
+    const attPresent=Number(attendance.rows[0].present||0);
+    const markTotal=Number(marks.rows[0].total||0);
+    const markObtained=Number(marks.rows[0].obtained||0);
+
+    res.json({
+      totalStudents:Number(totalResult.rows[0].count||0),
+      attendancePercentage:attTotal?attPresent/attTotal*100:0,
+      marksPercentage:markTotal?markObtained/markTotal*100:0,
+      seriesCounts:seriesCounts.rows,
+      recentStudents:recent.rows
+    });
+  } catch(err) {
+    console.error('GET /test-batch/dashboard error:',err);
+    res.status(500).json({ error:'Failed to fetch Test Batch dashboard' });
+  }
+});
+
+app.get('/test-batch/student/:roll_no', async (req,res) => {
+  try {
+    const roll=String(req.params.roll_no).toUpperCase().trim();
+    if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
+
+    const studentResult=await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
+      [roll]
+    );
+
+    if(studentResult.rows.length===0) return res.status(404).json({error:'Test Batch student not found'});
+
+    const marksResult=await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE m.roll_no=$1 ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    const attendanceResult=await pool.query(
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at, ' +
+      'COALESCE((' +
+      '  SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.test_code FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS test_code, ' +
+      'COALESCE((' +
+      '  SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '  JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.subject_name FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const attendanceTotal=attendanceResult.rows.length;
+    const attendancePresent=attendanceResult.rows.filter(a=>a.status==='Present').length;
+
+    res.json({
+      student:studentResult.rows[0],
+      marks:marksResult.rows.map(marksComputedFields),
+      attendance:attendanceResult.rows,
+      attendancePercentage:attendanceTotal?attendancePresent/attendanceTotal*100:0
+    });
+  } catch(err) {
+    console.error('GET /test-batch/student/:roll_no error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch student dashboard'});
+  }
+});
+
+/* =========================================================
+   TEST BATCH MOBILE STUDENT MARKS / ATTENDANCE
+   These endpoints are read-only student endpoints used by
+   the Flutter Test Batch dashboard.
+========================================================= */
+app.get('/test-batch/marks/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE UPPER(TRIM(m.roll_no))=UPPER(TRIM($1)) ' +
+      'ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    return res.json(result.rows.map(marksComputedFields));
+  } catch (err) {
+    console.error('GET /test-batch/marks/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch marks' });
+  }
+});
+
+app.get('/test-batch/attendance/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT a.id, ' +
+      '       a.attendance_date, ' +
+      '       a.status, ' +
+      '       a.marked_by, a.marked_at, a.edited_by, a.edited_at, ' +
+      '       COALESCE((' +
+      '         SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.test_code FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS test_code, ' +
+      '       COALESCE((' +
+      '         SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.subject_name FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const total = result.rows.length;
+    const present = result.rows.filter((row) => row.status === 'Present').length;
+
+    return res.json({
+      attendance: result.rows,
+      attendancePercentage: total ? (present / total) * 100 : 0
+    });
+  } catch (err) {
+    console.error('GET /test-batch/attendance/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch attendance' });
+  }
+});
+
+/* =========================================================
+   STUDENT DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/device-token', async (req, res) => {
+  const { roll_no, token, platform = 'android' } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const student = await pool.query(
+      `SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = $1
+       UNION ALL
+       SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = $1
+       LIMIT 1`,
+      [rollNo]
+    );
+
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    await ensureStudentDeviceTokensTable();
+
+    await pool.query(
+      `INSERT INTO student_device_tokens
+        (student_id, device_token, platform, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (device_token)
+       DO UPDATE SET
+         student_id = EXCLUDED.student_id,
+         platform = EXCLUDED.platform,
+         updated_at = CURRENT_TIMESTAMP`,
+      [rollNo, deviceToken, devicePlatform]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('POST /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to register student notification device' });
+  }
+});
+
+app.delete('/device-token', async (req, res) => {
+  const { roll_no, token } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM student_device_tokens WHERE UPPER(TRIM(student_id)) = $1 AND device_token = $2',
+      [rollNo, deviceToken]
+    );
+
+    return res.json({ success: true, removed: result.rowCount || 0 });
+  } catch (error) {
+    console.error('DELETE /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to remove student notification device' });
+  }
+});
+
+
+/* =========================================================
+	SERVER START
+	========================================================= */
+const PORT = process.env.PORT || 5050;
+
+let testBatchPushWorker;
+
+async function ensureStudentDeviceTokensTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_device_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      student_id VARCHAR(100) NOT NULL,
+      device_token TEXT NOT NULL UNIQUE,
+      platform VARCHAR(20) NOT NULL DEFAULT 'android',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_student_device_tokens_student_id
+    ON student_device_tokens (UPPER(TRIM(student_id)))
+  `);
+}
+
+registerRecordEditRoutes(app, pool);
+registerTestBatchEditRequestRoutes(app, pool);
+
+async function startServer() {
+  // Keep public enquiry submissions compatible with databases created before
+  // the latest enquiry form fields were introduced.
+  await pool.query(`
+    ALTER TABLE public.enquiries
+      ADD COLUMN IF NOT EXISTS admission_token TEXT,
+      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS batch VARCHAR(30) DEFAULT 'Regular Batch',
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS area VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS mode_of_education VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  await pool.query(`
+    ALTER TABLE public.test_batch_students
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  // Keep faculty notification archive endpoints compatible with existing databases.
+  // The archived_at column is required by the inbox, archive, restore and 30-day cleanup routes.
+  await pool.query(`
+    ALTER TABLE public.faculty_notifications
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_active
+      ON public.faculty_notifications (faculty_id, created_at DESC)
+      WHERE archived_at IS NULL
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_archived
+      ON public.faculty_notifications (faculty_id, archived_at DESC)
+      WHERE archived_at IS NOT NULL
+  `);
+
+  await ensureStudentDeviceTokensTable();
+
+  const facultyNotificationService = require('./faculty-notification-service');
+
+  testBatchPushWorker = createTestBatchPushWorker({
+    pool,
+    sendToStudent,
+    sendToFaculty: facultyNotificationService.sendToFaculty,
+    createFacultyNotification: facultyNotificationService.createFacultyNotification,
+  });
+  testBatchPushWorker.start();
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  if (testBatchPushWorker) testBatchPushWorker.stop();
+});
+ + values.length + '))';
+    }
+    if (subjectId && String(subjectId).trim()) {
+      values.push(Number(subjectId));
+      subjectFilter = `AND EXISTS (
+        SELECT 1 FROM student_subjects ss
+        WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+          AND ss.subject_id = ${values.length}
+      )`;
+    }
+
+    const result = await pool.query(
+      `SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+       FROM students s
+       LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no)) ${codeFilter}
+       WHERE TRIM(s.class) = TRIM($1)
+         AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+         AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+         ${subjectFilter}
+       ORDER BY s.roll_no ASC`,
+      values
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('GET /enter-marks-students error:', err);
+    return res.status(500).json({ error: 'Failed to fetch students', details: err.message });
+  }
+});
+
+
+app.get('/students/:value', async (req, res) => {
+	const { value } = req.params;
+	const upperValue = String(value).toUpperCase();
+
+	try {
+		const matchingRoll = await pool.query(
+			`SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1`,
+			[value]
+		);
+
+		// Look up existing students by their actual roll number, regardless of format.
+		if (matchingRoll.rows.length > 0) {
+			const studentResult = await pool.query(
+				`
+			SELECT 
+			s.roll_no,
+			s.name,
+			s.class,
+			s.board,
+			s.phone,
+			s.email,
+			s.school_name,
+			s.password,
+			s.date_of_birth,
+			s.batch,
+			s.academic_year_from,
+			s.academic_year_to,
+			s.parent_name,
+			s.secondary_contact,
+			s.reference,
+			COALESCE(f.total_fee, 0) AS total_fee,
+			COALESCE(f.fee_paid, 0) AS fee_paid,
+			f.next_due
+			FROM students s
+			LEFT JOIN fees f ON s.roll_no = f.roll_no
+			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+			`,
+				[ upperValue ]
+			);
+
+			if (studentResult.rows.length === 0) {
+				return res.status(404).json({ error: 'Student not found' });
+			}
+
+			const subjectsResult = await pool.query(
+				`
+			SELECT
+			ss.subject_id,
+			sub.subject_name
+			FROM student_subjects ss
+			JOIN subjects sub ON ss.subject_id = sub.subject_id
+			WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM($1))
+			ORDER BY ss.subject_id ASC
+			`,
+				[ upperValue ]
+			);
+
+			return res.json({
+				...studentResult.rows[0],
+				subjects: subjectsResult.rows
+			});
+		}
+
+		const classResult = await pool.query(
+			`
+		SELECT roll_no, name
+		FROM students
+		WHERE class = $1
+		ORDER BY roll_no ASC
+		`,
+			[ value ]
+		);
+
+		return res.json(classResult.rows);
+	} catch (err) {
+		console.error('GET /students/:value error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student data',
+			details: err.message
+		});
+	}
+});
+app.post('/students', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const {
+			enquiry_id,
+			admission_token,
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		const cleanRollNo = String(roll_no || '').trim();
+		if (!cleanRollNo) {
+			return res.status(400).json({ error: 'Roll number is required' });
+		}
+
+		if (!name || !className || !board || !phone || !email || !school_name) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		if (enquiry_id) {
+			const admissionLock = await client.query(
+				`SELECT id FROM enquiries
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 FOR UPDATE`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admissionLock.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+			}
+		}
+
+		const duplicateRoll = await client.query(
+			'SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+			[cleanRollNo]
+		);
+		if (duplicateRoll.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(409).json({ error: 'This roll number already exists. Please enter a different roll number.' });
+		}
+
+		const newRoll = cleanRollNo;
+		const finalPassword = password && String(password).trim() !== '' ? String(password).trim() : newRoll;
+
+		await client.query(
+			`
+		INSERT INTO students (
+			roll_no,
+			name,
+			class,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		`,
+			[
+				newRoll,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				finalPassword,
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null
+			]
+		);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRoll, Number(subjectId) ]
+			);
+		}
+
+		await client.query(
+			`
+		INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+		)
+		VALUES ($1,$2,$3,$4)
+		`,
+			[
+				newRoll,
+				total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+				fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+				next_due || null
+			]
+		);
+
+		if (enquiry_id) {
+			const admitted = await client.query(
+				`UPDATE enquiries
+				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 RETURNING id`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admitted.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+			}
+		}
+
+		await client.query('COMMIT');
+
+		res.status(201).json({
+			message: 'Student added successfully',
+			roll_no: newRoll,
+			admitted_enquiry_id: enquiry_id || null
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /students error:', err);
+
+		if (err.code === '23505') {
+			return res.status(409).json({
+				error: 'This roll number or another unique student field already exists. Please check the details and try again.'
+			});
+		}
+
+		res.status(500).json({
+			error: 'Failed to add student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+app.put('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
+
+		const {
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		if (
+			!roll_no ||
+			!name ||
+			!className ||
+			!board ||
+			!phone ||
+			!email ||
+			!school_name ||
+			!password
+		) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ oldRollNo ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const newRollNo = String(roll_no).trim().toUpperCase();
+
+		if (oldRollNo !== newRollNo) {
+			const duplicateCheck = await client.query(
+				`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[ newRollNo ]
+			);
+
+			if (duplicateCheck.rows.length > 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({ error: 'New roll number already exists' });
+			}
+
+			// Subject mappings reference students.roll_no with a foreign key.
+			// Remove the old mappings inside this transaction; the selected subjects
+			// are validated and reinserted under the new roll number after the student update.
+			await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ oldRollNo ]);
+			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+		}
+
+		await client.query(
+			`
+		UPDATE students
+		SET
+			roll_no = $1,
+			name = $2,
+			class = $3,
+			board = $4,
+			phone = $5,
+			email = $6,
+			school_name = $7,
+			password = $8,
+			date_of_birth = $9,
+			batch = $10,
+			academic_year_from = $11,
+			academic_year_to = $12,
+			parent_name = $13,
+			secondary_contact = $14,
+			reference = $15
+		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($16))
+		`,
+			[
+				newRollNo,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				String(password).trim(),
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null,
+				oldRollNo
+			]
+		);
+
+		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ newRollNo ]);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRollNo, Number(subjectId) ]
+			);
+		}
+
+		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [ newRollNo ]);
+
+		if (feeCheck.rows.length > 0) {
+			await client.query(
+				`
+			UPDATE fees
+			SET total_fee = $1,
+				fee_paid = $2,
+				next_due = $3
+			WHERE roll_no = $4
+			`,
+				[
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null,
+					newRollNo
+				]
+			);
+		} else {
+			await client.query(
+				`
+			INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+			)
+			VALUES ($1,$2,$3,$4)
+			`,
+				[
+					newRollNo,
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null
+				]
+			);
+		}
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to update student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.delete('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+	const { roll_no } = req.params;
+
+	try {
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ roll_no ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student deleted successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('DELETE /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to delete student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.get('/student-class-board-options', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT DISTINCT class, board
+		FROM students
+		ORDER BY board, class
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-class-board-options error:', err);
+		res.status(500).json({ error: 'Failed to fetch class/board options' });
+	}
+});
+/* =========================================================
+	FACULTY TASKS
+	========================================================= */
+
+async function ensureDailyTasksForToday() {
+	const today = new Date().toISOString().slice(0, 10);
+
+	const templates = await pool.query(`
+			SELECT *
+			FROM faculty_tasks
+			WHERE task_type = 'Daily'
+			AND parent_daily_task_id IS NULL
+		`);
+
+	for (const template of templates.rows) {
+		const existing = await pool.query(
+			`
+				SELECT id
+				FROM faculty_tasks
+				WHERE parent_daily_task_id = $1
+				AND task_date = $2
+				LIMIT 1
+				`,
+			[ template.id, today ]
+		);
+
+		if (existing.rows.length === 0) {
+			await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					`,
+				[
+					template.faculty_id,
+					template.faculty_name,
+					template.class_name,
+					template.subject_name || '',
+					template.total_test_note || '',
+					template.other_tasks || '',
+					today,
+					template.priority || 'Medium',
+					template.assigned_by,
+					template.id,
+					today
+				]
+			);
+		}
+	}
+}
+
+app.get('/faculty-tasks/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+
+	try {
+		await cleanupCompletedTasks();
+		await ensureDailyTasksForToday();
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE faculty_id = $1
+	AND (
+		task_type = 'Weekly'
+		OR task_type IS NULL
+		OR (
+		task_type = 'Daily'
+		AND parent_daily_task_id IS NOT NULL
+		AND is_completed = FALSE
+		)
+	)
+				ORDER BY created_at DESC
+				`,
+			[ facultyId ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks/:facultyId error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty tasks'
+			});
+		}
+
+		await cleanupCompletedTasks();
+
+		const result = await pool.query(`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Weekly'
+				OR task_type IS NULL
+				ORDER BY created_at DESC
+			`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch all faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-daily-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty daily tasks'
+			});
+		}
+
+		await ensureDailyTasksForToday();
+
+		const today = new Date().toISOString().slice(0, 10);
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Daily'
+				AND parent_daily_task_id IS NOT NULL
+				AND task_date = $1
+				ORDER BY faculty_id ASC, created_at DESC
+				`,
+			[ today ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-daily-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch daily tasks',
+			details: err.message
+		});
+	}
+});
+
+app.post('/faculty-tasks', async (req, res) => {
+	const {
+		loginFacultyId,
+		faculty_id,
+		faculty_name,
+		class_name,
+		subject_name,
+		total_test_note,
+		other_tasks,
+		due_date,
+		priority,
+		task_type
+	} = req.body;
+
+	try {
+		if (!faculty_id || !faculty_name || !class_name) {
+			return res.status(400).json({
+				error: 'Faculty Name and Class are required'
+			});
+		}
+
+		if (!subject_name && !other_tasks) {
+			return res.status(400).json({
+				error: 'Please select Test Code or enter Other Tasks'
+			});
+		}
+
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can assign tasks'
+			});
+		}
+
+		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
+		const today = new Date().toISOString().slice(0, 10);
+
+		// =========================================================
+		// DAILY TASK
+		// =========================================================
+
+		if (finalTaskType === 'Daily') {
+			const templateResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					priority || 'Medium',
+					loginFacultyId
+				]
+			);
+
+			const template = templateResult.rows[0];
+
+			const todayTaskResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					today,
+					priority || 'Medium',
+					loginFacultyId,
+					template.id,
+					today
+				]
+			);
+
+			// Create in-app notification and send Firebase push notification
+			await createFacultyNotification(pool, {
+				facultyId: faculty_id,
+				moduleName: 'tasks',
+				message: 'New task assigned by admin'
+			});
+
+			return res.json({
+				message: 'Daily task assigned successfully',
+				task: todayTaskResult.rows[0]
+			});
+		}
+
+		// =========================================================
+		// WEEKLY TASK
+		// =========================================================
+
+		const result = await pool.query(
+			`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
+				RETURNING *
+			`,
+			[
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name || '',
+				total_test_note || '',
+				other_tasks || '',
+				due_date || null,
+				priority || 'Medium',
+				loginFacultyId
+			]
+		);
+
+		// Create in-app notification and send Firebase push notification
+		await createFacultyNotification(pool, {
+			facultyId: faculty_id,
+			moduleName: 'tasks',
+			message: 'New task assigned by admin'
+		});
+
+		return res.json({
+			message: 'Task assigned successfully',
+			task: result.rows[0]
+		});
+	} catch (err) {
+		console.error('POST /faculty-tasks error:', err);
+
+		res.status(500).json({
+			error: 'Failed to assign task',
+			details: err.message
+		});
+	}
+});
+
+
+app.put('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const { is_completed, faculty_id, faculty_name } = req.body;
+
+	try {
+		let result;
+
+		if (faculty_id && faculty_name) {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET faculty_id = $1,
+						faculty_name = $2,
+						is_completed = FALSE,
+						completed_at = NULL
+					WHERE id = $3
+					RETURNING *
+				`,
+				[ faculty_id, faculty_name, id ]
+			);
+		} else if (typeof is_completed === 'boolean') {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET is_completed = $1,
+						completed_at = CASE
+							WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+							ELSE NULL
+						END
+					WHERE id = $2
+					RETURNING *
+				`,
+				[ is_completed, id ]
+			);
+		} else {
+			return res.status(400).json({
+				error: 'No valid update data provided'
+			});
+		}
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const updatedTask = result.rows[0];
+
+		if (updatedTask.is_completed === true) {
+			const moduleName =
+				updatedTask.task_type === 'Daily'
+					? 'daily-tasks'
+					: 'all-tasks';
+
+			const message =
+				updatedTask.task_type === 'Daily'
+					? `${updatedTask.faculty_name} completed a daily task`
+					: `${updatedTask.faculty_name} completed a weekly task`;
+
+			await pool.query(
+				`
+					INSERT INTO faculty_notifications
+					(faculty_id, module_name, message)
+					VALUES ($1, $2, $3), ($4, $5, $6)
+				`,
+				[
+					'IG001',
+					moduleName,
+					message,
+					'IG002',
+					moduleName,
+					message
+				]
+			);
+		}
+
+		res.json(updatedTask);
+	} catch (err) {
+		console.error('PUT /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to update task',
+			details: err.message
+		});
+	}
+});
+
+
+app.delete('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can delete faculty tasks'
+			});
+		}
+
+		const taskResult = await pool.query(
+			`
+				SELECT id, parent_daily_task_id, task_type
+				FROM faculty_tasks
+				WHERE id = $1
+			`,
+			[ id ]
+		);
+
+		if (taskResult.rows.length === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const task = taskResult.rows[0];
+
+		const deleteId = task.parent_daily_task_id
+			? task.parent_daily_task_id
+			: task.id;
+
+		const result = await pool.query(
+			`
+				DELETE FROM faculty_tasks
+				WHERE id = $1
+				   OR parent_daily_task_id = $1
+				RETURNING *
+			`,
+			[ deleteId ]
+		);
+
+		res.json({
+			message: 'Task deleted successfully',
+			deletedCount: result.rowCount
+		});
+	} catch (err) {
+		console.error('DELETE /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to delete task',
+			details: err.message
+		});
+	}
+});
+
+/* =========================================================
+	ENQUIRIES
+	========================================================= */
+app.get('/enquiries/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id,enq_id,student_name,mobile_number,class_board,school_name,subjects,
+              academic_year_from,academic_year_to,batch,date_of_birth,parent_name,
+              secondary_contact,reference,status,comment,reason,created_at,admission_started_at
+       FROM enquiries WHERE id=$1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Enquiry not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /enquiries/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch enquiry' });
+  }
+});
+
+app.post('/enquiries/:id/admission/start', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  if (!token || token.length > 200) return res.status(400).json({ error: 'A valid admission session token is required' });
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
+       WHERE id=$1
+         AND (
+           status IS NULL
+           OR status IN ('Pending', 'Admission In Progress')
+           OR (
+             status='Admitted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM students s
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(s.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(s.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM test_batch_students t
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(t.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(t.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+           )
+         )
+       RETURNING id,batch,status,admission_started_at`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'This enquiry is already admitted or another admin is currently processing it. Try again after the current admission is cancelled or expires.' });
+    }
+    res.json({ success: true, enquiry: result.rows[0] });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/start error:', err);
+    res.status(500).json({ error: 'Failed to start admission' });
+  }
+});
+
+app.post('/enquiries/:id/admission/cancel', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Pending', admission_token=NULL, admission_started_at=NULL
+       WHERE id=$1 AND status='Admission In Progress'
+         AND (admission_token=$2 OR $2='')
+       RETURNING id`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'Admission could not be cancelled because it is no longer yours to cancel or is being processed by another admin.' });
+    }
+    res.json({ success: true, status: 'Pending' });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel admission' });
+  }
+});
+
+app.put('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status, comment, reason } = req.body;
+
+	const normalizedStatus = String(status || 'Pending').trim();
+	if (!['Pending', 'Rejected'].includes(normalizedStatus)) {
+		return res.status(400).json({ success: false, error: 'Use the admission workflow to change an enquiry to Admitted.' });
+	}
+	const rejectionReason = String(reason || comment || '').trim();
+	if (normalizedStatus === 'Rejected' && !rejectionReason) {
+		return res.status(400).json({ success: false, error: 'A rejection reason is required.' });
+	}
+
+	try {
+		const result = await pool.query(
+			`
+		UPDATE enquiries
+		SET status = $1,
+			comment = $2,
+			reason = $3,
+			admission_token = NULL,
+			admission_started_at = NULL
+		WHERE id = $4 AND status <> 'Admitted'
+		RETURNING *
+		`,
+			[ normalizedStatus, normalizedStatus === 'Rejected' ? rejectionReason : (comment || null), normalizedStatus === 'Rejected' ? rejectionReason : (reason || null), id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry updated successfully',
+			enquiry: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to update enquiry'
+		});
+	}
+});
+
+app.delete('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM enquiries
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry deleted successfully',
+			deleted: result.rows[0]
+		});
+	} catch (err) {
+		console.error('DELETE /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to delete enquiry',
+			details: err.message
+		});
+	}
+});
+
+app.post('/enquiries', async (req, res) => {
+	try {
+		const {
+			studentName,
+			classBoard,
+			schoolName,
+			subjects,
+			academicYearFrom,
+			academicYearTo,
+			batch,
+			dateOfBirth,
+			parentName,
+			mobileNumber,
+			secondaryContact,
+			reference
+		} = req.body;
+
+		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
+		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
+
+		if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year From must contain 4 digits'
+			});
+		}
+
+		if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
+			return res.status(400).json({
+				message: 'Academic Year To must contain 4 digits'
+			});
+		}
+
+		if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year To must be greater than From'
+			});
+		}
+
+		if (!['Test Batch', 'Regular Batch'].includes(String(batch || '').trim())) {
+			return res.status(400).json({ message: 'Please select Test Batch or Regular Batch' });
+		}
+
+		const cleanDateOfBirth = String(dateOfBirth || '').trim();
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+			return res.status(400).json({ message: 'Please provide a valid date of birth' });
+		}
+
+		if (!/^\d{10}$/.test(cleanMobile)) {
+			return res.status(400).json({
+				message: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		if (!cleanSecondary) {
+			return res.status(400).json({
+				message: 'Secondary contact is required'
+			});
+		}
+
+		if (!/^\d{10}$/.test(cleanSecondary)) {
+			return res.status(400).json({
+				message: 'Secondary contact must contain exactly 10 digits'
+			});
+		}
+
+		if (cleanMobile === cleanSecondary) {
+			return res.status(400).json({
+				message: 'Primary and Secondary contact numbers cannot be the same'
+			});
+		}
+
+		const result = await pool.query(
+			`
+		INSERT INTO enquiries
+		(
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			area,
+			reference,
+			batch,
+			date_of_birth
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		RETURNING *
+		`,
+			[
+				studentName,
+				cleanMobile,
+				classBoard,
+				schoolName,
+				subjects,
+				cleanAcademicYearFrom,
+				cleanAcademicYearTo,
+				parentName,
+				cleanSecondary,
+				null, // area is optional on the public enquiry form
+				reference || null,
+				String(batch).trim(),
+				cleanDateOfBirth
+			]
+		);
+
+		res.status(201).json(result.rows[0]);
+	} catch (err) {
+		console.error('POST /enquiries error:', err);
+		res.status(500).json({ message: 'Failed to submit enquiry' });
+	}
+});
+
+app.get('/enquiries', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT
+			enq_id,
+			id,
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			batch,
+			date_of_birth,
+			parent_name,
+			secondary_contact,
+			created_at,
+			status,
+			comment,
+			reason,
+			area,
+			reference,
+			admission_started_at
+		FROM enquiries
+		ORDER BY created_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enquiries error:', err);
+		res.status(500).json({ error: err.message });
+	}
+});
+/* =========================================================
+	ANSWER SHEET REQUESTS
+	========================================================= */
+app.get('/student-answer-sheet-data/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	try {
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ rollNo ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const testsResult = await pool.query(
+			`
+		SELECT test_code, test_date, subject_id, total_marks, portion
+		FROM tests
+		WHERE class = $1 AND board = $2
+		ORDER BY test_date DESC, test_code ASC
+		`,
+			[ student.class, student.board ]
+		);
+
+		res.json({
+			student,
+			tests: testsResult.rows
+		});
+	} catch (error) {
+		console.error('GET /student-answer-sheet-data/:rollNo error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching data'
+		});
+	}
+});
+
+app.post('/answer-sheet-requests', async (req, res) => {
+	const { roll_no, test_code, requested_phone } = req.body;
+
+	try {
+		if (!roll_no || !test_code || !requested_phone) {
+			return res.status(400).json({
+				error: 'roll_no, test_code and requested_phone are required'
+			});
+		}
+
+		const cleanPhone = String(requested_phone).replace(/\D/g, '').trim();
+
+		if (!/^\d{10}$/.test(cleanPhone)) {
+			return res.status(400).json({
+				error: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ roll_no ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const validTestResult = await pool.query(
+			`
+		SELECT test_code
+		FROM tests
+		WHERE test_code = $1
+			AND class = $2
+			AND board = $3
+		`,
+			[ test_code, student.class, student.board ]
+		);
+
+		if (validTestResult.rows.length === 0) {
+			return res.status(400).json({
+				error: 'Selected test code is not valid for this student'
+			});
+		}
+
+		const duplicateResult = await pool.query(
+			`
+		SELECT id
+		FROM answer_sheet_requests
+		WHERE roll_no = $1
+			AND test_code = $2
+			AND status = 'Pending'
+		`,
+			[ roll_no, test_code ]
+		);
+
+		if (duplicateResult.rows.length > 0) {
+			return res.status(400).json({
+				error: 'You already have a pending request for this test code'
+			});
+		}
+
+		const insertResult = await pool.query(
+			`
+		INSERT INTO answer_sheet_requests
+		(
+			roll_no,
+			student_name,
+			class_name,
+			board,
+			test_code,
+			requested_phone,
+			status
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,'Pending')
+		RETURNING *
+		`,
+			[ student.roll_no, student.name, student.class, student.board, test_code, cleanPhone ]
+		);
+
+		res.status(201).json({
+			message: 'Answer sheet request submitted successfully',
+			request: insertResult.rows[0]
+		});
+	} catch (error) {
+		console.error('POST /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while saving request'
+		});
+	}
+});
+
+app.get('/answer-sheet-requests', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT *
+		FROM answer_sheet_requests
+		ORDER BY requested_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (error) {
+		console.error('GET /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching requests',
+			details: error.message
+		});
+	}
+});
+
+app.put('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status } = req.body;
+
+	try {
+		if (!status) {
+			return res.status(400).json({ error: 'status is required' });
+		}
+
+		const result = await pool.query(
+			`
+		UPDATE answer_sheet_requests
+		SET status = $1
+		WHERE id = $2
+		RETURNING *
+		`,
+			[ status, id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request updated successfully',
+			request: result.rows[0]
+		});
+	} catch (error) {
+		console.error('PUT /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while updating request'
+		});
+	}
+});
+
+app.delete('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM answer_sheet_requests
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request completed and deleted successfully',
+			deletedRequest: result.rows[0]
+		});
+	} catch (error) {
+		console.error('DELETE /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while deleting request',
+			details: error.message
+		});
+	}
+});
+
+/* =========================================================
+	REGISTERED STUDENTS REPORT
+	========================================================= */
+
+	app.get('/registered-students', async (req, res) => {
+	const { className, board, date } = req.query;
+
+	try {
+		await pool.query(`
+			DELETE FROM test_registrations
+			WHERE test_date < CURRENT_DATE
+		`);
+
+		let query = `
+			SELECT
+				tr.id,
+				tr.roll_no,
+				tr.student_name,
+				TRIM(tr.class) AS class,
+				TRIM(tr.board) AS board,
+				tr.test_code,
+				TO_CHAR(tr.test_date, 'YYYY-MM-DD') AS test_date,
+				TO_CHAR(tr.writing_date, 'YYYY-MM-DD') AS writing_date,
+				tr.slot_start,
+				tr.slot_end,
+				tr.duration_minutes,
+				COALESCE(s.subject_name, 'Unknown') AS subject_name
+			FROM test_registrations tr
+			LEFT JOIN subjects s
+				ON tr.subject_id = s.subject_id
+			WHERE 1=1
+		`;
+
+		const values = [];
+		let index = 1;
+
+		if (className) {
+			query += ` AND TRIM(tr.class) = TRIM($${index})`;
+			values.push(className);
+			index++;
+		}
+
+		if (board) {
+			query += ` AND UPPER(TRIM(tr.board)) = UPPER(TRIM($${index}))`;
+			values.push(board);
+			index++;
+		}
+
+		if (date) {
+			query += ` AND tr.test_date = $${index}`;
+			values.push(date);
+			index++;
+		}
+
+		query += `
+			ORDER BY
+				tr.test_date ASC,
+				tr.writing_date ASC NULLS LAST,
+				tr.class ASC,
+				tr.roll_no ASC
+		`;
+
+		const result = await pool.query(query, values);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /registered-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch registered students',
+			details: err.message
+		});
+	}
+});
+app.put('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
+
+	const {
+		test_code,
+		subject_id,
+		test_date,
+		total_marks,
+		portion,
+		class_name,
+		board,
+		duration_minutes,
+		registration_end_date,
+		writing_allowed_till
+	} = req.body;
+
+	try {
+		const result = await pool.query(
+			`
+UPDATE tests
+SET
+    subject_id = $1,
+    test_date = $2,
+    total_marks = $3,
+    portion = $4,
+    chapter = $5,
+    class = $6,
+    board = $7,
+    duration_minutes = $8,
+    registration_end_date = $9,
+    writing_allowed_till = $10
+WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($11))
+RETURNING *
+      `,
+			[
+				subject_id,
+				test_date,
+				total_marks,
+				portion,
+				class_name,
+				board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till,
+				testCode
+			]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		res.json({ message: 'Test updated successfully', test: result.rows[0] });
+	} catch (err) {
+		console.error('PUT /posted-tests/:testCode error:', err);
+		res.status(500).json({ error: 'Failed to update test' });
+	}
+});
+app.get('/faculty-roles', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT role_id, role_name
+			FROM faculty_roles
+			ORDER BY role_id ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-roles error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty roles' });
+	}
+});
+app.get('/attendance-students', async (req, res) => {
+  const {
+    date,
+    class: className,
+    board,
+    subject_id
+  } = req.query;
+
+  if (!date) {
+    return res.status(400).json({
+      error: 'date is required'
+    });
+  }
+
+  try {
+    const dayOfWeek = new Date(date).getDay();
+
+    // ==========================
+    // SUNDAY MODE
+    // ==========================
+    if (dayOfWeek === 0) {
+      const result = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+        ORDER BY tr.class, tr.subject_id, tr.roll_no
+        `,
+        [date]
+      );
+
+      return res.json({
+        mode: 'sunday',
+        students: result.rows
+      });
+    }
+
+    // ==========================
+    // WEEKDAY MODE
+    // ==========================
+    if (!className || !board || !subject_id) {
+      return res.status(400).json({
+        error: 'class, board and subject_id are required'
+      });
+    }
+
+    const testCheck = await pool.query(
+      `
+      SELECT 1
+      FROM tests
+      WHERE test_date = $1
+        AND TRIM(class) = TRIM($2)
+        AND UPPER(TRIM(board)) = UPPER(TRIM($3))
+        AND subject_id = $4
+      LIMIT 1
+      `,
+      [date, className, board, Number(subject_id)]
+    );
+
+    // ==========================
+    // TEST EXISTS
+    // ==========================
+    if (testCheck.rows.length > 0) {
+      const registrations = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+          AND TRIM(tr.class) = TRIM($2)
+          AND UPPER(TRIM(tr.board)) = UPPER(TRIM($3))
+          AND tr.subject_id = $4
+        ORDER BY tr.roll_no
+        `,
+        [date, className, board, Number(subject_id)]
+      );
+
+      return res.json({
+        mode: 'test',
+        students: registrations.rows
+      });
+    }
+
+    // ==========================
+    // NORMAL ATTENDANCE
+    // ==========================
+    const students = await pool.query(
+      `
+      SELECT DISTINCT
+        s.roll_no,
+        s.name,
+        s.class,
+        s.board,
+        s.phone,
+        s.email,
+        s.school_name,
+        s.password,
+        s.date_of_birth,
+        s.batch,
+        s.academic_year_from,
+        s.academic_year_to,
+        s.parent_name,
+        s.secondary_contact,
+        s.reference,
+        a.status AS attendance_status,
+        a.updated_by AS attendance_marked_by,
+        a.marked_at AS attendance_marked_at
+      FROM students s
+      INNER JOIN student_subjects ss
+        ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      LEFT JOIN attendance a
+        ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+        AND a.subject_id = ss.subject_id
+        AND a.attendance_date = $4
+      WHERE TRIM(s.class) = TRIM($1)
+        AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+        AND ss.subject_id = $3
+      ORDER BY s.roll_no ASC
+      `,
+      [className, board, Number(subject_id), date]
+    );
+
+    return res.json({
+      mode: 'normal',
+      students: students.rows
+    });
+
+  } catch (err) {
+    console.error('GET /attendance-students error:', err);
+
+    return res.status(500).json({
+      error: 'Failed to load attendance students',
+      details: err.message
+    });
+  }
+});
+app.delete('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    const result = await pool.query(
+      `
+      DELETE FROM syllabus
+      WHERE syllabus_id = $1
+      RETURNING *
+      `,
+      [syllabusId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    res.json({
+      message: 'Syllabus chapter deleted successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('DELETE /syllabus/:id error:', err);
+
+    res.status(500).json({
+      error: 'Failed to delete syllabus',
+      details: err.message
+    });
+  }
+});
+app.put('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log(
+      'PUT /syllabus BODY:',
+      req.params.id,
+      req.body
+    );
+
+    // -----------------------------
+    // Validate ID
+    // -----------------------------
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    // -----------------------------
+    // Validate fields
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check record exists
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE syllabus_id = $1
+      `,
+      [syllabusId]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const duplicate = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+        AND syllabus_id <> $5
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        syllabusId
+      ]
+    );
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Another syllabus chapter already uses this chapter number'
+      });
+    }
+
+    // -----------------------------
+    // Update
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      UPDATE syllabus
+      SET
+        class = $1,
+        board = $2,
+        subject_id = $3,
+        chapter_no = $4,
+        chapter_name = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE syllabus_id = $6
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName,
+        syllabusId
+      ]
+    );
+
+    res.json({
+      message: 'Syllabus chapter updated successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('PUT /syllabus/:id error:', err);
+
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to update syllabus',
+      details: err.message
+    });
+  }
+});
+app.post('/syllabus', async (req, res) => {
+  try {
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log('POST /syllabus BODY:', req.body);
+
+    // -----------------------------
+    // Validation
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo
+      ]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // -----------------------------
+    // Insert
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      INSERT INTO syllabus (
+        class,
+        board,
+        subject_id,
+        chapter_no,
+        chapter_name
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Syllabus chapter added successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('POST /syllabus error:', err);
+
+    // PostgreSQL unique violation
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // Foreign key violation
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create syllabus',
+      details: err.message
+    });
+  }
+});
+app.get('/syllabus', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        sy.syllabus_id,
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        s.subject_name,
+        sy.chapter_no,
+        sy.chapter_name,
+        sy.created_at,
+        sy.updated_at
+      FROM syllabus sy
+      JOIN subjects s
+        ON s.subject_id = sy.subject_id
+      ORDER BY
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        sy.chapter_no
+    `);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.error('GET /syllabus error:', err);
+
+    res.status(500).json({
+      error: 'Failed to fetch syllabus',
+      details: err.message
+    });
+  }
+});
+
+/* =========================================================
+   FACULTY DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/faculty/device-token', async (req, res) => {
+  const {
+    faculty_id,
+    token,
+    platform = 'android',
+  } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const faculty = await pool.query(
+      `
+      SELECT faculty_id
+      FROM faculty
+      WHERE UPPER(TRIM(faculty_id)) = $1
+      LIMIT 1
+      `,
+      [facultyId]
+    );
+
+    if (faculty.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Faculty not found',
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO faculty_device_tokens
+        (faculty_id, token, platform, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (token)
+      DO UPDATE SET
+        faculty_id = EXCLUDED.faculty_id,
+        platform = EXCLUDED.platform,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [facultyId, deviceToken, devicePlatform]
+    );
+
+    console.log(
+      '[Faculty Token] Registered device token for faculty:',
+      facultyId
+    );
+
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.error(
+      'POST /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to register faculty notification device',
+    });
+  }
+});
+
+app.delete('/faculty/device-token', async (req, res) => {
+  const { faculty_id, token } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM faculty_device_tokens
+      WHERE UPPER(TRIM(faculty_id)) = $1
+        AND token = $2
+      `,
+      [facultyId, deviceToken]
+    );
+
+    return res.json({
+      success: true,
+      removed: result.rowCount || 0,
+    });
+  } catch (error) {
+    console.error(
+      'DELETE /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to remove faculty notification device',
+    });
+  }
+});
+
+
+
+/* =========================================================
+   TEST BATCH STUDENTS / MARKS / ATTENDANCE
+   Completely separate from Regular Student tables.
+========================================================= */
+
+const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
+
+// Verify an existing IG faculty account for Test Batch operational access.
+// This middleware is used by dashboard reads, student management, attendance,
+// and marks workflows. Test Batch series/configuration administration remains
+// protected by requireTestBatchAdmin where applicable.
+async function requireTestBatchAttendanceMarksAccess(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.get('x-faculty-id') ||
+      req.query.adminId ||
+      req.query.facultyId ||
+      (req.body && (req.body.adminId || req.body.facultyId)) ||
+      ''
+    ).toUpperCase().trim();
+
+    const match = candidate.match(/^IG(\d{3,})$/);
+    const sequence = match ? Number(match[1]) : NaN;
+    if (!Number.isInteger(sequence) || sequence < 1) {
+      return res.status(403).json({ error: 'Authorized faculty access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Faculty account not found or not authorized' });
+    }
+
+    // Any existing IG faculty may record attendance/marks. Test Batch
+    // administration/configuration routes remain protected by requireTestBatchAdmin.
+    req.testBatchFacultyId = candidate;
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch faculty attendance/marks authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify faculty access' });
+  }
+}
+
+async function requireTestBatchAdmin(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.query.adminId ||
+      (req.body && req.body.adminId) ||
+      ''
+    ).toUpperCase().trim();
+
+    if (!TEST_BATCH_ADMIN_IDS.has(candidate)) {
+      return res.status(403).json({ error: 'Test Batch administrator access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Unauthorized administrator' });
+    }
+
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch admin authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify administrator access' });
+  }
+}
+
+async function generateNextTestBatchRollNo(client) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['intellekt_test_batch_roll_no']);
+  const result = await client.query(
+    'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+    ['^IAT[0-9]+$']
+  );
+  const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+  return 'IAT' + String(nextNumber).padStart(3, '0');
+}
+
+async function validateTestBatchSeries(seriesId) {
+  const result = await pool.query(
+    'SELECT id, name FROM test_series WHERE id = $1',
+    [Number(seriesId)]
+  );
+  return result.rows[0] || null;
+}
+
+function validateTestBatchSubjects(subjects) {
+  const value = String(subjects || '').trim();
+  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+}
+
+function isTestBatchSubjectEligible(studentSubjects, testSubject) {
+  const subjects = String(studentSubjects || '').trim().toLowerCase();
+  const subject = String(testSubject || '').trim().toLowerCase();
+
+  if (!['mathematics', 'physics'].includes(subject)) return false;
+  return subjects === 'both' || subjects === subject;
+}
+
+function validateTestBatchMarks(totalMarks, obtained) {
+  const total = Number(totalMarks);
+  const raw = String(obtained ?? '').trim().toUpperCase();
+  if (!Number.isFinite(total) || total <= 0) return { ok:false, error:'Total marks must be greater than zero' };
+  if (!raw) return { ok:false, error:'Obtained marks are required' };
+  if (raw === 'A') return { ok:true, obtained:'A' };
+  const numeric = Number(raw);
+  if (!/^([0-9]+)(\\.[0-9]+)?$/.test(raw)) {
+    return { ok:false, error:'Obtained marks must be a valid number, or A' };
+  }
+  if (/^0+[0-9]/.test(raw)) {
+    return { ok:false, error:'Obtained marks cannot contain unnecessary leading zeros' };
+  }
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > total) {
+    return { ok:false, error:'Obtained marks must be between 0 and total marks, or A' };
+  }
+  return { ok:true, obtained:String(numeric) };
+}
+
+function marksComputedFields(row) {
+  const total = Number(row.total_marks || 0);
+  const raw = String(row.marks_obtained || '').trim().toUpperCase();
+  if (raw === 'A') return { ...row, percentage:null, result_status:'Absent' };
+  const percentage = total > 0 ? (Number(raw) / total) * 100 : 0;
+  return { ...row, percentage:Number(percentage.toFixed(2)), result_status:percentage >= 40 ? 'Pass' : 'Fail' };
+}
+
+app.get('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, search, status, from, to } = req.query;
+    const values=[]; let where='WHERE 1=1';
+    if(seriesId){ values.push(Number(seriesId)); where+=' AND t.test_series_id=$'+values.length; }
+    if(search){ values.push('%'+String(search).trim()+'%'); where+=' AND (t.test_code ILIKE $'+values.length+' OR t.subject_name ILIKE $'+values.length+')'; }
+    if(status){ values.push(String(status)); where+=' AND t.status=$'+values.length; }
+    if(from){ values.push(from); where+=' AND t.writing_date >= $'+values.length; }
+    if(to){ values.push(to); where+=' AND t.writing_date <= $'+values.length; }
+    const result=await pool.query(
+      'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
+      ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
+    res.json({tests:result.rows});
+  } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
+});
+
+app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
+      return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
+    }
+    const series=await validateTestBatchSeries(test_series_id);
+    if(!series)return res.status(400).json({error:'Invalid Test Series'});
+
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status,created_by) '+
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (test_code) DO NOTHING RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+    if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
+    res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('POST /test-batch/tests error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to create Test Batch test',details:err.message});
+  }
+});
+
+app.put('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    if (!TEST_BATCH_ADMIN_IDS.has(String(req.testBatchAdminId || '').toUpperCase().trim())) {
+      return res.status(403).json({error:'Faculty must receive admin approval before editing a Test Batch schedule'});
+    }
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,writing_close_date=$14,status=$15,updated_at=CURRENT_TIMESTAMP WHERE id=$16 RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test updated successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('PUT /test-batch/tests/:id error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to update Test Batch test',details:err.message});
+  }
+});
+
+
+/* =========================================================
+   TEST BATCH STUDENT REGISTRATION
+   Students can register only inside the configured application window.
+========================================================= */
+
+app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
+  try {
+    const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const studentRow = student.rows[0];
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,t.writing_close_date,
+         t.status,
+         CASE
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'absent'
+             )
+             THEN true
+           ELSE false
+         END AS is_absent,
+         CASE
+           WHEN (r.id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM test_batch_attendance a
+             WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+               AND a.attendance_date=COALESCE(r.writing_date,t.writing_date)
+               AND LOWER(TRIM(a.status))='absent'
+           )) OR (r.id IS NULL AND t.application_close_date IS NOT NULL AND t.application_close_date < CURRENT_DATE)
+           THEN true ELSE false
+         END AS is_lapsed,
+         CASE
+           WHEN t.status IN ('Completed','Returned') THEN true
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'present'
+             )
+             THEN true
+           ELSE false
+         END AS is_completed,
+         CASE WHEN r.id IS NOT NULL AND r.status='Registered' THEN true ELSE false END AS is_registered,
+         r.registered_at,r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,r.slot_end AS registered_slot_end
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+       WHERE t.test_series_id=$2
+         AND t.status IN ('Scheduled','Active','Completed','Returned')
+       ORDER BY
+         CASE WHEN t.status IN ('Scheduled','Active') THEN 0 ELSE 1 END,
+         t.application_open_date ASC,
+         t.test_code ASC`,
+      [rollNo, studentRow.test_series_id]
+    );
+
+    const studentBoard = normalizeTestBatchBoard(studentRow.board);
+    const studentClass = String(studentRow.class || '').trim();
+
+    const filteredTests = result.rows.filter((test) => {
+      const parsed = parseTestBatchCode(test.test_code);
+      if (!parsed) return false;
+
+      const testBoard = normalizeTestBatchBoard(parsed.board);
+      const matchesBoardAndClass =
+        testBoard === studentBoard &&
+        String(parsed.className) === studentClass;
+
+      if (!matchesBoardAndClass) return false;
+
+      // Subject eligibility is an additional layer on top of the existing
+      // Test Series + board + class + status rules.
+      return isTestBatchSubjectEligible(studentRow.subjects, parsed.subject);
+    });
+
+    res.json({tests:filteredTests});
+  } catch(err) {
+    console.error('GET /test-batch/student-tests/:rollNo error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch test schedule'});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/register', async (req,res) => {
+  try {
+    const testCode = String(req.params.testCode || '').trim().toUpperCase();
+    const rollNo = String(req.body?.roll_no || '').trim().toUpperCase();
+    if (!rollNo) return res.status(400).json({error:'Roll number is required'});
+
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const testResult = await pool.query(
+      `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+              duration_minutes,application_open_date,application_close_date,writing_close_date,status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const test = testResult.rows[0];
+    if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
+      return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
+    }
+
+    const parsedTest = parseTestBatchCode(testCode);
+    if (!parsedTest) {
+      return res.status(400).json({error:'Invalid Test Batch test code format'});
+    }
+
+    const studentBoard = normalizeTestBatchBoard(student.rows[0].board);
+    const requiredBoard = normalizeTestBatchBoard(parsedTest.board);
+    const studentClass = String(student.rows[0].class || '').trim();
+    if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
+      return res.status(403).json({
+        error:'This test is not assigned to the student\'s board and class'
+      });
+    }
+
+    if (!isTestBatchSubjectEligible(student.rows[0].subjects, parsedTest.subject)) {
+      return res.status(403).json({
+        error:'This student is not registered for the test subject'
+      });
+    }
+
+    const selectedWritingDate = String(req.body?.writing_date || '').trim();
+    const selectedSlotStart = req.body?.slot_start ? String(req.body.slot_start).trim() : null;
+    const selectedSlotEnd = req.body?.slot_end ? String(req.body.slot_end).trim() : null;
+
+    if (!selectedWritingDate) {
+      return res.status(400).json({error:'Select a test date'});
+    }
+    if (!selectedSlotStart || !selectedSlotEnd) {
+      return res.status(400).json({error:'Select a test slot'});
+    }
+    if (!['Scheduled','Active'].includes(test.status)) {
+      return res.status(400).json({error:'Registration is not available for this test'});
+    }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const open = new Date(test.application_open_date);
+    const close = new Date(test.application_close_date);
+    const writingClose = new Date(test.writing_close_date);
+    const chosenDate = new Date(selectedWritingDate);
+    open.setHours(0,0,0,0);
+    close.setHours(0,0,0,0);
+    writingClose.setHours(0,0,0,0);
+    chosenDate.setHours(0,0,0,0);
+
+    if (today < open || today > close) {
+      return res.status(400).json({error:'Registration period is closed for this test'});
+    }
+    if (Number.isNaN(chosenDate.getTime()) || Number.isNaN(writingClose.getTime()) || chosenDate < open || chosenDate > writingClose) {
+      return res.status(400).json({error:'Selected writing date must be between the opening date and Writing Close Date'});
+    }
+
+    const durationMinutes = Number(test.duration_minutes);
+    const slotStartMinutes = timeStringToMinutes(selectedSlotStart);
+    const slotEndMinutes = timeStringToMinutes(selectedSlotEnd);
+
+    if (
+      !Number.isFinite(slotStartMinutes) ||
+      !Number.isFinite(slotEndMinutes) ||
+      slotEndMinutes <= slotStartMinutes ||
+      slotEndMinutes - slotStartMinutes !== durationMinutes
+    ) {
+      return res.status(400).json({error:'Selected slot does not match the test duration'});
+    }
+
+    // Test date must be at least 3 calendar days after the registration date.
+    const registrationToday = new Date();
+    registrationToday.setHours(0,0,0,0);
+    const minimumWritingDate = new Date(registrationToday);
+    minimumWritingDate.setDate(minimumWritingDate.getDate() + 3);
+
+    if (chosenDate < minimumWritingDate) {
+      return res.status(400).json({
+        error:'Test date must be at least 3 days after registration'
+      });
+    }
+
+    const fixedSlots = getTestBatchSlots(durationMinutes, selectedWritingDate);
+    if (
+      fixedSlots.length === 0 ||
+      !fixedSlots.some(
+        slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
+      )
+    ) {
+      return res.status(400).json({
+        error:'Invalid Test Batch slot for the selected date and test duration'
+      });
+    }
+
+    const registered = await pool.query(
+      `INSERT INTO test_batch_registrations
+       (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
+       VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
+       ON CONFLICT(test_code,roll_no)
+       DO UPDATE SET
+         writing_date=EXCLUDED.writing_date,
+         slot_start=EXCLUDED.slot_start,
+         slot_end=EXCLUDED.slot_end,
+         status='Registered',
+         updated_at=CURRENT_TIMESTAMP
+       RETURNING *, (xmax = 0) AS is_new_registration`,
+      [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
+    );
+
+    const registration = registered.rows[0];
+
+    // Notify both Test Batch admins immediately for a newly created registration.
+    // Notification failures must never make a successful student registration fail.
+    if (registration?.is_new_registration === true) {
+      const registeredAt = formatTestBatchRegistrationDateTime(registration.registered_at);
+      const studentNameResult = await pool.query(
+        'SELECT name FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+        [rollNo]
+      );
+      const studentName = String(studentNameResult.rows[0]?.name || '').trim() || rollNo;
+      const notificationMessage =
+        `Test Reminder - ${testCode} is scheduled by ${studentName}. Registered on ${registeredAt}.`;
+
+      try {
+        await Promise.all(
+          ['IG001','IG002'].map((adminId) =>
+            createFacultyNotification(pool, {
+              facultyId: adminId,
+              moduleName: 'test-batch',
+              title: 'Test Batch Registration',
+              message: notificationMessage,
+              data: {
+                module_name: 'test-batch-admin-registration',
+                test_code: testCode,
+                roll_no: rollNo,
+                registered_at: String(registration.registered_at || ''),
+                notification_type: 'test_batch_registration'
+              }
+            })
+          )
+        );
+      } catch (notificationError) {
+        console.error(
+          'Test Batch registration notification failed:',
+          notificationError
+        );
+      }
+    }
+
+    res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/register error:',err);
+    res.status(500).json({error:'Failed to register for Test Batch test',details:err.message});
+  }
+});
+
+app.delete('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test deleted successfully',test:result.rows[0]});
+  } catch(err){ console.error('DELETE /test-batch/tests/:id error:',err); res.status(500).json({error:'Failed to delete Test Batch test'}); }
+});
+
+/* =========================================================
+   TEST BATCH POST-TEST CONFIGURATION
+   Available only after a test is Completed or Returned.
+========================================================= */
+
+app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.portion,t.chapter,
+         t.application_open_date,t.application_close_date,t.status,
+         t.manual_mark_entry_enabled,t.bulk_mark_upload_enabled,
+         t.passing_percentage,t.grade_boundaries,
+         t.result_publication_mode,t.show_detailed_breakdown,
+         t.reevaluation_enabled,t.lock_marks_after_final_submission,
+         t.post_test_export_enabled,t.result_publication_status,
+         t.result_published_at,t.marks_entry_status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test is available only for completed or returned tests'});
+    }
+
+    res.json({test});
+  } catch(err) {
+    console.error('GET /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to load Test Batch post-test settings'});
+  }
+});
+
+app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const body = req.body || {};
+    const result = await pool.query(
+      `SELECT id,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test settings can only be changed for completed or returned tests'});
+    }
+
+    const passing = Number(body.passing_percentage);
+    if (!Number.isFinite(passing) || passing < 0 || passing > 100) {
+      return res.status(400).json({error:'Passing percentage must be between 0 and 100'});
+    }
+
+    const boundaries = body.grade_boundaries || {A:90,B:75,C:60,D:40};
+    if (!boundaries || typeof boundaries !== 'object' || Array.isArray(boundaries)) {
+      return res.status(400).json({error:'Grade boundaries must be an object'});
+    }
+
+    for (const grade of ['A','B','C','D']) {
+      const value = Number(boundaries[grade]);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return res.status(400).json({error:'Each grade boundary must be between 0 and 100'});
+      }
+    }
+
+    const publicationMode = body.result_publication_mode === 'immediate' ? 'immediate' : 'approval';
+
+    const updated = await pool.query(
+      `UPDATE test_batch_tests
+       SET manual_mark_entry_enabled=$1,
+           bulk_mark_upload_enabled=$2,
+           passing_percentage=$3,
+           grade_boundaries=$4::jsonb,
+           result_publication_mode=$5,
+           show_detailed_breakdown=$6,
+           reevaluation_enabled=$7,
+           lock_marks_after_final_submission=$8,
+           post_test_export_enabled=$9,
+           result_publication_status=CASE WHEN $5='immediate' THEN 'Published' ELSE result_publication_status END,
+           result_published_at=CASE WHEN $5='immediate' THEN COALESCE(result_published_at,CURRENT_TIMESTAMP) ELSE result_published_at END,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$10
+       RETURNING *`,
+      [
+        body.manual_mark_entry_enabled !== false,
+        body.bulk_mark_upload_enabled === true,
+        passing,
+        JSON.stringify({A:Number(boundaries.A),B:Number(boundaries.B),C:Number(boundaries.C),D:Number(boundaries.D)}),
+        publicationMode,
+        body.show_detailed_breakdown === true,
+        body.reevaluation_enabled === true,
+        body.lock_marks_after_final_submission !== false,
+        body.post_test_export_enabled !== false,
+        test.id
+      ]
+    );
+
+    res.json({message:'Test Batch Post Test settings saved successfully',test:updated.rows[0]});
+  } catch(err) {
+    console.error('PUT /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to save Test Batch post-test settings',details:err.message});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET result_publication_status='Published',
+           result_published_at=CURRENT_TIMESTAMP,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+         AND status IN ('Completed','Returned')
+         AND result_publication_mode='approval'
+       RETURNING id,test_code,result_publication_status,result_published_at`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) {
+      return res.status(400).json({error:'Test must be completed/returned and configured for admin approval before publishing'});
+    }
+
+    res.json({message:'Test Batch results published successfully',test:result.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/post-test/publish error:',err);
+    res.status(500).json({error:'Failed to publish Test Batch results'});
+  }
+});
+
+app.get('/test-batch/tests/:testCode/results', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const testResult = await pool.query(
+      `SELECT passing_percentage,grade_boundaries,result_publication_status,
+              show_detailed_breakdown,post_test_export_enabled
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const config = testResult.rows[0];
+    const result=await pool.query(
+      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
+      'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
+      [req.params.testCode]);
+
+    const passing = Number(config.passing_percentage ?? 40);
+    const boundaries = config.grade_boundaries || {A:90,B:75,C:60,D:40};
+    const results = result.rows.map(row => {
+      const base = marksComputedFields(row);
+      if (base.result_status === 'Absent') return {...base, grade:null};
+      const percentage = Number(base.percentage || 0);
+      let grade = 'F';
+      for (const [label, minimum] of Object.entries(boundaries).sort((a,b)=>Number(b[1])-Number(a[1]))) {
+        if (percentage >= Number(minimum)) { grade = label; break; }
+      }
+      return {
+        ...base,
+        result_status: percentage >= passing ? 'Pass' : 'Fail',
+        grade,
+      };
+    });
+
+    res.json({
+      results,
+      settings: {
+        passing_percentage: passing,
+        grade_boundaries: boundaries,
+        result_publication_status: config.result_publication_status,
+        show_detailed_breakdown: config.show_detailed_breakdown,
+        post_test_export_enabled: config.post_test_export_enabled,
+      }
+    });
+  } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
+});
+
+
+/* =========================================================
+   TEST BATCH MARK ENTRY
+   Only completed/returned tests are eligible.
+   Marks are stored only in test_batch_marks.
+========================================================= */
+
+app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { seriesId, search } = req.query;
+    const values = [];
+    let where = "WHERE t.status IN ('Draft','Scheduled','Active','Completed','Returned')";
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND t.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (t.test_code ILIKE $' + values.length + ' OR t.subject_name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,
+         COUNT(r.id) FILTER (WHERE r.status='Registered')::int AS registered_students
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code
+       ${where}
+       GROUP BY
+         t.id,t.test_code,t.test_series_id,s.name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+       ORDER BY t.application_open_date DESC,t.test_code ASC`,
+      values
+    );
+
+    res.json({ tests: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/tests error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch posted tests' });
+  }
+});
+
+app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = String(req.query.seriesId || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const categoryFilter = String(req.query.category || '').trim().toLowerCase();
+    const testValues = [];
+    let testWhere = "WHERE t.status <> 'Cancelled'";
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+    const registrationValues = [];
+    let registrationWhere = "WHERE r.status = 'Registered'";
+
+    if (seriesId) {
+      const parsed = Number(seriesId);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      testValues.push(parsed);
+      testWhere += ' AND t.test_series_id=$' + testValues.length;
+      studentValues.push(parsed);
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+      registrationValues.push(parsed);
+      registrationWhere += ' AND t.test_series_id=$' + registrationValues.length;
+    }
+    if (categoryFilter === 'registered') {
+      registrationWhere += " AND (r.writing_date IS NULL OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW())";
+    }
+    if (classFilter) {
+      studentValues.push(classFilter);
+      studentWhere += ' AND TRIM(s.class)=TRIM($' + studentValues.length + ')';
+      registrationValues.push(classFilter);
+      registrationWhere += ' AND TRIM(s.class)=TRIM($' + registrationValues.length + ')';
+    }
+    if (boardFilter) {
+      studentValues.push(boardFilter);
+      studentWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + studentValues.length + "), '[^a-zA-Z]', '', 'g'))";
+      registrationValues.push(boardFilter);
+      registrationWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + registrationValues.length + "), '[^a-zA-Z]', '', 'g'))";
+    }
+
+    const [seriesResult, testsResult, studentsResult, registrationsResult] = await Promise.all([
+      pool.query('SELECT id,name FROM test_series ORDER BY id'),
+      pool.query(
+        'SELECT t.*,ts.name AS test_series_name FROM test_batch_tests t JOIN test_series ts ON ts.id=t.test_series_id ' +
+        testWhere + ' ORDER BY t.writing_date DESC,t.test_code ASC',
+        testValues
+      ),
+      pool.query(
+        'SELECT s.roll_no,s.name,s.class,s.board,s.subjects,s.test_series_id,ts.name AS test_series_name ' +
+        'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+        studentWhere + ' ORDER BY s.roll_no ASC',
+        studentValues
+      ),
+      pool.query(
+        `SELECT
+           t.test_code, t.test_series_id, t.subject_name, ts.name AS test_series_name,
+           s.roll_no, s.name, s.class, s.board, s.subjects,
+           s.test_series_id AS student_test_series_id,
+           r.writing_date AS registered_writing_date,
+           r.slot_start AS registered_slot_start,
+           r.slot_end AS registered_slot_end,
+           r.registered_at,
+           a.status AS attendance_status
+         FROM test_batch_registrations r
+         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+         JOIN test_series ts ON ts.id=t.test_series_id
+         JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+         LEFT JOIN test_batch_attendance a
+           ON UPPER(TRIM(a.roll_no))=UPPER(TRIM(r.roll_no))
+          AND a.attendance_date=r.writing_date
+         ${registrationWhere}
+         ORDER BY t.test_code ASC,r.writing_date ASC,s.roll_no ASC`,
+        registrationValues
+      )
+    ]);
+
+    res.json({
+      series: seriesResult.rows,
+      tests: testsResult.rows,
+      students: studentsResult.rows,
+      registrations: registrationsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/student-status error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch student statuses' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,
+         t.test_code,
+         t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name,
+         t.duration_minutes,
+         t.total_marks,
+         t.status,
+         t.application_open_date,
+         t.application_close_date
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    const category = String(req.query.category || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const seriesFilter = String(req.query.seriesId || '').trim();
+    const registeredVisibilityFilter = category === 'Registered'
+      ? `AND (
+           r.writing_date IS NULL
+           OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW()
+         )`
+      : '';
+
+    const values = [code, test.test_series_id, test.subject_name];
+    let studentFilters = '';
+    if (classFilter) {
+      values.push(classFilter);
+      studentFilters += ` AND TRIM(s.class) = TRIM($${values.length})`;
+    }
+    if (boardFilter) {
+      values.push(boardFilter);
+      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM($${values.length}), '[^a-zA-Z]', '', 'g'))`;
+    }
+    if (seriesFilter) {
+      const parsedSeriesId = Number(seriesFilter);
+      if (!Number.isSafeInteger(parsedSeriesId) || parsedSeriesId <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      values.push(parsedSeriesId);
+      studentFilters += ` AND s.test_series_id = $${values.length}`;
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.registered_at,
+         r.status AS registration_status
+       FROM test_batch_registrations r
+       JOIN test_batch_students s
+         ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+       WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
+         AND r.status='Registered'
+         AND s.test_series_id=$2
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($3))
+         )
+         ${studentFilters}
+         ${registeredVisibilityFilter}
+       ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
+      values
+    );
+
+    res.json({
+      test,
+      students: studentsResult.rows,
+      registered_students: studentsResult.rows.length
+    });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/registered-students error:', err);
+    res.status(500).json({ error: 'Failed to fetch registered Test Batch students' });
+  }
+});
+
+app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = Number(req.params.seriesId);
+    if (!Number.isInteger(seriesId) || seriesId <= 0) {
+      return res.status(400).json({ error: 'Invalid Test Series' });
+    }
+
+    const seriesResult = await pool.query(
+      `SELECT id, name
+       FROM test_series
+       WHERE id=$1
+       LIMIT 1`,
+      [seriesId]
+    );
+
+    if (seriesResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Series not found' });
+    }
+
+    const testsResult = await pool.query(
+      `SELECT
+         t.id, t.test_code, t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name, t.duration_minutes, t.total_marks, t.status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE t.test_series_id=$1
+         AND t.status <> 'Cancelled'
+       ORDER BY t.created_at DESC, t.id DESC`,
+      [seriesId]
+    );
+
+    const studentsResult = await pool.query(
+      `SELECT DISTINCT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       WHERE s.test_series_id=$1
+         AND r.status='Registered'
+       ORDER BY s.roll_no ASC`,
+      [seriesId]
+    );
+
+    res.json({
+      series: seriesResult.rows[0],
+      tests: testsResult.rows,
+      students: studentsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/series/:seriesId error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch students for Test Series' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.status,t.marks_entry_status,
+         t.marks_finalized_at,t.manual_mark_entry_enabled,
+         t.lock_marks_after_final_submission
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Draft','Scheduled','Active','Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'This Test Batch test is not available for mark entry'
+      });
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.status AS registration_status,
+         a.status AS attendance_status,
+         COALESCE(m.marks_obtained, '') AS marks_obtained,
+         COALESCE(m.comments, '') AS remarks,
+         m.updated_at AS marks_updated_at
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.test_code=$1
+        AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       LEFT JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=r.writing_date
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($2))
+         )
+       ORDER BY s.roll_no ASC`,
+      [code, test.subject_name, test.test_series_id]
+    );
+
+    res.json({ test, students: studentsResult.rows });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/mark-entry error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch mark entry' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       RETURNING test_code,marks_entry_status`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    res.json({
+      message: 'Marks unlocked for editing',
+      marks_entry_status: result.rows[0].marks_entry_status
+    });
+  } catch (err) {
+    console.error('POST /test-batch/tests/:testCode/marks/edit error:', err);
+    res.status(400).json({ error: err.message || 'Failed to unlock marks for editing' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'At least one mark record is required' });
+    }
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can receive marks'
+      });
+    }
+
+    if (test.manual_mark_entry_enabled === false) {
+      return res.status(400).json({
+        error: 'Manual mark entry is disabled for this Test Batch test. Use the configured bulk-upload workflow.'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized' && test.lock_marks_after_final_submission !== false) {
+      return res.status(400).json({
+        error: 'Marks for this test have already been finalized and are locked'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const rollNo = String(record.roll_no || '').trim().toUpperCase();
+      const rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
+      const remarks = String(record.remarks ?? record.comments ?? '').trim();
+
+      if (!/^IAT[0-9]{3,}$/.test(rollNo)) {
+        throw new Error('Invalid Test Batch roll number: ' + rollNo);
+      }
+
+      const eligible = await client.query(
+        `SELECT s.roll_no
+         FROM test_batch_students s
+         JOIN test_batch_registrations r
+           ON r.roll_no=s.roll_no
+          AND UPPER(TRIM(r.test_code))=UPPER(TRIM($2))
+          AND r.status='Registered'
+         JOIN test_batch_attendance a
+           ON a.roll_no=s.roll_no
+          AND a.attendance_date=r.writing_date
+          AND r.writing_date=$4::date
+          AND a.status='Present'
+         WHERE s.roll_no=$1
+           AND s.test_series_id=$3
+         LIMIT 1`,
+        [rollNo, code, test.test_series_id, writingDate]
+      );
+
+      if (eligible.rows.length === 0) {
+        throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
+      }
+
+      // Empty marks mean the student has not been marked yet.
+      // Preserve any previously saved mark and allow partial saves.
+      if (!rawMarks) continue;
+
+      const validation = validateTestBatchMarks(test.total_marks, rawMarks);
+      if (!validation.ok) {
+        throw new Error(rollNo + ': ' + validation.error);
+      }
+
+      await client.query(
+        `INSERT INTO test_batch_marks
+          (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT (roll_no,test_code,subject_name)
+         DO UPDATE SET
+           total_marks=EXCLUDED.total_marks,
+           marks_obtained=EXCLUDED.marks_obtained,
+           comments=EXCLUDED.comments,
+           updated_at=CURRENT_TIMESTAMP`,
+        [rollNo, code, test.subject_name, Number(test.total_marks), validation.obtained, remarks || null]
+      );
+    }
+
+    // Saving marks is a draft operation. Do not require every student on
+    // this writing date to have completed the test or entered marks.
+    // Finalization is handled by the separate /marks/finalize endpoint.
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Marks saved for the selected writing date. You can save remaining students later.',
+      marks_entry_status: 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks error:', err);
+    res.status(400).json({ error: err.message || 'Failed to save Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can be finalized'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized') {
+      return res.json({ message: 'Marks are already finalized' });
+    }
+
+    const result = await client.query(
+      `SELECT
+         s.roll_no,
+         COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($3))
+        AND r.status='Registered'
+        AND r.writing_date=$2::date
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=$2::date
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($3))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($4))
+       WHERE s.test_series_id=$1
+       ORDER BY s.roll_no ASC`,
+      [test.test_series_id, writingDate, code, test.subject_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        error: 'No Test Batch students marked Present for this writing date'
+      });
+    }
+
+    const missing = result.rows.filter(row => !row.marks_obtained);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        error: 'Enter marks for all students on the selected writing date before finalizing',
+        missing_roll_numbers: missing.map(row => row.roll_no)
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const remaining = await client.query(
+      `SELECT s.roll_no FROM test_batch_students s
+       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
+       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
+       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
+      [code, test.subject_name, test.test_series_id]
+    );
+    const allDatesComplete = remaining.rows.length === 0;
+    await client.query(
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
+       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: allDatesComplete ? 'All writing-date marks finalized successfully' : 'Selected writing date checked; other writing dates still need marks',
+      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks/finalize error:', err);
+    res.status(400).json({ error: err.message || 'Failed to finalize Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await client.query(
+      `SELECT id,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    if (testResult.rows[0].marks_entry_status === 'Finalized') {
+      return res.status(400).json({ error: 'Finalized marks cannot be reset' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `DELETE FROM test_batch_marks
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))`,
+      [code]
+    );
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Pending',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [testResult.rows[0].id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ message: 'Test Batch draft marks reset successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/tests/:testCode/marks/draft error:', err);
+    res.status(500).json({ error: 'Failed to reset Test Batch draft marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
+    res.json({ series: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/series error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch series' });
+  }
+});
+
+app.get('/test-batch/students/next-roll', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+      ['^IAT[0-9]+$']
+    );
+    const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+    res.json({ roll_no: 'IAT' + String(nextNumber).padStart(3, '0') });
+  } catch (err) {
+    console.error('GET /test-batch/students/next-roll error:', err);
+    res.status(500).json({ error: 'Failed to generate next Test Batch roll number' });
+  }
+});
+
+app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { search, seriesId, class: className } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id = $' + values.length;
+    }
+
+    if (className) {
+      values.push(String(className).trim());
+      where += ' AND s.class = $' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
+      'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+      where + ' ORDER BY s.roll_no ASC',
+      values
+    );
+
+    const classValues = [];
+    let classWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      classValues.push(Number(seriesId));
+      classWhere += ' AND s.test_series_id = $' + classValues.length;
+    }
+
+    if (search) {
+      classValues.push('%' + String(search).trim() + '%');
+      classWhere += ' AND (s.roll_no ILIKE $' + classValues.length + ' OR s.name ILIKE $' + classValues.length + ')';
+    }
+
+    const classResult = await pool.query(
+      'SELECT DISTINCT TRIM(s.class) AS class FROM test_batch_students s ' +
+      classWhere +
+      " AND s.class IS NOT NULL AND TRIM(s.class) <> '' " +
+      'ORDER BY TRIM(s.class) ASC',
+      classValues
+    );
+
+    res.json({
+      students: result.rows,
+      available_classes: classResult.rows
+        .map((row) => String(row.class).trim())
+        .filter(Boolean)
+    });
+  } catch (err) {
+    console.error('GET /test-batch/students error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch students' });
+  }
+});
+
+app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      enquiry_id, admission_token, roll_no,
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    const cleanRollNo = String(roll_no || '').trim().toUpperCase();
+    if (!cleanRollNo) return res.status(400).json({ error:'Roll number is required; enter it manually.' });
+    if (!/^IAT[0-9]{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Test Batch roll number must use the IAT format, for example IAT014.' });
+    if (!name || !className || !test_series_id || !subjects) {
+      return res.status(400).json({ error:'Roll number, student name, class, subjects and test series are required' });
+    }
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+
+    if (!await validateTestBatchSeries(test_series_id)) {
+      return res.status(400).json({ error:'Invalid Test Series' });
+    }
+
+    // Normalize optional email values so whitespace is stored as NULL, not an empty string.
+    const normalizedEmail = email == null ? null : (String(email).trim().toLowerCase() || null);
+
+    await client.query('BEGIN');
+
+    if (enquiry_id) {
+      const admissionLock = await client.query(
+        `SELECT id FROM enquiries
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         FOR UPDATE`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admissionLock.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+      }
+    }
+
+    const duplicateRoll = await client.query(
+      'SELECT 1 FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [cleanRollNo]
+    );
+    if (duplicateRoll.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'This Test Batch roll number already exists. Please enter a different roll number.' });
+    }
+
+    const rollNo = cleanRollNo;
+    const finalPassword = password && String(password).trim()
+      ? String(password).trim()
+      : rollNo;
+
+    const inserted = await client.query(
+      'INSERT INTO test_batch_students ' +
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to,parent_name,secondary_contact,reference) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING RETURNING roll_no',
+      [
+        rollNo,
+        String(name).trim(),
+        className ? String(className).trim() : null,
+        board ? String(board).trim() : null,
+        mode_of_education ? String(mode_of_education).trim() : null,
+        phone ? String(phone).trim() : null,
+        normalizedEmail,
+        school_name ? String(school_name).trim() : null,
+        validSubjects,
+        finalPassword,
+        Number(test_series_id),
+        req.testBatchAdminId,
+        date_of_birth || null,
+        academic_year_from || null,
+        academic_year_to || null,
+        parent_name || null,
+        secondary_contact || null,
+        reference || null
+      ]
+    );
+
+    if (!inserted.rows.length) {
+      const emailExists = normalizedEmail
+        ? await client.query(
+            'SELECT 1 FROM test_batch_students WHERE LOWER(TRIM(email))=LOWER(TRIM($1)) LIMIT 1',
+            [normalizedEmail]
+          )
+        : { rows: [] };
+      await client.query('ROLLBACK');
+      if (emailExists.rows.length) {
+        return res.status(409).json({ error:'Email already exists in Test Batch' });
+      }
+      return res.status(409).json({ error:'Could not allocate a unique Test Batch roll number. Please retry.' });
+    }
+
+    if (enquiry_id) {
+      const admitted = await client.query(
+        `UPDATE enquiries
+         SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         RETURNING id`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admitted.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo, admitted_enquiry_id:enquiry_id || null });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/students error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Duplicate Test Batch student data' });
+    if (err.code === '23503') return res.status(400).json({ error:'Invalid Test Series or administrator' });
+    res.status(500).json({ error:'Failed to add Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const oldRoll = String(req.params.roll_no).toUpperCase().trim();
+    const {
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+    if (!await validateTestBatchSeries(test_series_id)) return res.status(400).json({ error:'Invalid Test Series' });
+
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [oldRoll]
+    );
+
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const values = [
+      String(name).trim(),
+      className ? String(className).trim() : null,
+      board ? String(board).trim() : null,
+      mode_of_education ? String(mode_of_education).trim() : null,
+      phone ? String(phone).trim() : null,
+      email ? String(email).trim() : null,
+      school_name ? String(school_name).trim() : null,
+      validSubjects,
+      Number(test_series_id),
+      date_of_birth || null,
+      academic_year_from || null,
+      academic_year_to || null,
+      parent_name || null,
+      secondary_contact || null,
+      reference || null
+    ];
+
+    let query =
+      'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
+      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,date_of_birth=$10,' +
+      'academic_year_from=$11,academic_year_to=$12,parent_name=$13,secondary_contact=$14,reference=$15,' +
+      'updated_at=CURRENT_TIMESTAMP';
+
+    if (password && String(password).trim()) {
+      values.push(String(password).trim(), oldRoll);
+      query += ',password=$16,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$17 RETURNING roll_no';
+    } else {
+      values.push(oldRoll);
+      query += ' WHERE UPPER(TRIM(roll_no))=$16 RETURNING roll_no';
+    }
+
+    const result = await client.query(query, values);
+    await client.query('COMMIT');
+
+    res.json({ message:'Test Batch student updated successfully', roll_no:result.rows[0].roll_no });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /test-batch/students/:roll_no error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Email already exists in Test Batch' });
+    res.status(500).json({ error:'Failed to update Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const roll = String(req.params.roll_no).toUpperCase().trim();
+    await client.query('BEGIN');
+    const found = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [roll]
+    );
+    if (found.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+    await client.query('DELETE FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1', [roll]);
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch student deleted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/students/:roll_no error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch student' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { search, seriesId, testCode } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+    if (testCode) {
+      values.push('%' + String(testCode).trim() + '%');
+      where += ' AND m.test_code ILIKE $' + values.length;
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.roll_no,s.name,ts.name AS test_series_name,m.test_code,m.subject_name,' +
+      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
+      ' ORDER BY m.created_at DESC,m.id DESC',
+      values
+    );
+
+    res.json({ marks:result.rows.map(marksComputedFields) });
+  } catch (err) {
+    console.error('GET /test-batch/marks error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch marks' });
+  }
+});
+
+app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { roll_no,test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    if (!roll_no || !test_code || !subject_name) return res.status(400).json({ error:'Student, test code and subject are required' });
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll_no]
+    );
+    if (student.rows.length === 0) return res.status(404).json({ error:'Test Batch student not found' });
+
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'INSERT INTO test_batch_marks(roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
+      'VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      [
+        String(roll_no).trim().toUpperCase(),
+        String(test_code).trim(),
+        String(subject_name).trim(),
+        Number(total_marks),
+        validation.obtained,
+        comments ? String(comments).trim() : null
+      ]
+    );
+
+    res.status(201).json({ message:'Test Batch mark added successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('POST /test-batch/marks error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to add Test Batch mark', details:err.message });
+  }
+});
+
+app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const { test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'UPDATE test_batch_marks SET test_code=$1,subject_name=$2,total_marks=$3,marks_obtained=$4,' +
+      'comments=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$6 RETURNING *',
+      [String(test_code).trim(),String(subject_name).trim(),Number(total_marks),validation.obtained,comments ? String(comments).trim() : null,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark updated successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /test-batch/marks/:id error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to update Test Batch mark' });
+  }
+});
+
+app.delete('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query('DELETE FROM test_batch_marks WHERE id=$1 RETURNING id', [Number(req.params.id)]);
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark deleted successfully' });
+  } catch (err) {
+    console.error('DELETE /test-batch/marks/:id error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch mark' });
+  }
+});
+
+app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0,10);
+    const { search, seriesId } = req.query;
+    const values = [date];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    // Test Batch attendance is date-eligible only.
+    // A student appears on the marking screen only when they have
+    // a registered test application for the selected writing date.
+    const result = await pool.query(
+      `SELECT
+          s.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          (
+            SELECT STRING_AGG(DISTINCT TRIM(tr.test_code), ', ' ORDER BY TRIM(tr.test_code))
+            FROM test_batch_registrations tr
+            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+              AND tr.writing_date = $1
+          ) AS test_codes,
+          a.id,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_students s
+        JOIN test_series ts
+          ON ts.id = s.test_series_id
+        LEFT JOIN test_batch_attendance a
+          ON a.roll_no = s.roll_no
+         AND a.attendance_date = $1
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+            AND tr.writing_date = $1
+        )
+        ORDER BY s.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance' });
+  }
+});
+
+app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const { records, attendanceDate } = req.body || {};
+    if (!attendanceDate || !Array.isArray(records) || records.length===0) {
+      return res.status(400).json({ error:'attendanceDate and records are required' });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const roll = String(record.roll_no || '').trim().toUpperCase();
+      const status = String(record.status || '').trim();
+
+      if (!roll || !['Present','Absent'].includes(status)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error:'Each attendance record needs a valid roll number and status' });
+      }
+
+      const student = await client.query(
+        'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+        [roll]
+      );
+
+      if (student.rows.length===0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error:'Test Batch student not found: ' + roll });
+      }
+
+      // Enforce the same eligibility rule on the server so an API caller
+      // cannot create attendance for a Test Batch student who did not
+      // register for a test on the selected attendance date.
+      const registration = await client.query(
+        `SELECT 1
+         FROM test_batch_registrations tr
+         WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
+           AND tr.writing_date = $2
+         LIMIT 1`,
+        [roll, attendanceDate]
+      );
+
+      if (registration.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `No registered test application found for ${roll} on ${attendanceDate}`
+        });
+      }
+
+      await client.query(
+        'INSERT INTO test_batch_attendance(roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at) ' +
+        'VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,NULL,NULL) ' +
+        'ON CONFLICT(roll_no,attendance_date) DO NOTHING',
+        [roll,attendanceDate,status,req.testBatchAdminId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch attendance saved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to save Test Batch attendance', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const status = String(req.body?.status || '').trim();
+    if (!['Present','Absent'].includes(status)) {
+      return res.status(400).json({ error:'Invalid attendance status' });
+    }
+
+    const result = await pool.query(
+      `UPDATE test_batch_attendance a
+       SET status=$1,
+           edited_by=$2,
+           edited_at=CURRENT_TIMESTAMP
+       WHERE a.id=$3
+         AND EXISTS (
+           SELECT 1
+           FROM test_batch_registrations tr
+           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+             AND tr.writing_date = a.attendance_date
+         )
+       RETURNING a.*`,
+      [status,req.testBatchAdminId,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) {
+      return res.status(404).json({
+        error:'Eligible Test Batch attendance record not found'
+      });
+    }
+
+    res.json({ message:'Test Batch attendance updated successfully', attendance:result.rows[0] });
+  } catch (err) {
+    console.error('PUT /test-batch/attendance/:id error:', err);
+    res.status(500).json({ error:'Failed to update Test Batch attendance' });
+  }
+});
+
+app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const from = req.query.from || new Date().toISOString().slice(0,10);
+    const to = req.query.to || from;
+    const { search, seriesId } = req.query;
+    const values = [from,to];
+    let where = 'WHERE a.attendance_date BETWEEN $1 AND $2';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+          a.id,
+          a.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_attendance a
+        JOIN test_batch_students s
+          ON s.roll_no=a.roll_no
+        JOIN test_series ts
+          ON ts.id=s.test_series_id
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+            AND tr.writing_date = a.attendance_date
+        )
+        ORDER BY a.attendance_date DESC,a.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance-report error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance report' });
+  }
+});
+
+app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, from, to } = req.query;
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      studentValues.push(Number(seriesId));
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+    }
+
+    const totalResult = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM test_batch_students s ' + studentWhere,
+      studentValues
+    );
+
+    const seriesCounts = await pool.query(
+      'SELECT ts.id,ts.name,COUNT(s.roll_no)::int AS count FROM test_series ts ' +
+      'LEFT JOIN test_batch_students s ON s.test_series_id=ts.id ' +
+      'GROUP BY ts.id,ts.name ORDER BY ts.id'
+    );
+
+    const recent = await pool.query(
+      'SELECT s.roll_no,s.name,s.created_at,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + studentWhere +
+      ' ORDER BY s.created_at DESC LIMIT 10',
+      studentValues
+    );
+
+    const dateFrom = from || '1900-01-01';
+    const dateTo = to || '2999-12-31';
+
+    const attendance = await pool.query(
+      'SELECT COUNT(*) FILTER(WHERE a.status IN (\'Present\',\'Absent\'))::int AS total,' +
+      'COUNT(*) FILTER(WHERE a.status=\'Present\')::int AS present ' +
+      'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
+      'WHERE a.attendance_date BETWEEN $1 AND $2 ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date = a.attendance_date' +
+      ') ' +
+      (seriesId ? 'AND s.test_series_id=$3' : ''),
+      seriesId ? [dateFrom,dateTo,Number(seriesId)] : [dateFrom,dateTo]
+    );
+
+    const marks = await pool.query(
+      'SELECT COALESCE(SUM(CASE WHEN UPPER(TRIM(m.marks_obtained))=\'A\' THEN 0 ELSE CAST(m.marks_obtained AS NUMERIC) END),0) AS obtained,' +
+      'COALESCE(SUM(m.total_marks),0) AS total ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'WHERE 1=1 ' + (seriesId ? 'AND s.test_series_id=$1' : ''),
+      seriesId ? [Number(seriesId)] : []
+    );
+
+    const attTotal=Number(attendance.rows[0].total||0);
+    const attPresent=Number(attendance.rows[0].present||0);
+    const markTotal=Number(marks.rows[0].total||0);
+    const markObtained=Number(marks.rows[0].obtained||0);
+
+    res.json({
+      totalStudents:Number(totalResult.rows[0].count||0),
+      attendancePercentage:attTotal?attPresent/attTotal*100:0,
+      marksPercentage:markTotal?markObtained/markTotal*100:0,
+      seriesCounts:seriesCounts.rows,
+      recentStudents:recent.rows
+    });
+  } catch(err) {
+    console.error('GET /test-batch/dashboard error:',err);
+    res.status(500).json({ error:'Failed to fetch Test Batch dashboard' });
+  }
+});
+
+app.get('/test-batch/student/:roll_no', async (req,res) => {
+  try {
+    const roll=String(req.params.roll_no).toUpperCase().trim();
+    if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
+
+    const studentResult=await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
+      [roll]
+    );
+
+    if(studentResult.rows.length===0) return res.status(404).json({error:'Test Batch student not found'});
+
+    const marksResult=await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE m.roll_no=$1 ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    const attendanceResult=await pool.query(
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at, ' +
+      'COALESCE((' +
+      '  SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.test_code FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS test_code, ' +
+      'COALESCE((' +
+      '  SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '  JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.subject_name FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const attendanceTotal=attendanceResult.rows.length;
+    const attendancePresent=attendanceResult.rows.filter(a=>a.status==='Present').length;
+
+    res.json({
+      student:studentResult.rows[0],
+      marks:marksResult.rows.map(marksComputedFields),
+      attendance:attendanceResult.rows,
+      attendancePercentage:attendanceTotal?attendancePresent/attendanceTotal*100:0
+    });
+  } catch(err) {
+    console.error('GET /test-batch/student/:roll_no error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch student dashboard'});
+  }
+});
+
+/* =========================================================
+   TEST BATCH MOBILE STUDENT MARKS / ATTENDANCE
+   These endpoints are read-only student endpoints used by
+   the Flutter Test Batch dashboard.
+========================================================= */
+app.get('/test-batch/marks/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE UPPER(TRIM(m.roll_no))=UPPER(TRIM($1)) ' +
+      'ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    return res.json(result.rows.map(marksComputedFields));
+  } catch (err) {
+    console.error('GET /test-batch/marks/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch marks' });
+  }
+});
+
+app.get('/test-batch/attendance/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT a.id, ' +
+      '       a.attendance_date, ' +
+      '       a.status, ' +
+      '       a.marked_by, a.marked_at, a.edited_by, a.edited_at, ' +
+      '       COALESCE((' +
+      '         SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.test_code FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS test_code, ' +
+      '       COALESCE((' +
+      '         SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.subject_name FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const total = result.rows.length;
+    const present = result.rows.filter((row) => row.status === 'Present').length;
+
+    return res.json({
+      attendance: result.rows,
+      attendancePercentage: total ? (present / total) * 100 : 0
+    });
+  } catch (err) {
+    console.error('GET /test-batch/attendance/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch attendance' });
+  }
+});
+
+/* =========================================================
+   STUDENT DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/device-token', async (req, res) => {
+  const { roll_no, token, platform = 'android' } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const student = await pool.query(
+      `SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = $1
+       UNION ALL
+       SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = $1
+       LIMIT 1`,
+      [rollNo]
+    );
+
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    await ensureStudentDeviceTokensTable();
+
+    await pool.query(
+      `INSERT INTO student_device_tokens
+        (student_id, device_token, platform, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (device_token)
+       DO UPDATE SET
+         student_id = EXCLUDED.student_id,
+         platform = EXCLUDED.platform,
+         updated_at = CURRENT_TIMESTAMP`,
+      [rollNo, deviceToken, devicePlatform]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('POST /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to register student notification device' });
+  }
+});
+
+app.delete('/device-token', async (req, res) => {
+  const { roll_no, token } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM student_device_tokens WHERE UPPER(TRIM(student_id)) = $1 AND device_token = $2',
+      [rollNo, deviceToken]
+    );
+
+    return res.json({ success: true, removed: result.rowCount || 0 });
+  } catch (error) {
+    console.error('DELETE /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to remove student notification device' });
+  }
+});
+
+
+/* =========================================================
+	SERVER START
+	========================================================= */
+const PORT = process.env.PORT || 5050;
+
+let testBatchPushWorker;
+
+async function ensureStudentDeviceTokensTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_device_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      student_id VARCHAR(100) NOT NULL,
+      device_token TEXT NOT NULL UNIQUE,
+      platform VARCHAR(20) NOT NULL DEFAULT 'android',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_student_device_tokens_student_id
+    ON student_device_tokens (UPPER(TRIM(student_id)))
+  `);
+}
+
+registerRecordEditRoutes(app, pool);
+registerTestBatchEditRequestRoutes(app, pool);
+
+async function startServer() {
+  // Keep public enquiry submissions compatible with databases created before
+  // the latest enquiry form fields were introduced.
+  await pool.query(`
+    ALTER TABLE public.enquiries
+      ADD COLUMN IF NOT EXISTS admission_token TEXT,
+      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS batch VARCHAR(30) DEFAULT 'Regular Batch',
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS area VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS mode_of_education VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  await pool.query(`
+    ALTER TABLE public.test_batch_students
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  // Keep faculty notification archive endpoints compatible with existing databases.
+  // The archived_at column is required by the inbox, archive, restore and 30-day cleanup routes.
+  await pool.query(`
+    ALTER TABLE public.faculty_notifications
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_active
+      ON public.faculty_notifications (faculty_id, created_at DESC)
+      WHERE archived_at IS NULL
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_archived
+      ON public.faculty_notifications (faculty_id, archived_at DESC)
+      WHERE archived_at IS NOT NULL
+  `);
+
+  await ensureStudentDeviceTokensTable();
+
+  const facultyNotificationService = require('./faculty-notification-service');
+
+  testBatchPushWorker = createTestBatchPushWorker({
+    pool,
+    sendToStudent,
+    sendToFaculty: facultyNotificationService.sendToFaculty,
+    createFacultyNotification: facultyNotificationService.createFacultyNotification,
+  });
+  testBatchPushWorker.start();
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  if (testBatchPushWorker) testBatchPushWorker.stop();
+});
+ + values.length + '
+      )';
+    }
+
+    const result = await pool.query(
+      `SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+       FROM students s
+       LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no)) ${codeFilter}
+       WHERE TRIM(s.class) = TRIM($1)
+         AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+         AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+         ${subjectFilter}
+       ORDER BY s.roll_no ASC`,
+      values
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('GET /enter-marks-students error:', err);
+    return res.status(500).json({ error: 'Failed to fetch students', details: err.message });
+  }
+});
+
+
+app.get('/students/:value', async (req, res) => {
+	const { value } = req.params;
+	const upperValue = String(value).toUpperCase();
+
+	try {
+		const matchingRoll = await pool.query(
+			`SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1`,
+			[value]
+		);
+
+		// Look up existing students by their actual roll number, regardless of format.
+		if (matchingRoll.rows.length > 0) {
+			const studentResult = await pool.query(
+				`
+			SELECT 
+			s.roll_no,
+			s.name,
+			s.class,
+			s.board,
+			s.phone,
+			s.email,
+			s.school_name,
+			s.password,
+			s.date_of_birth,
+			s.batch,
+			s.academic_year_from,
+			s.academic_year_to,
+			s.parent_name,
+			s.secondary_contact,
+			s.reference,
+			COALESCE(f.total_fee, 0) AS total_fee,
+			COALESCE(f.fee_paid, 0) AS fee_paid,
+			f.next_due
+			FROM students s
+			LEFT JOIN fees f ON s.roll_no = f.roll_no
+			WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+			`,
+				[ upperValue ]
+			);
+
+			if (studentResult.rows.length === 0) {
+				return res.status(404).json({ error: 'Student not found' });
+			}
+
+			const subjectsResult = await pool.query(
+				`
+			SELECT
+			ss.subject_id,
+			sub.subject_name
+			FROM student_subjects ss
+			JOIN subjects sub ON ss.subject_id = sub.subject_id
+			WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM($1))
+			ORDER BY ss.subject_id ASC
+			`,
+				[ upperValue ]
+			);
+
+			return res.json({
+				...studentResult.rows[0],
+				subjects: subjectsResult.rows
+			});
+		}
+
+		const classResult = await pool.query(
+			`
+		SELECT roll_no, name
+		FROM students
+		WHERE class = $1
+		ORDER BY roll_no ASC
+		`,
+			[ value ]
+		);
+
+		return res.json(classResult.rows);
+	} catch (err) {
+		console.error('GET /students/:value error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch student data',
+			details: err.message
+		});
+	}
+});
+app.post('/students', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const {
+			enquiry_id,
+			admission_token,
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		const cleanRollNo = String(roll_no || '').trim();
+		if (!cleanRollNo) {
+			return res.status(400).json({ error: 'Roll number is required' });
+		}
+
+		if (!name || !className || !board || !phone || !email || !school_name) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		if (enquiry_id) {
+			const admissionLock = await client.query(
+				`SELECT id FROM enquiries
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 FOR UPDATE`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admissionLock.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+			}
+		}
+
+		const duplicateRoll = await client.query(
+			'SELECT 1 FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+			[cleanRollNo]
+		);
+		if (duplicateRoll.rows.length > 0) {
+			await client.query('ROLLBACK');
+			return res.status(409).json({ error: 'This roll number already exists. Please enter a different roll number.' });
+		}
+
+		const newRoll = cleanRollNo;
+		const finalPassword = password && String(password).trim() !== '' ? String(password).trim() : newRoll;
+
+		await client.query(
+			`
+		INSERT INTO students (
+			roll_no,
+			name,
+			class,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		`,
+			[
+				newRoll,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				finalPassword,
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null
+			]
+		);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRoll, Number(subjectId) ]
+			);
+		}
+
+		await client.query(
+			`
+		INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+		)
+		VALUES ($1,$2,$3,$4)
+		`,
+			[
+				newRoll,
+				total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+				fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+				next_due || null
+			]
+		);
+
+		if (enquiry_id) {
+			const admitted = await client.query(
+				`UPDATE enquiries
+				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
+				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 RETURNING id`,
+				[enquiry_id, String(admission_token || '')]
+			);
+			if (!admitted.rows.length) {
+				await client.query('ROLLBACK');
+				return res.status(409).json({ error: 'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+			}
+		}
+
+		await client.query('COMMIT');
+
+		res.status(201).json({
+			message: 'Student added successfully',
+			roll_no: newRoll,
+			admitted_enquiry_id: enquiry_id || null
+		});
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('POST /students error:', err);
+
+		if (err.code === '23505') {
+			return res.status(409).json({
+				error: 'This roll number or another unique student field already exists. Please check the details and try again.'
+			});
+		}
+
+		res.status(500).json({
+			error: 'Failed to add student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+app.put('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+
+	try {
+		const oldRollNo = String(req.params.roll_no).trim().toUpperCase();
+
+		const {
+			roll_no,
+			name,
+			class: className,
+			board,
+			phone,
+			email,
+			school_name,
+			password,
+			date_of_birth,
+			batch,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			reference,
+			subject_ids,
+			total_fee,
+			fee_paid,
+			next_due
+		} = req.body;
+
+		if (
+			!roll_no ||
+			!name ||
+			!className ||
+			!board ||
+			!phone ||
+			!email ||
+			!school_name ||
+			!password
+		) {
+			return res.status(400).json({
+				error: 'All basic student fields are required'
+			});
+		}
+
+		if (!Array.isArray(subject_ids) || subject_ids.length === 0) {
+			return res.status(400).json({
+				error: 'At least one subject must be selected'
+			});
+		}
+
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ oldRollNo ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const newRollNo = String(roll_no).trim().toUpperCase();
+
+		if (oldRollNo !== newRollNo) {
+			const duplicateCheck = await client.query(
+				`SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+				[ newRollNo ]
+			);
+
+			if (duplicateCheck.rows.length > 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({ error: 'New roll number already exists' });
+			}
+
+			// Subject mappings reference students.roll_no with a foreign key.
+			// Remove the old mappings inside this transaction; the selected subjects
+			// are validated and reinserted under the new roll number after the student update.
+			await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ oldRollNo ]);
+			await client.query(`UPDATE fees SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE attendance SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+			await client.query(`UPDATE marks SET roll_no = $1 WHERE roll_no = $2`, [ newRollNo, oldRollNo ]);
+		}
+
+		await client.query(
+			`
+		UPDATE students
+		SET
+			roll_no = $1,
+			name = $2,
+			class = $3,
+			board = $4,
+			phone = $5,
+			email = $6,
+			school_name = $7,
+			password = $8,
+			date_of_birth = $9,
+			batch = $10,
+			academic_year_from = $11,
+			academic_year_to = $12,
+			parent_name = $13,
+			secondary_contact = $14,
+			reference = $15
+		WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($16))
+		`,
+			[
+				newRollNo,
+				String(name).trim(),
+				String(className).trim(),
+				String(board).trim(),
+				String(phone).trim(),
+				String(email).trim(),
+				String(school_name).trim(),
+				String(password).trim(),
+				date_of_birth || null,
+				batch || 'Regular Batch',
+				academic_year_from || null,
+				academic_year_to || null,
+				parent_name || null,
+				secondary_contact || null,
+				reference || null,
+				oldRollNo
+			]
+		);
+
+		await client.query(`DELETE FROM student_subjects WHERE roll_no = $1`, [ newRollNo ]);
+
+		for (const subjectId of subject_ids) {
+			const subjectCheck = await client.query(`SELECT subject_id FROM subjects WHERE subject_id = $1`, [
+				subjectId
+			]);
+
+			if (subjectCheck.rows.length === 0) {
+				await client.query('ROLLBACK');
+				return res.status(400).json({
+					error: `Subject ${subjectId} does not exist`
+				});
+			}
+
+			await client.query(
+				`
+			INSERT INTO student_subjects (roll_no, subject_id)
+			VALUES ($1,$2)
+			`,
+				[ newRollNo, Number(subjectId) ]
+			);
+		}
+
+		const feeCheck = await client.query(`SELECT roll_no FROM fees WHERE roll_no = $1`, [ newRollNo ]);
+
+		if (feeCheck.rows.length > 0) {
+			await client.query(
+				`
+			UPDATE fees
+			SET total_fee = $1,
+				fee_paid = $2,
+				next_due = $3
+			WHERE roll_no = $4
+			`,
+				[
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null,
+					newRollNo
+				]
+			);
+		} else {
+			await client.query(
+				`
+			INSERT INTO fees (
+			roll_no,
+			total_fee,
+			fee_paid,
+			next_due
+			)
+			VALUES ($1,$2,$3,$4)
+			`,
+				[
+					newRollNo,
+					total_fee === '' || total_fee === undefined || total_fee === null ? 0 : Number(total_fee),
+					fee_paid === '' || fee_paid === undefined || fee_paid === null ? 0 : Number(fee_paid),
+					next_due || null
+				]
+			);
+		}
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student updated successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('PUT /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to update student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.delete('/students/:roll_no', async (req, res) => {
+	const client = await pool.connect();
+	const { roll_no } = req.params;
+
+	try {
+		await client.query('BEGIN');
+
+		const existingStudent = await client.query(
+			`SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`,
+			[ roll_no ]
+		);
+
+		if (existingStudent.rows.length === 0) {
+			await client.query('ROLLBACK');
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		await client.query(`DELETE FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM fees WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+		await client.query(`DELETE FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))`, [ roll_no ]);
+
+		await client.query('COMMIT');
+
+		res.json({ message: 'Student deleted successfully' });
+	} catch (err) {
+		await client.query('ROLLBACK');
+		console.error('DELETE /students/:roll_no error:', err);
+		res.status(500).json({
+			error: 'Failed to delete student',
+			details: err.message
+		});
+	} finally {
+		client.release();
+	}
+});
+
+app.get('/student-class-board-options', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT DISTINCT class, board
+		FROM students
+		ORDER BY board, class
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /student-class-board-options error:', err);
+		res.status(500).json({ error: 'Failed to fetch class/board options' });
+	}
+});
+/* =========================================================
+	FACULTY TASKS
+	========================================================= */
+
+async function ensureDailyTasksForToday() {
+	const today = new Date().toISOString().slice(0, 10);
+
+	const templates = await pool.query(`
+			SELECT *
+			FROM faculty_tasks
+			WHERE task_type = 'Daily'
+			AND parent_daily_task_id IS NULL
+		`);
+
+	for (const template of templates.rows) {
+		const existing = await pool.query(
+			`
+				SELECT id
+				FROM faculty_tasks
+				WHERE parent_daily_task_id = $1
+				AND task_date = $2
+				LIMIT 1
+				`,
+			[ template.id, today ]
+		);
+
+		if (existing.rows.length === 0) {
+			await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					`,
+				[
+					template.faculty_id,
+					template.faculty_name,
+					template.class_name,
+					template.subject_name || '',
+					template.total_test_note || '',
+					template.other_tasks || '',
+					today,
+					template.priority || 'Medium',
+					template.assigned_by,
+					template.id,
+					today
+				]
+			);
+		}
+	}
+}
+
+app.get('/faculty-tasks/:facultyId', async (req, res) => {
+	const { facultyId } = req.params;
+
+	try {
+		await cleanupCompletedTasks();
+		await ensureDailyTasksForToday();
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE faculty_id = $1
+	AND (
+		task_type = 'Weekly'
+		OR task_type IS NULL
+		OR (
+		task_type = 'Daily'
+		AND parent_daily_task_id IS NOT NULL
+		AND is_completed = FALSE
+		)
+	)
+				ORDER BY created_at DESC
+				`,
+			[ facultyId ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks/:facultyId error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty tasks'
+			});
+		}
+
+		await cleanupCompletedTasks();
+
+		const result = await pool.query(`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Weekly'
+				OR task_type IS NULL
+				ORDER BY created_at DESC
+			`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch all faculty tasks',
+			details: err.message
+		});
+	}
+});
+
+app.get('/faculty-daily-tasks-all', async (req, res) => {
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can view all faculty daily tasks'
+			});
+		}
+
+		await ensureDailyTasksForToday();
+
+		const today = new Date().toISOString().slice(0, 10);
+
+		const result = await pool.query(
+			`
+				SELECT
+					id,
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					is_completed,
+					completed_at,
+					assigned_by,
+					created_at,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				FROM faculty_tasks
+				WHERE task_type = 'Daily'
+				AND parent_daily_task_id IS NOT NULL
+				AND task_date = $1
+				ORDER BY faculty_id ASC, created_at DESC
+				`,
+			[ today ]
+		);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-daily-tasks-all error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch daily tasks',
+			details: err.message
+		});
+	}
+});
+
+app.post('/faculty-tasks', async (req, res) => {
+	const {
+		loginFacultyId,
+		faculty_id,
+		faculty_name,
+		class_name,
+		subject_name,
+		total_test_note,
+		other_tasks,
+		due_date,
+		priority,
+		task_type
+	} = req.body;
+
+	try {
+		if (!faculty_id || !faculty_name || !class_name) {
+			return res.status(400).json({
+				error: 'Faculty Name and Class are required'
+			});
+		}
+
+		if (!subject_name && !other_tasks) {
+			return res.status(400).json({
+				error: 'Please select Test Code or enter Other Tasks'
+			});
+		}
+
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can assign tasks'
+			});
+		}
+
+		const finalTaskType = task_type === 'Daily' ? 'Daily' : 'Weekly';
+		const today = new Date().toISOString().slice(0, 10);
+
+		// =========================================================
+		// DAILY TASK
+		// =========================================================
+
+		if (finalTaskType === 'Daily') {
+			const templateResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					priority || 'Medium',
+					loginFacultyId
+				]
+			);
+
+			const template = templateResult.rows[0];
+
+			const todayTaskResult = await pool.query(
+				`
+					INSERT INTO faculty_tasks (
+						faculty_id,
+						faculty_name,
+						class_name,
+						subject_name,
+						total_test_note,
+						other_tasks,
+						due_date,
+						priority,
+						assigned_by,
+						task_type,
+						parent_daily_task_id,
+						task_date,
+						is_completed,
+						completed_at
+					)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					RETURNING *
+				`,
+				[
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name || '',
+					total_test_note || '',
+					other_tasks || '',
+					today,
+					priority || 'Medium',
+					loginFacultyId,
+					template.id,
+					today
+				]
+			);
+
+			// Create in-app notification and send Firebase push notification
+			await createFacultyNotification(pool, {
+				facultyId: faculty_id,
+				moduleName: 'tasks',
+				message: 'New task assigned by admin'
+			});
+
+			return res.json({
+				message: 'Daily task assigned successfully',
+				task: todayTaskResult.rows[0]
+			});
+		}
+
+		// =========================================================
+		// WEEKLY TASK
+		// =========================================================
+
+		const result = await pool.query(
+			`
+				INSERT INTO faculty_tasks (
+					faculty_id,
+					faculty_name,
+					class_name,
+					subject_name,
+					total_test_note,
+					other_tasks,
+					due_date,
+					priority,
+					assigned_by,
+					task_type,
+					parent_daily_task_id,
+					task_date
+				)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
+				RETURNING *
+			`,
+			[
+				faculty_id,
+				faculty_name,
+				class_name,
+				subject_name || '',
+				total_test_note || '',
+				other_tasks || '',
+				due_date || null,
+				priority || 'Medium',
+				loginFacultyId
+			]
+		);
+
+		// Create in-app notification and send Firebase push notification
+		await createFacultyNotification(pool, {
+			facultyId: faculty_id,
+			moduleName: 'tasks',
+			message: 'New task assigned by admin'
+		});
+
+		return res.json({
+			message: 'Task assigned successfully',
+			task: result.rows[0]
+		});
+	} catch (err) {
+		console.error('POST /faculty-tasks error:', err);
+
+		res.status(500).json({
+			error: 'Failed to assign task',
+			details: err.message
+		});
+	}
+});
+
+
+app.put('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const { is_completed, faculty_id, faculty_name } = req.body;
+
+	try {
+		let result;
+
+		if (faculty_id && faculty_name) {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET faculty_id = $1,
+						faculty_name = $2,
+						is_completed = FALSE,
+						completed_at = NULL
+					WHERE id = $3
+					RETURNING *
+				`,
+				[ faculty_id, faculty_name, id ]
+			);
+		} else if (typeof is_completed === 'boolean') {
+			result = await pool.query(
+				`
+					UPDATE faculty_tasks
+					SET is_completed = $1,
+						completed_at = CASE
+							WHEN $1 = TRUE THEN CURRENT_TIMESTAMP
+							ELSE NULL
+						END
+					WHERE id = $2
+					RETURNING *
+				`,
+				[ is_completed, id ]
+			);
+		} else {
+			return res.status(400).json({
+				error: 'No valid update data provided'
+			});
+		}
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const updatedTask = result.rows[0];
+
+		if (updatedTask.is_completed === true) {
+			const moduleName =
+				updatedTask.task_type === 'Daily'
+					? 'daily-tasks'
+					: 'all-tasks';
+
+			const message =
+				updatedTask.task_type === 'Daily'
+					? `${updatedTask.faculty_name} completed a daily task`
+					: `${updatedTask.faculty_name} completed a weekly task`;
+
+			await pool.query(
+				`
+					INSERT INTO faculty_notifications
+					(faculty_id, module_name, message)
+					VALUES ($1, $2, $3), ($4, $5, $6)
+				`,
+				[
+					'IG001',
+					moduleName,
+					message,
+					'IG002',
+					moduleName,
+					message
+				]
+			);
+		}
+
+		res.json(updatedTask);
+	} catch (err) {
+		console.error('PUT /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to update task',
+			details: err.message
+		});
+	}
+});
+
+
+app.delete('/faculty-tasks/:id', async (req, res) => {
+	const { id } = req.params;
+	const loginFacultyId = req.query.loginFacultyId;
+
+	try {
+		if (![ 'IG001', 'IG002' ].includes(loginFacultyId)) {
+			return res.status(403).json({
+				error: 'Only IG001 and IG002 can delete faculty tasks'
+			});
+		}
+
+		const taskResult = await pool.query(
+			`
+				SELECT id, parent_daily_task_id, task_type
+				FROM faculty_tasks
+				WHERE id = $1
+			`,
+			[ id ]
+		);
+
+		if (taskResult.rows.length === 0) {
+			return res.status(404).json({
+				error: 'Task not found'
+			});
+		}
+
+		const task = taskResult.rows[0];
+
+		const deleteId = task.parent_daily_task_id
+			? task.parent_daily_task_id
+			: task.id;
+
+		const result = await pool.query(
+			`
+				DELETE FROM faculty_tasks
+				WHERE id = $1
+				   OR parent_daily_task_id = $1
+				RETURNING *
+			`,
+			[ deleteId ]
+		);
+
+		res.json({
+			message: 'Task deleted successfully',
+			deletedCount: result.rowCount
+		});
+	} catch (err) {
+		console.error('DELETE /faculty-tasks/:id error:', err);
+
+		res.status(500).json({
+			error: 'Failed to delete task',
+			details: err.message
+		});
+	}
+});
+
+/* =========================================================
+	ENQUIRIES
+	========================================================= */
+app.get('/enquiries/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id,enq_id,student_name,mobile_number,class_board,school_name,subjects,
+              academic_year_from,academic_year_to,batch,date_of_birth,parent_name,
+              secondary_contact,reference,status,comment,reason,created_at,admission_started_at
+       FROM enquiries WHERE id=$1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Enquiry not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /enquiries/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch enquiry' });
+  }
+});
+
+app.post('/enquiries/:id/admission/start', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  if (!token || token.length > 200) return res.status(400).json({ error: 'A valid admission session token is required' });
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
+       WHERE id=$1
+         AND (
+           status IS NULL
+           OR status IN ('Pending', 'Admission In Progress')
+           OR (
+             status='Admitted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM students s
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(s.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(s.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM test_batch_students t
+               WHERE NULLIF(TRIM(enquiries.mobile_number), '') IS NOT NULL
+                 AND UPPER(TRIM(t.name)) = UPPER(TRIM(enquiries.student_name))
+                 AND REGEXP_REPLACE(COALESCE(t.phone, ''), '\\D', '', 'g') =
+                     REGEXP_REPLACE(COALESCE(enquiries.mobile_number, ''), '\\D', '', 'g')
+             )
+           )
+         )
+       RETURNING id,batch,status,admission_started_at`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'This enquiry is already admitted or another admin is currently processing it. Try again after the current admission is cancelled or expires.' });
+    }
+    res.json({ success: true, enquiry: result.rows[0] });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/start error:', err);
+    res.status(500).json({ error: 'Failed to start admission' });
+  }
+});
+
+app.post('/enquiries/:id/admission/cancel', async (req, res) => {
+  const id = req.params.id;
+  const token = String(req.body?.admission_token || '').trim();
+  try {
+    const result = await pool.query(
+      `UPDATE enquiries
+       SET status='Pending', admission_token=NULL, admission_started_at=NULL
+       WHERE id=$1 AND status='Admission In Progress'
+         AND (admission_token=$2 OR $2='')
+       RETURNING id`,
+      [id, token]
+    );
+    if (!result.rows.length) {
+      return res.status(409).json({ error: 'Admission could not be cancelled because it is no longer yours to cancel or is being processed by another admin.' });
+    }
+    res.json({ success: true, status: 'Pending' });
+  } catch (err) {
+    console.error('POST /enquiries/:id/admission/cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel admission' });
+  }
+});
+
+app.put('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status, comment, reason } = req.body;
+
+	const normalizedStatus = String(status || 'Pending').trim();
+	if (!['Pending', 'Rejected'].includes(normalizedStatus)) {
+		return res.status(400).json({ success: false, error: 'Use the admission workflow to change an enquiry to Admitted.' });
+	}
+	const rejectionReason = String(reason || comment || '').trim();
+	if (normalizedStatus === 'Rejected' && !rejectionReason) {
+		return res.status(400).json({ success: false, error: 'A rejection reason is required.' });
+	}
+
+	try {
+		const result = await pool.query(
+			`
+		UPDATE enquiries
+		SET status = $1,
+			comment = $2,
+			reason = $3,
+			admission_token = NULL,
+			admission_started_at = NULL
+		WHERE id = $4 AND status <> 'Admitted'
+		RETURNING *
+		`,
+			[ normalizedStatus, normalizedStatus === 'Rejected' ? rejectionReason : (comment || null), normalizedStatus === 'Rejected' ? rejectionReason : (reason || null), id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry updated successfully',
+			enquiry: result.rows[0]
+		});
+	} catch (err) {
+		console.error('PUT /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to update enquiry'
+		});
+	}
+});
+
+app.delete('/enquiries/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM enquiries
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rowCount === 0) {
+			return res.status(404).json({
+				success: false,
+				error: 'Enquiry not found'
+			});
+		}
+
+		res.json({
+			success: true,
+			message: 'Enquiry deleted successfully',
+			deleted: result.rows[0]
+		});
+	} catch (err) {
+		console.error('DELETE /enquiries/:id error:', err);
+		res.status(500).json({
+			success: false,
+			error: 'Failed to delete enquiry',
+			details: err.message
+		});
+	}
+});
+
+app.post('/enquiries', async (req, res) => {
+	try {
+		const {
+			studentName,
+			classBoard,
+			schoolName,
+			subjects,
+			academicYearFrom,
+			academicYearTo,
+			batch,
+			dateOfBirth,
+			parentName,
+			mobileNumber,
+			secondaryContact,
+			reference
+		} = req.body;
+
+		const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').trim();
+		const cleanSecondary = String(secondaryContact || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearFrom = String(academicYearFrom || '').replace(/\D/g, '').trim();
+		const cleanAcademicYearTo = String(academicYearTo || '').replace(/\D/g, '').trim();
+
+		if (!/^\d{4}$/.test(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year From must contain 4 digits'
+			});
+		}
+
+		if (!/^\d{4}$/.test(cleanAcademicYearTo)) {
+			return res.status(400).json({
+				message: 'Academic Year To must contain 4 digits'
+			});
+		}
+
+		if (Number(cleanAcademicYearTo) <= Number(cleanAcademicYearFrom)) {
+			return res.status(400).json({
+				message: 'Academic Year To must be greater than From'
+			});
+		}
+
+		if (!['Test Batch', 'Regular Batch'].includes(String(batch || '').trim())) {
+			return res.status(400).json({ message: 'Please select Test Batch or Regular Batch' });
+		}
+
+		const cleanDateOfBirth = String(dateOfBirth || '').trim();
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+			return res.status(400).json({ message: 'Please provide a valid date of birth' });
+		}
+
+		if (!/^\d{10}$/.test(cleanMobile)) {
+			return res.status(400).json({
+				message: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		if (!cleanSecondary) {
+			return res.status(400).json({
+				message: 'Secondary contact is required'
+			});
+		}
+
+		if (!/^\d{10}$/.test(cleanSecondary)) {
+			return res.status(400).json({
+				message: 'Secondary contact must contain exactly 10 digits'
+			});
+		}
+
+		if (cleanMobile === cleanSecondary) {
+			return res.status(400).json({
+				message: 'Primary and Secondary contact numbers cannot be the same'
+			});
+		}
+
+		const result = await pool.query(
+			`
+		INSERT INTO enquiries
+		(
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			parent_name,
+			secondary_contact,
+			area,
+			reference,
+			batch,
+			date_of_birth
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		RETURNING *
+		`,
+			[
+				studentName,
+				cleanMobile,
+				classBoard,
+				schoolName,
+				subjects,
+				cleanAcademicYearFrom,
+				cleanAcademicYearTo,
+				parentName,
+				cleanSecondary,
+				null, // area is optional on the public enquiry form
+				reference || null,
+				String(batch).trim(),
+				cleanDateOfBirth
+			]
+		);
+
+		res.status(201).json(result.rows[0]);
+	} catch (err) {
+		console.error('POST /enquiries error:', err);
+		res.status(500).json({ message: 'Failed to submit enquiry' });
+	}
+});
+
+app.get('/enquiries', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT
+			enq_id,
+			id,
+			student_name,
+			mobile_number,
+			class_board,
+			school_name,
+			subjects,
+			academic_year_from,
+			academic_year_to,
+			batch,
+			date_of_birth,
+			parent_name,
+			secondary_contact,
+			created_at,
+			status,
+			comment,
+			reason,
+			area,
+			reference,
+			admission_started_at
+		FROM enquiries
+		ORDER BY created_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enquiries error:', err);
+		res.status(500).json({ error: err.message });
+	}
+});
+/* =========================================================
+	ANSWER SHEET REQUESTS
+	========================================================= */
+app.get('/student-answer-sheet-data/:rollNo', async (req, res) => {
+	const { rollNo } = req.params;
+
+	try {
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ rollNo ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const testsResult = await pool.query(
+			`
+		SELECT test_code, test_date, subject_id, total_marks, portion
+		FROM tests
+		WHERE class = $1 AND board = $2
+		ORDER BY test_date DESC, test_code ASC
+		`,
+			[ student.class, student.board ]
+		);
+
+		res.json({
+			student,
+			tests: testsResult.rows
+		});
+	} catch (error) {
+		console.error('GET /student-answer-sheet-data/:rollNo error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching data'
+		});
+	}
+});
+
+app.post('/answer-sheet-requests', async (req, res) => {
+	const { roll_no, test_code, requested_phone } = req.body;
+
+	try {
+		if (!roll_no || !test_code || !requested_phone) {
+			return res.status(400).json({
+				error: 'roll_no, test_code and requested_phone are required'
+			});
+		}
+
+		const cleanPhone = String(requested_phone).replace(/\D/g, '').trim();
+
+		if (!/^\d{10}$/.test(cleanPhone)) {
+			return res.status(400).json({
+				error: 'Phone number must contain exactly 10 digits'
+			});
+		}
+
+		const studentResult = await pool.query(
+			`
+		SELECT roll_no, name, class, board
+		FROM students
+		WHERE roll_no = $1
+		`,
+			[ roll_no ]
+		);
+
+		if (studentResult.rows.length === 0) {
+			return res.status(404).json({ error: 'Student not found' });
+		}
+
+		const student = studentResult.rows[0];
+
+		const validTestResult = await pool.query(
+			`
+		SELECT test_code
+		FROM tests
+		WHERE test_code = $1
+			AND class = $2
+			AND board = $3
+		`,
+			[ test_code, student.class, student.board ]
+		);
+
+		if (validTestResult.rows.length === 0) {
+			return res.status(400).json({
+				error: 'Selected test code is not valid for this student'
+			});
+		}
+
+		const duplicateResult = await pool.query(
+			`
+		SELECT id
+		FROM answer_sheet_requests
+		WHERE roll_no = $1
+			AND test_code = $2
+			AND status = 'Pending'
+		`,
+			[ roll_no, test_code ]
+		);
+
+		if (duplicateResult.rows.length > 0) {
+			return res.status(400).json({
+				error: 'You already have a pending request for this test code'
+			});
+		}
+
+		const insertResult = await pool.query(
+			`
+		INSERT INTO answer_sheet_requests
+		(
+			roll_no,
+			student_name,
+			class_name,
+			board,
+			test_code,
+			requested_phone,
+			status
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,'Pending')
+		RETURNING *
+		`,
+			[ student.roll_no, student.name, student.class, student.board, test_code, cleanPhone ]
+		);
+
+		res.status(201).json({
+			message: 'Answer sheet request submitted successfully',
+			request: insertResult.rows[0]
+		});
+	} catch (error) {
+		console.error('POST /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while saving request'
+		});
+	}
+});
+
+app.get('/answer-sheet-requests', async (req, res) => {
+	try {
+		const result = await pool.query(`
+		SELECT *
+		FROM answer_sheet_requests
+		ORDER BY requested_at DESC
+		`);
+
+		res.json(result.rows);
+	} catch (error) {
+		console.error('GET /answer-sheet-requests error:', error);
+		res.status(500).json({
+			error: 'Server error while fetching requests',
+			details: error.message
+		});
+	}
+});
+
+app.put('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+	const { status } = req.body;
+
+	try {
+		if (!status) {
+			return res.status(400).json({ error: 'status is required' });
+		}
+
+		const result = await pool.query(
+			`
+		UPDATE answer_sheet_requests
+		SET status = $1
+		WHERE id = $2
+		RETURNING *
+		`,
+			[ status, id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request updated successfully',
+			request: result.rows[0]
+		});
+	} catch (error) {
+		console.error('PUT /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while updating request'
+		});
+	}
+});
+
+app.delete('/answer-sheet-requests/:id', async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const result = await pool.query(
+			`
+		DELETE FROM answer_sheet_requests
+		WHERE id = $1
+		RETURNING *
+		`,
+			[ id ]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Request not found' });
+		}
+
+		res.json({
+			message: 'Request completed and deleted successfully',
+			deletedRequest: result.rows[0]
+		});
+	} catch (error) {
+		console.error('DELETE /answer-sheet-requests/:id error:', error);
+		res.status(500).json({
+			error: 'Server error while deleting request',
+			details: error.message
+		});
+	}
+});
+
+/* =========================================================
+	REGISTERED STUDENTS REPORT
+	========================================================= */
+
+	app.get('/registered-students', async (req, res) => {
+	const { className, board, date } = req.query;
+
+	try {
+		await pool.query(`
+			DELETE FROM test_registrations
+			WHERE test_date < CURRENT_DATE
+		`);
+
+		let query = `
+			SELECT
+				tr.id,
+				tr.roll_no,
+				tr.student_name,
+				TRIM(tr.class) AS class,
+				TRIM(tr.board) AS board,
+				tr.test_code,
+				TO_CHAR(tr.test_date, 'YYYY-MM-DD') AS test_date,
+				TO_CHAR(tr.writing_date, 'YYYY-MM-DD') AS writing_date,
+				tr.slot_start,
+				tr.slot_end,
+				tr.duration_minutes,
+				COALESCE(s.subject_name, 'Unknown') AS subject_name
+			FROM test_registrations tr
+			LEFT JOIN subjects s
+				ON tr.subject_id = s.subject_id
+			WHERE 1=1
+		`;
+
+		const values = [];
+		let index = 1;
+
+		if (className) {
+			query += ` AND TRIM(tr.class) = TRIM($${index})`;
+			values.push(className);
+			index++;
+		}
+
+		if (board) {
+			query += ` AND UPPER(TRIM(tr.board)) = UPPER(TRIM($${index}))`;
+			values.push(board);
+			index++;
+		}
+
+		if (date) {
+			query += ` AND tr.test_date = $${index}`;
+			values.push(date);
+			index++;
+		}
+
+		query += `
+			ORDER BY
+				tr.test_date ASC,
+				tr.writing_date ASC NULLS LAST,
+				tr.class ASC,
+				tr.roll_no ASC
+		`;
+
+		const result = await pool.query(query, values);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /registered-students error:', err);
+		res.status(500).json({
+			error: 'Failed to fetch registered students',
+			details: err.message
+		});
+	}
+});
+app.put('/posted-tests/:testCode', async (req, res) => {
+	const { testCode } = req.params;
+
+	const {
+		test_code,
+		subject_id,
+		test_date,
+		total_marks,
+		portion,
+		class_name,
+		board,
+		duration_minutes,
+		registration_end_date,
+		writing_allowed_till
+	} = req.body;
+
+	try {
+		const result = await pool.query(
+			`
+UPDATE tests
+SET
+    subject_id = $1,
+    test_date = $2,
+    total_marks = $3,
+    portion = $4,
+    chapter = $5,
+    class = $6,
+    board = $7,
+    duration_minutes = $8,
+    registration_end_date = $9,
+    writing_allowed_till = $10
+WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($11))
+RETURNING *
+      `,
+			[
+				subject_id,
+				test_date,
+				total_marks,
+				portion,
+				class_name,
+				board,
+				duration_minutes,
+				registration_end_date,
+				writing_allowed_till,
+				testCode
+			]
+		);
+
+		if (result.rows.length === 0) {
+			return res.status(404).json({ error: 'Test not found' });
+		}
+
+		res.json({ message: 'Test updated successfully', test: result.rows[0] });
+	} catch (err) {
+		console.error('PUT /posted-tests/:testCode error:', err);
+		res.status(500).json({ error: 'Failed to update test' });
+	}
+});
+app.get('/faculty-roles', async (req, res) => {
+	try {
+		const result = await pool.query(`
+			SELECT role_id, role_name
+			FROM faculty_roles
+			ORDER BY role_id ASC
+		`);
+
+		res.json(result.rows);
+	} catch (err) {
+		console.error('GET /faculty-roles error:', err);
+		res.status(500).json({ error: 'Failed to fetch faculty roles' });
+	}
+});
+app.get('/attendance-students', async (req, res) => {
+  const {
+    date,
+    class: className,
+    board,
+    subject_id
+  } = req.query;
+
+  if (!date) {
+    return res.status(400).json({
+      error: 'date is required'
+    });
+  }
+
+  try {
+    const dayOfWeek = new Date(date).getDay();
+
+    // ==========================
+    // SUNDAY MODE
+    // ==========================
+    if (dayOfWeek === 0) {
+      const result = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+        ORDER BY tr.class, tr.subject_id, tr.roll_no
+        `,
+        [date]
+      );
+
+      return res.json({
+        mode: 'sunday',
+        students: result.rows
+      });
+    }
+
+    // ==========================
+    // WEEKDAY MODE
+    // ==========================
+    if (!className || !board || !subject_id) {
+      return res.status(400).json({
+        error: 'class, board and subject_id are required'
+      });
+    }
+
+    const testCheck = await pool.query(
+      `
+      SELECT 1
+      FROM tests
+      WHERE test_date = $1
+        AND TRIM(class) = TRIM($2)
+        AND UPPER(TRIM(board)) = UPPER(TRIM($3))
+        AND subject_id = $4
+      LIMIT 1
+      `,
+      [date, className, board, Number(subject_id)]
+    );
+
+    // ==========================
+    // TEST EXISTS
+    // ==========================
+    if (testCheck.rows.length > 0) {
+      const registrations = await pool.query(
+        `
+        SELECT
+          tr.roll_no,
+          tr.student_name AS name,
+          tr.class,
+          tr.board,
+          tr.subject_id,
+          tr.test_code,
+          a.status AS attendance_status,
+          a.updated_by AS attendance_marked_by,
+          a.marked_at AS attendance_marked_at
+        FROM test_registrations tr
+        LEFT JOIN attendance a
+          ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
+          AND a.subject_id = tr.subject_id
+          AND a.attendance_date = $1
+        WHERE tr.writing_date = $1
+          AND TRIM(tr.class) = TRIM($2)
+          AND UPPER(TRIM(tr.board)) = UPPER(TRIM($3))
+          AND tr.subject_id = $4
+        ORDER BY tr.roll_no
+        `,
+        [date, className, board, Number(subject_id)]
+      );
+
+      return res.json({
+        mode: 'test',
+        students: registrations.rows
+      });
+    }
+
+    // ==========================
+    // NORMAL ATTENDANCE
+    // ==========================
+    const students = await pool.query(
+      `
+      SELECT DISTINCT
+        s.roll_no,
+        s.name,
+        s.class,
+        s.board,
+        s.phone,
+        s.email,
+        s.school_name,
+        s.password,
+        s.date_of_birth,
+        s.batch,
+        s.academic_year_from,
+        s.academic_year_to,
+        s.parent_name,
+        s.secondary_contact,
+        s.reference,
+        a.status AS attendance_status,
+        a.updated_by AS attendance_marked_by,
+        a.marked_at AS attendance_marked_at
+      FROM students s
+      INNER JOIN student_subjects ss
+        ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+      LEFT JOIN attendance a
+        ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+        AND a.subject_id = ss.subject_id
+        AND a.attendance_date = $4
+      WHERE TRIM(s.class) = TRIM($1)
+        AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+        AND ss.subject_id = $3
+      ORDER BY s.roll_no ASC
+      `,
+      [className, board, Number(subject_id), date]
+    );
+
+    return res.json({
+      mode: 'normal',
+      students: students.rows
+    });
+
+  } catch (err) {
+    console.error('GET /attendance-students error:', err);
+
+    return res.status(500).json({
+      error: 'Failed to load attendance students',
+      details: err.message
+    });
+  }
+});
+app.delete('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    const result = await pool.query(
+      `
+      DELETE FROM syllabus
+      WHERE syllabus_id = $1
+      RETURNING *
+      `,
+      [syllabusId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    res.json({
+      message: 'Syllabus chapter deleted successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('DELETE /syllabus/:id error:', err);
+
+    res.status(500).json({
+      error: 'Failed to delete syllabus',
+      details: err.message
+    });
+  }
+});
+app.put('/syllabus/:id', async (req, res) => {
+  try {
+    const syllabusId = Number(req.params.id);
+
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log(
+      'PUT /syllabus BODY:',
+      req.params.id,
+      req.body
+    );
+
+    // -----------------------------
+    // Validate ID
+    // -----------------------------
+
+    if (!Number.isInteger(syllabusId) || syllabusId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid syllabus ID'
+      });
+    }
+
+    // -----------------------------
+    // Validate fields
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check record exists
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE syllabus_id = $1
+      `,
+      [syllabusId]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Syllabus chapter not found'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const duplicate = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+        AND syllabus_id <> $5
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        syllabusId
+      ]
+    );
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Another syllabus chapter already uses this chapter number'
+      });
+    }
+
+    // -----------------------------
+    // Update
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      UPDATE syllabus
+      SET
+        class = $1,
+        board = $2,
+        subject_id = $3,
+        chapter_no = $4,
+        chapter_name = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE syllabus_id = $6
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName,
+        syllabusId
+      ]
+    );
+
+    res.json({
+      message: 'Syllabus chapter updated successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('PUT /syllabus/:id error:', err);
+
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to update syllabus',
+      details: err.message
+    });
+  }
+});
+app.post('/syllabus', async (req, res) => {
+  try {
+    const {
+      class: className,
+      board,
+      subject_id,
+      chapter_no,
+      chapter_name
+    } = req.body;
+
+    console.log('POST /syllabus BODY:', req.body);
+
+    // -----------------------------
+    // Validation
+    // -----------------------------
+
+    if (
+      !className ||
+      !board ||
+      !subject_id ||
+      !chapter_no ||
+      !chapter_name
+    ) {
+      return res.status(400).json({
+        error: 'Required fields are missing'
+      });
+    }
+
+    const cleanClass = String(className).trim();
+    const cleanBoard = String(board).trim();
+    const cleanChapterName = String(chapter_name).trim();
+
+    const subjectId = Number(subject_id);
+    const chapterNo = Number(chapter_no);
+
+    if (!Number.isInteger(subjectId) || subjectId <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    if (!Number.isInteger(chapterNo) || chapterNo <= 0) {
+      return res.status(400).json({
+        error: 'Invalid chapter number'
+      });
+    }
+
+    if (!cleanChapterName) {
+      return res.status(400).json({
+        error: 'Chapter name is required'
+      });
+    }
+
+    // -----------------------------
+    // Check duplicate
+    // -----------------------------
+
+    const existing = await pool.query(
+      `
+      SELECT syllabus_id
+      FROM syllabus
+      WHERE LOWER(TRIM(class)) = LOWER(TRIM($1))
+        AND LOWER(TRIM(board)) = LOWER(TRIM($2))
+        AND subject_id = $3
+        AND chapter_no = $4
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo
+      ]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // -----------------------------
+    // Insert
+    // -----------------------------
+
+    const result = await pool.query(
+      `
+      INSERT INTO syllabus (
+        class,
+        board,
+        subject_id,
+        chapter_no,
+        chapter_name
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        cleanClass,
+        cleanBoard,
+        subjectId,
+        chapterNo,
+        cleanChapterName
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Syllabus chapter added successfully',
+      syllabus: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('POST /syllabus error:', err);
+
+    // PostgreSQL unique violation
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: 'This chapter already exists for this subject'
+      });
+    }
+
+    // Foreign key violation
+    if (err.code === '23503') {
+      return res.status(400).json({
+        error: 'Invalid subject'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create syllabus',
+      details: err.message
+    });
+  }
+});
+app.get('/syllabus', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        sy.syllabus_id,
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        s.subject_name,
+        sy.chapter_no,
+        sy.chapter_name,
+        sy.created_at,
+        sy.updated_at
+      FROM syllabus sy
+      JOIN subjects s
+        ON s.subject_id = sy.subject_id
+      ORDER BY
+        sy.class,
+        sy.board,
+        sy.subject_id,
+        sy.chapter_no
+    `);
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.error('GET /syllabus error:', err);
+
+    res.status(500).json({
+      error: 'Failed to fetch syllabus',
+      details: err.message
+    });
+  }
+});
+
+/* =========================================================
+   FACULTY DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/faculty/device-token', async (req, res) => {
+  const {
+    faculty_id,
+    token,
+    platform = 'android',
+  } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const faculty = await pool.query(
+      `
+      SELECT faculty_id
+      FROM faculty
+      WHERE UPPER(TRIM(faculty_id)) = $1
+      LIMIT 1
+      `,
+      [facultyId]
+    );
+
+    if (faculty.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Faculty not found',
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO faculty_device_tokens
+        (faculty_id, token, platform, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (token)
+      DO UPDATE SET
+        faculty_id = EXCLUDED.faculty_id,
+        platform = EXCLUDED.platform,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [facultyId, deviceToken, devicePlatform]
+    );
+
+    console.log(
+      '[Faculty Token] Registered device token for faculty:',
+      facultyId
+    );
+
+    return res.json({
+      success: true,
+    });
+  } catch (error) {
+    console.error(
+      'POST /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to register faculty notification device',
+    });
+  }
+});
+
+app.delete('/faculty/device-token', async (req, res) => {
+  const { faculty_id, token } = req.body || {};
+
+  const facultyId = String(faculty_id || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!facultyId || !deviceToken) {
+    return res.status(400).json({
+      error: 'faculty_id and token are required',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM faculty_device_tokens
+      WHERE UPPER(TRIM(faculty_id)) = $1
+        AND token = $2
+      `,
+      [facultyId, deviceToken]
+    );
+
+    return res.json({
+      success: true,
+      removed: result.rowCount || 0,
+    });
+  } catch (error) {
+    console.error(
+      'DELETE /faculty/device-token error:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to remove faculty notification device',
+    });
+  }
+});
+
+
+
+/* =========================================================
+   TEST BATCH STUDENTS / MARKS / ATTENDANCE
+   Completely separate from Regular Student tables.
+========================================================= */
+
+const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
+
+// Verify an existing IG faculty account for Test Batch operational access.
+// This middleware is used by dashboard reads, student management, attendance,
+// and marks workflows. Test Batch series/configuration administration remains
+// protected by requireTestBatchAdmin where applicable.
+async function requireTestBatchAttendanceMarksAccess(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.get('x-faculty-id') ||
+      req.query.adminId ||
+      req.query.facultyId ||
+      (req.body && (req.body.adminId || req.body.facultyId)) ||
+      ''
+    ).toUpperCase().trim();
+
+    const match = candidate.match(/^IG(\d{3,})$/);
+    const sequence = match ? Number(match[1]) : NaN;
+    if (!Number.isInteger(sequence) || sequence < 1) {
+      return res.status(403).json({ error: 'Authorized faculty access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Faculty account not found or not authorized' });
+    }
+
+    // Any existing IG faculty may record attendance/marks. Test Batch
+    // administration/configuration routes remain protected by requireTestBatchAdmin.
+    req.testBatchFacultyId = candidate;
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch faculty attendance/marks authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify faculty access' });
+  }
+}
+
+async function requireTestBatchAdmin(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-admin-id') ||
+      req.query.adminId ||
+      (req.body && req.body.adminId) ||
+      ''
+    ).toUpperCase().trim();
+
+    if (!TEST_BATCH_ADMIN_IDS.has(candidate)) {
+      return res.status(403).json({ error: 'Test Batch administrator access required' });
+    }
+
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      [candidate]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Unauthorized administrator' });
+    }
+
+    req.testBatchAdminId = candidate;
+    next();
+  } catch (err) {
+    console.error('Test Batch admin authorization error:', err);
+    res.status(500).json({ error: 'Failed to verify administrator access' });
+  }
+}
+
+async function generateNextTestBatchRollNo(client) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['intellekt_test_batch_roll_no']);
+  const result = await client.query(
+    'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+    ['^IAT[0-9]+$']
+  );
+  const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+  return 'IAT' + String(nextNumber).padStart(3, '0');
+}
+
+async function validateTestBatchSeries(seriesId) {
+  const result = await pool.query(
+    'SELECT id, name FROM test_series WHERE id = $1',
+    [Number(seriesId)]
+  );
+  return result.rows[0] || null;
+}
+
+function validateTestBatchSubjects(subjects) {
+  const value = String(subjects || '').trim();
+  return ['Mathematics', 'Physics', 'Both'].includes(value) ? value : null;
+}
+
+function isTestBatchSubjectEligible(studentSubjects, testSubject) {
+  const subjects = String(studentSubjects || '').trim().toLowerCase();
+  const subject = String(testSubject || '').trim().toLowerCase();
+
+  if (!['mathematics', 'physics'].includes(subject)) return false;
+  return subjects === 'both' || subjects === subject;
+}
+
+function validateTestBatchMarks(totalMarks, obtained) {
+  const total = Number(totalMarks);
+  const raw = String(obtained ?? '').trim().toUpperCase();
+  if (!Number.isFinite(total) || total <= 0) return { ok:false, error:'Total marks must be greater than zero' };
+  if (!raw) return { ok:false, error:'Obtained marks are required' };
+  if (raw === 'A') return { ok:true, obtained:'A' };
+  const numeric = Number(raw);
+  if (!/^([0-9]+)(\\.[0-9]+)?$/.test(raw)) {
+    return { ok:false, error:'Obtained marks must be a valid number, or A' };
+  }
+  if (/^0+[0-9]/.test(raw)) {
+    return { ok:false, error:'Obtained marks cannot contain unnecessary leading zeros' };
+  }
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > total) {
+    return { ok:false, error:'Obtained marks must be between 0 and total marks, or A' };
+  }
+  return { ok:true, obtained:String(numeric) };
+}
+
+function marksComputedFields(row) {
+  const total = Number(row.total_marks || 0);
+  const raw = String(row.marks_obtained || '').trim().toUpperCase();
+  if (raw === 'A') return { ...row, percentage:null, result_status:'Absent' };
+  const percentage = total > 0 ? (Number(raw) / total) * 100 : 0;
+  return { ...row, percentage:Number(percentage.toFixed(2)), result_status:percentage >= 40 ? 'Pass' : 'Fail' };
+}
+
+app.get('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, search, status, from, to } = req.query;
+    const values=[]; let where='WHERE 1=1';
+    if(seriesId){ values.push(Number(seriesId)); where+=' AND t.test_series_id=$'+values.length; }
+    if(search){ values.push('%'+String(search).trim()+'%'); where+=' AND (t.test_code ILIKE $'+values.length+' OR t.subject_name ILIKE $'+values.length+')'; }
+    if(status){ values.push(String(status)); where+=' AND t.status=$'+values.length; }
+    if(from){ values.push(from); where+=' AND t.writing_date >= $'+values.length; }
+    if(to){ values.push(to); where+=' AND t.writing_date <= $'+values.length; }
+    const result=await pool.query(
+      'SELECT t.*,s.name AS test_series_name FROM test_batch_tests t JOIN test_series s ON s.id=t.test_series_id '+where+
+      ' ORDER BY t.writing_date DESC,t.test_code ASC', values);
+    res.json({tests:result.rows});
+  } catch(err){ console.error('GET /test-batch/tests error:',err); res.status(500).json({error:'Failed to fetch Test Batch tests'}); }
+});
+
+app.post('/test-batch/tests', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if(!test_code||!test_series_id||!subject_name||!duration_minutes||!total_marks){
+      return res.status(400).json({error:'Test code, test batch, subject, duration and total marks are required'});
+    }
+    const series=await validateTestBatchSeries(test_series_id);
+    if(!series)return res.status(400).json({error:'Invalid Test Series'});
+
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'INSERT INTO test_batch_tests(test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status,created_by) '+
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (test_code) DO NOTHING RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',req.testBatchAdminId]);
+    if (!result.rows.length) return res.status(409).json({error:'Test code already exists. Use a unique test code.'});
+    res.status(201).json({message:'Test Batch test created successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('POST /test-batch/tests error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to create Test Batch test',details:err.message});
+  }
+});
+
+app.put('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    if (!TEST_BATCH_ADMIN_IDS.has(String(req.testBatchAdminId || '').toUpperCase().trim())) {
+      return res.status(403).json({error:'Faculty must receive admin approval before editing a Test Batch schedule'});
+    }
+    const {
+      test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+      duration_minutes,total_marks,portion,chapter,application_open_date,application_close_date,writing_close_date,status
+    }=req.body||{};
+    if (application_open_date && application_close_date && application_close_date < application_open_date) {
+      return res.status(400).json({error:'Application close date cannot be before application open date'});
+    }
+    if (application_close_date && writing_close_date && application_close_date >= writing_close_date) {
+      return res.status(400).json({error:'Registration close date must be before the writing close date'});
+    }
+    const result=await pool.query(
+      'UPDATE test_batch_tests SET test_code=$1,test_series_id=$2,subject_name=$3,test_date=$4,writing_date=$5,slot_start=$6,slot_end=$7,duration_minutes=$8,total_marks=$9,portion=$10,chapter=$11,application_open_date=$12,application_close_date=$13,writing_close_date=$14,status=$15,updated_at=CURRENT_TIMESTAMP WHERE id=$16 RETURNING *',
+      [String(test_code).trim().toUpperCase(),Number(test_series_id),String(subject_name).trim(),test_date,writing_date,slot_start||null,slot_end||null,Number(duration_minutes),Number(total_marks),portion||null,chapter||null,application_open_date||null,application_close_date||null,writing_close_date||null,status||'Scheduled',Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test updated successfully',test:result.rows[0]});
+  } catch(err){
+    console.error('PUT /test-batch/tests/:id error:',err);
+    if(err.code==='23505')return res.status(400).json({error:'Test code already exists'});
+    res.status(500).json({error:'Failed to update Test Batch test',details:err.message});
+  }
+});
+
+
+/* =========================================================
+   TEST BATCH STUDENT REGISTRATION
+   Students can register only inside the configured application window.
+========================================================= */
+
+app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
+  try {
+    const rollNo = String(req.params.rollNo || '').trim().toUpperCase();
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const studentRow = student.rows[0];
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.portion,t.chapter,t.application_open_date,t.application_close_date,t.writing_close_date,
+         t.status,
+         CASE
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'absent'
+             )
+             THEN true
+           ELSE false
+         END AS is_absent,
+         CASE
+           WHEN (r.id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM test_batch_attendance a
+             WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+               AND a.attendance_date=COALESCE(r.writing_date,t.writing_date)
+               AND LOWER(TRIM(a.status))='absent'
+           )) OR (r.id IS NULL AND t.application_close_date IS NOT NULL AND t.application_close_date < CURRENT_DATE)
+           THEN true ELSE false
+         END AS is_lapsed,
+         CASE
+           WHEN t.status IN ('Completed','Returned') THEN true
+           WHEN r.id IS NOT NULL
+             AND EXISTS (
+               SELECT 1
+               FROM test_batch_attendance a
+               WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1))
+                 AND a.attendance_date = COALESCE(r.writing_date,t.writing_date)
+                 AND LOWER(TRIM(a.status)) = 'present'
+             )
+             THEN true
+           ELSE false
+         END AS is_completed,
+         CASE WHEN r.id IS NOT NULL AND r.status='Registered' THEN true ELSE false END AS is_registered,
+         r.registered_at,r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,r.slot_end AS registered_slot_end
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code AND UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+       WHERE t.test_series_id=$2
+         AND t.status IN ('Scheduled','Active','Completed','Returned')
+       ORDER BY
+         CASE WHEN t.status IN ('Scheduled','Active') THEN 0 ELSE 1 END,
+         t.application_open_date ASC,
+         t.test_code ASC`,
+      [rollNo, studentRow.test_series_id]
+    );
+
+    const studentBoard = normalizeTestBatchBoard(studentRow.board);
+    const studentClass = String(studentRow.class || '').trim();
+
+    const filteredTests = result.rows.filter((test) => {
+      const parsed = parseTestBatchCode(test.test_code);
+      if (!parsed) return false;
+
+      const testBoard = normalizeTestBatchBoard(parsed.board);
+      const matchesBoardAndClass =
+        testBoard === studentBoard &&
+        String(parsed.className) === studentClass;
+
+      if (!matchesBoardAndClass) return false;
+
+      // Subject eligibility is an additional layer on top of the existing
+      // Test Series + board + class + status rules.
+      return isTestBatchSubjectEligible(studentRow.subjects, parsed.subject);
+    });
+
+    res.json({tests:filteredTests});
+  } catch(err) {
+    console.error('GET /test-batch/student-tests/:rollNo error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch test schedule'});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/register', async (req,res) => {
+  try {
+    const testCode = String(req.params.testCode || '').trim().toUpperCase();
+    const rollNo = String(req.body?.roll_no || '').trim().toUpperCase();
+    if (!rollNo) return res.status(400).json({error:'Roll number is required'});
+
+    const student = await pool.query(
+      'SELECT roll_no,test_series_id,board,class,subjects FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!student.rows.length) return res.status(404).json({error:'Test Batch student not found'});
+
+    const testResult = await pool.query(
+      `SELECT test_code,test_series_id,subject_name,test_date,writing_date,slot_start,slot_end,
+              duration_minutes,application_open_date,application_close_date,writing_close_date,status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const test = testResult.rows[0];
+    if (Number(test.test_series_id) !== Number(student.rows[0].test_series_id)) {
+      return res.status(403).json({error:'This test is not assigned to the student\'s Test Batch'});
+    }
+
+    const parsedTest = parseTestBatchCode(testCode);
+    if (!parsedTest) {
+      return res.status(400).json({error:'Invalid Test Batch test code format'});
+    }
+
+    const studentBoard = normalizeTestBatchBoard(student.rows[0].board);
+    const requiredBoard = normalizeTestBatchBoard(parsedTest.board);
+    const studentClass = String(student.rows[0].class || '').trim();
+    if (studentBoard !== requiredBoard || studentClass !== parsedTest.className) {
+      return res.status(403).json({
+        error:'This test is not assigned to the student\'s board and class'
+      });
+    }
+
+    if (!isTestBatchSubjectEligible(student.rows[0].subjects, parsedTest.subject)) {
+      return res.status(403).json({
+        error:'This student is not registered for the test subject'
+      });
+    }
+
+    const selectedWritingDate = String(req.body?.writing_date || '').trim();
+    const selectedSlotStart = req.body?.slot_start ? String(req.body.slot_start).trim() : null;
+    const selectedSlotEnd = req.body?.slot_end ? String(req.body.slot_end).trim() : null;
+
+    if (!selectedWritingDate) {
+      return res.status(400).json({error:'Select a test date'});
+    }
+    if (!selectedSlotStart || !selectedSlotEnd) {
+      return res.status(400).json({error:'Select a test slot'});
+    }
+    if (!['Scheduled','Active'].includes(test.status)) {
+      return res.status(400).json({error:'Registration is not available for this test'});
+    }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const open = new Date(test.application_open_date);
+    const close = new Date(test.application_close_date);
+    const writingClose = new Date(test.writing_close_date);
+    const chosenDate = new Date(selectedWritingDate);
+    open.setHours(0,0,0,0);
+    close.setHours(0,0,0,0);
+    writingClose.setHours(0,0,0,0);
+    chosenDate.setHours(0,0,0,0);
+
+    if (today < open || today > close) {
+      return res.status(400).json({error:'Registration period is closed for this test'});
+    }
+    if (Number.isNaN(chosenDate.getTime()) || Number.isNaN(writingClose.getTime()) || chosenDate < open || chosenDate > writingClose) {
+      return res.status(400).json({error:'Selected writing date must be between the opening date and Writing Close Date'});
+    }
+
+    const durationMinutes = Number(test.duration_minutes);
+    const slotStartMinutes = timeStringToMinutes(selectedSlotStart);
+    const slotEndMinutes = timeStringToMinutes(selectedSlotEnd);
+
+    if (
+      !Number.isFinite(slotStartMinutes) ||
+      !Number.isFinite(slotEndMinutes) ||
+      slotEndMinutes <= slotStartMinutes ||
+      slotEndMinutes - slotStartMinutes !== durationMinutes
+    ) {
+      return res.status(400).json({error:'Selected slot does not match the test duration'});
+    }
+
+    // Test date must be at least 3 calendar days after the registration date.
+    const registrationToday = new Date();
+    registrationToday.setHours(0,0,0,0);
+    const minimumWritingDate = new Date(registrationToday);
+    minimumWritingDate.setDate(minimumWritingDate.getDate() + 3);
+
+    if (chosenDate < minimumWritingDate) {
+      return res.status(400).json({
+        error:'Test date must be at least 3 days after registration'
+      });
+    }
+
+    const fixedSlots = getTestBatchSlots(durationMinutes, selectedWritingDate);
+    if (
+      fixedSlots.length === 0 ||
+      !fixedSlots.some(
+        slot => slot.start === selectedSlotStart && slot.end === selectedSlotEnd
+      )
+    ) {
+      return res.status(400).json({
+        error:'Invalid Test Batch slot for the selected date and test duration'
+      });
+    }
+
+    const registered = await pool.query(
+      `INSERT INTO test_batch_registrations
+       (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
+       VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
+       ON CONFLICT(test_code,roll_no)
+       DO UPDATE SET
+         writing_date=EXCLUDED.writing_date,
+         slot_start=EXCLUDED.slot_start,
+         slot_end=EXCLUDED.slot_end,
+         status='Registered',
+         updated_at=CURRENT_TIMESTAMP
+       RETURNING *, (xmax = 0) AS is_new_registration`,
+      [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
+    );
+
+    const registration = registered.rows[0];
+
+    // Notify both Test Batch admins immediately for a newly created registration.
+    // Notification failures must never make a successful student registration fail.
+    if (registration?.is_new_registration === true) {
+      const registeredAt = formatTestBatchRegistrationDateTime(registration.registered_at);
+      const studentNameResult = await pool.query(
+        'SELECT name FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+        [rollNo]
+      );
+      const studentName = String(studentNameResult.rows[0]?.name || '').trim() || rollNo;
+      const notificationMessage =
+        `Test Reminder - ${testCode} is scheduled by ${studentName}. Registered on ${registeredAt}.`;
+
+      try {
+        await Promise.all(
+          ['IG001','IG002'].map((adminId) =>
+            createFacultyNotification(pool, {
+              facultyId: adminId,
+              moduleName: 'test-batch',
+              title: 'Test Batch Registration',
+              message: notificationMessage,
+              data: {
+                module_name: 'test-batch-admin-registration',
+                test_code: testCode,
+                roll_no: rollNo,
+                registered_at: String(registration.registered_at || ''),
+                notification_type: 'test_batch_registration'
+              }
+            })
+          )
+        );
+      } catch (notificationError) {
+        console.error(
+          'Test Batch registration notification failed:',
+          notificationError
+        );
+      }
+    }
+
+    res.status(201).json({message:'Test Batch test registration successful',registration:registered.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/register error:',err);
+    res.status(500).json({error:'Failed to register for Test Batch test',details:err.message});
+  }
+});
+
+app.delete('/test-batch/tests/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result=await pool.query('DELETE FROM test_batch_tests WHERE id=$1 RETURNING id,test_code',[Number(req.params.id)]);
+    if(!result.rows.length)return res.status(404).json({error:'Test Batch test not found'});
+    res.json({message:'Test Batch test deleted successfully',test:result.rows[0]});
+  } catch(err){ console.error('DELETE /test-batch/tests/:id error:',err); res.status(500).json({error:'Failed to delete Test Batch test'}); }
+});
+
+/* =========================================================
+   TEST BATCH POST-TEST CONFIGURATION
+   Available only after a test is Completed or Returned.
+========================================================= */
+
+app.get('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.portion,t.chapter,
+         t.application_open_date,t.application_close_date,t.status,
+         t.manual_mark_entry_enabled,t.bulk_mark_upload_enabled,
+         t.passing_percentage,t.grade_boundaries,
+         t.result_publication_mode,t.show_detailed_breakdown,
+         t.reevaluation_enabled,t.lock_marks_after_final_submission,
+         t.post_test_export_enabled,t.result_publication_status,
+         t.result_published_at,t.marks_entry_status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test is available only for completed or returned tests'});
+    }
+
+    res.json({test});
+  } catch(err) {
+    console.error('GET /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to load Test Batch post-test settings'});
+  }
+});
+
+app.put('/test-batch/tests/:testCode/post-test', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const body = req.body || {};
+    const result = await pool.query(
+      `SELECT id,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+    const test = result.rows[0];
+
+    if (!['Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({error:'Post Test settings can only be changed for completed or returned tests'});
+    }
+
+    const passing = Number(body.passing_percentage);
+    if (!Number.isFinite(passing) || passing < 0 || passing > 100) {
+      return res.status(400).json({error:'Passing percentage must be between 0 and 100'});
+    }
+
+    const boundaries = body.grade_boundaries || {A:90,B:75,C:60,D:40};
+    if (!boundaries || typeof boundaries !== 'object' || Array.isArray(boundaries)) {
+      return res.status(400).json({error:'Grade boundaries must be an object'});
+    }
+
+    for (const grade of ['A','B','C','D']) {
+      const value = Number(boundaries[grade]);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return res.status(400).json({error:'Each grade boundary must be between 0 and 100'});
+      }
+    }
+
+    const publicationMode = body.result_publication_mode === 'immediate' ? 'immediate' : 'approval';
+
+    const updated = await pool.query(
+      `UPDATE test_batch_tests
+       SET manual_mark_entry_enabled=$1,
+           bulk_mark_upload_enabled=$2,
+           passing_percentage=$3,
+           grade_boundaries=$4::jsonb,
+           result_publication_mode=$5,
+           show_detailed_breakdown=$6,
+           reevaluation_enabled=$7,
+           lock_marks_after_final_submission=$8,
+           post_test_export_enabled=$9,
+           result_publication_status=CASE WHEN $5='immediate' THEN 'Published' ELSE result_publication_status END,
+           result_published_at=CASE WHEN $5='immediate' THEN COALESCE(result_published_at,CURRENT_TIMESTAMP) ELSE result_published_at END,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$10
+       RETURNING *`,
+      [
+        body.manual_mark_entry_enabled !== false,
+        body.bulk_mark_upload_enabled === true,
+        passing,
+        JSON.stringify({A:Number(boundaries.A),B:Number(boundaries.B),C:Number(boundaries.C),D:Number(boundaries.D)}),
+        publicationMode,
+        body.show_detailed_breakdown === true,
+        body.reevaluation_enabled === true,
+        body.lock_marks_after_final_submission !== false,
+        body.post_test_export_enabled !== false,
+        test.id
+      ]
+    );
+
+    res.json({message:'Test Batch Post Test settings saved successfully',test:updated.rows[0]});
+  } catch(err) {
+    console.error('PUT /test-batch/tests/:testCode/post-test error:',err);
+    res.status(500).json({error:'Failed to save Test Batch post-test settings',details:err.message});
+  }
+});
+
+app.post('/test-batch/tests/:testCode/post-test/publish', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET result_publication_status='Published',
+           result_published_at=CURRENT_TIMESTAMP,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+         AND status IN ('Completed','Returned')
+         AND result_publication_mode='approval'
+       RETURNING id,test_code,result_publication_status,result_published_at`,
+      [req.params.testCode]
+    );
+
+    if (!result.rows.length) {
+      return res.status(400).json({error:'Test must be completed/returned and configured for admin approval before publishing'});
+    }
+
+    res.json({message:'Test Batch results published successfully',test:result.rows[0]});
+  } catch(err) {
+    console.error('POST /test-batch/tests/:testCode/post-test/publish error:',err);
+    res.status(500).json({error:'Failed to publish Test Batch results'});
+  }
+});
+
+app.get('/test-batch/tests/:testCode/results', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const testResult = await pool.query(
+      `SELECT passing_percentage,grade_boundaries,result_publication_status,
+              show_detailed_breakdown,post_test_export_enabled
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [req.params.testCode]
+    );
+    if (!testResult.rows.length) return res.status(404).json({error:'Test Batch test not found'});
+
+    const config = testResult.rows[0];
+    const result=await pool.query(
+      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
+      'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
+      [req.params.testCode]);
+
+    const passing = Number(config.passing_percentage ?? 40);
+    const boundaries = config.grade_boundaries || {A:90,B:75,C:60,D:40};
+    const results = result.rows.map(row => {
+      const base = marksComputedFields(row);
+      if (base.result_status === 'Absent') return {...base, grade:null};
+      const percentage = Number(base.percentage || 0);
+      let grade = 'F';
+      for (const [label, minimum] of Object.entries(boundaries).sort((a,b)=>Number(b[1])-Number(a[1]))) {
+        if (percentage >= Number(minimum)) { grade = label; break; }
+      }
+      return {
+        ...base,
+        result_status: percentage >= passing ? 'Pass' : 'Fail',
+        grade,
+      };
+    });
+
+    res.json({
+      results,
+      settings: {
+        passing_percentage: passing,
+        grade_boundaries: boundaries,
+        result_publication_status: config.result_publication_status,
+        show_detailed_breakdown: config.show_detailed_breakdown,
+        post_test_export_enabled: config.post_test_export_enabled,
+      }
+    });
+  } catch(err){ console.error('GET /test-batch/tests/:testCode/results error:',err); res.status(500).json({error:'Failed to fetch Test Batch results'}); }
+});
+
+
+/* =========================================================
+   TEST BATCH MARK ENTRY
+   Only completed/returned tests are eligible.
+   Marks are stored only in test_batch_marks.
+========================================================= */
+
+app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { seriesId, search } = req.query;
+    const values = [];
+    let where = "WHERE t.status IN ('Draft','Scheduled','Active','Completed','Returned')";
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND t.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (t.test_code ILIKE $' + values.length + ' OR t.subject_name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at,
+         COUNT(r.id) FILTER (WHERE r.status='Registered')::int AS registered_students
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       LEFT JOIN test_batch_registrations r
+         ON r.test_code=t.test_code
+       ${where}
+       GROUP BY
+         t.id,t.test_code,t.test_series_id,s.name,t.subject_name,
+         t.test_date,t.writing_date,t.slot_start,t.slot_end,t.duration_minutes,
+         t.total_marks,t.status,t.marks_entry_status,t.marks_finalized_at
+       ORDER BY t.application_open_date DESC,t.test_code ASC`,
+      values
+    );
+
+    res.json({ tests: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/tests error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch posted tests' });
+  }
+});
+
+app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = String(req.query.seriesId || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const categoryFilter = String(req.query.category || '').trim().toLowerCase();
+    const testValues = [];
+    let testWhere = "WHERE t.status <> 'Cancelled'";
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+    const registrationValues = [];
+    let registrationWhere = "WHERE r.status = 'Registered'";
+
+    if (seriesId) {
+      const parsed = Number(seriesId);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      testValues.push(parsed);
+      testWhere += ' AND t.test_series_id=$' + testValues.length;
+      studentValues.push(parsed);
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+      registrationValues.push(parsed);
+      registrationWhere += ' AND t.test_series_id=$' + registrationValues.length;
+    }
+    if (categoryFilter === 'registered') {
+      registrationWhere += " AND (r.writing_date IS NULL OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW())";
+    }
+    if (classFilter) {
+      studentValues.push(classFilter);
+      studentWhere += ' AND TRIM(s.class)=TRIM($' + studentValues.length + ')';
+      registrationValues.push(classFilter);
+      registrationWhere += ' AND TRIM(s.class)=TRIM($' + registrationValues.length + ')';
+    }
+    if (boardFilter) {
+      studentValues.push(boardFilter);
+      studentWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + studentValues.length + "), '[^a-zA-Z]', '', 'g'))";
+      registrationValues.push(boardFilter);
+      registrationWhere += " AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g'))=LOWER(REGEXP_REPLACE(TRIM($" + registrationValues.length + "), '[^a-zA-Z]', '', 'g'))";
+    }
+
+    const [seriesResult, testsResult, studentsResult, registrationsResult] = await Promise.all([
+      pool.query('SELECT id,name FROM test_series ORDER BY id'),
+      pool.query(
+        'SELECT t.*,ts.name AS test_series_name FROM test_batch_tests t JOIN test_series ts ON ts.id=t.test_series_id ' +
+        testWhere + ' ORDER BY t.writing_date DESC,t.test_code ASC',
+        testValues
+      ),
+      pool.query(
+        'SELECT s.roll_no,s.name,s.class,s.board,s.subjects,s.test_series_id,ts.name AS test_series_name ' +
+        'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+        studentWhere + ' ORDER BY s.roll_no ASC',
+        studentValues
+      ),
+      pool.query(
+        `SELECT
+           t.test_code, t.test_series_id, t.subject_name, ts.name AS test_series_name,
+           s.roll_no, s.name, s.class, s.board, s.subjects,
+           s.test_series_id AS student_test_series_id,
+           r.writing_date AS registered_writing_date,
+           r.slot_start AS registered_slot_start,
+           r.slot_end AS registered_slot_end,
+           r.registered_at,
+           a.status AS attendance_status
+         FROM test_batch_registrations r
+         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+         JOIN test_series ts ON ts.id=t.test_series_id
+         JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+         LEFT JOIN test_batch_attendance a
+           ON UPPER(TRIM(a.roll_no))=UPPER(TRIM(r.roll_no))
+          AND a.attendance_date=r.writing_date
+         ${registrationWhere}
+         ORDER BY t.test_code ASC,r.writing_date ASC,s.roll_no ASC`,
+        registrationValues
+      )
+    ]);
+
+    res.json({
+      series: seriesResult.rows,
+      tests: testsResult.rows,
+      students: studentsResult.rows,
+      registrations: registrationsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/student-status error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch student statuses' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,
+         t.test_code,
+         t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name,
+         t.duration_minutes,
+         t.total_marks,
+         t.status,
+         t.application_open_date,
+         t.application_close_date
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    const category = String(req.query.category || '').trim();
+    const classFilter = String(req.query.class || '').trim();
+    const boardFilter = String(req.query.board || '').trim();
+    const seriesFilter = String(req.query.seriesId || '').trim();
+    const registeredVisibilityFilter = category === 'Registered'
+      ? `AND (
+           r.writing_date IS NULL
+           OR ((r.writing_date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Kolkata') > NOW()
+         )`
+      : '';
+
+    const values = [code, test.test_series_id, test.subject_name];
+    let studentFilters = '';
+    if (classFilter) {
+      values.push(classFilter);
+      studentFilters += ` AND TRIM(s.class) = TRIM($${values.length})`;
+    }
+    if (boardFilter) {
+      values.push(boardFilter);
+      studentFilters += ` AND LOWER(REGEXP_REPLACE(TRIM(s.board), '[^a-zA-Z]', '', 'g')) = LOWER(REGEXP_REPLACE(TRIM($${values.length}), '[^a-zA-Z]', '', 'g'))`;
+    }
+    if (seriesFilter) {
+      const parsedSeriesId = Number(seriesFilter);
+      if (!Number.isSafeInteger(parsedSeriesId) || parsedSeriesId <= 0) {
+        return res.status(400).json({ error: 'Invalid Test Series filter' });
+      }
+      values.push(parsedSeriesId);
+      studentFilters += ` AND s.test_series_id = $${values.length}`;
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.registered_at,
+         r.status AS registration_status
+       FROM test_batch_registrations r
+       JOIN test_batch_students s
+         ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no))
+       WHERE UPPER(TRIM(r.test_code))=UPPER(TRIM($1))
+         AND r.status='Registered'
+         AND s.test_series_id=$2
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($3))
+         )
+         ${studentFilters}
+         ${registeredVisibilityFilter}
+       ORDER BY r.writing_date ASC, r.slot_start ASC, s.roll_no ASC`,
+      values
+    );
+
+    res.json({
+      test,
+      students: studentsResult.rows,
+      registered_students: studentsResult.rows.length
+    });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/registered-students error:', err);
+    res.status(500).json({ error: 'Failed to fetch registered Test Batch students' });
+  }
+});
+
+app.get('/test-batch/mark-entry/series/:seriesId', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const seriesId = Number(req.params.seriesId);
+    if (!Number.isInteger(seriesId) || seriesId <= 0) {
+      return res.status(400).json({ error: 'Invalid Test Series' });
+    }
+
+    const seriesResult = await pool.query(
+      `SELECT id, name
+       FROM test_series
+       WHERE id=$1
+       LIMIT 1`,
+      [seriesId]
+    );
+
+    if (seriesResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Series not found' });
+    }
+
+    const testsResult = await pool.query(
+      `SELECT
+         t.id, t.test_code, t.test_series_id,
+         s.name AS test_series_name,
+         t.subject_name, t.duration_minutes, t.total_marks, t.status
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE t.test_series_id=$1
+         AND t.status <> 'Cancelled'
+       ORDER BY t.created_at DESC, t.id DESC`,
+      [seriesId]
+    );
+
+    const studentsResult = await pool.query(
+      `SELECT DISTINCT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.board,
+         s.test_series_id
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       WHERE s.test_series_id=$1
+         AND r.status='Registered'
+       ORDER BY s.roll_no ASC`,
+      [seriesId]
+    );
+
+    res.json({
+      series: seriesResult.rows[0],
+      tests: testsResult.rows,
+      students: studentsResult.rows
+    });
+  } catch (err) {
+    console.error('GET /test-batch/mark-entry/series/:seriesId error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch students for Test Series' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await pool.query(
+      `SELECT
+         t.id,t.test_code,t.test_series_id,s.name AS test_series_name,
+         t.subject_name,t.test_date,t.writing_date,t.slot_start,t.slot_end,
+         t.duration_minutes,t.total_marks,t.status,t.marks_entry_status,
+         t.marks_finalized_at,t.manual_mark_entry_enabled,
+         t.lock_marks_after_final_submission
+       FROM test_batch_tests t
+       JOIN test_series s ON s.id=t.test_series_id
+       WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Draft','Scheduled','Active','Completed','Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'This Test Batch test is not available for mark entry'
+      });
+    }
+
+    const studentsResult = await pool.query(
+      `SELECT
+         s.roll_no,
+         s.name,
+         s.class,
+         s.test_series_id,
+         r.writing_date AS registered_writing_date,
+         r.slot_start AS registered_slot_start,
+         r.slot_end AS registered_slot_end,
+         r.status AS registration_status,
+         a.status AS attendance_status,
+         COALESCE(m.marks_obtained, '') AS marks_obtained,
+         COALESCE(m.comments, '') AS remarks,
+         m.updated_at AS marks_updated_at
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.test_code=$1
+        AND UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
+       LEFT JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=r.writing_date
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3
+         AND (
+           LOWER(TRIM(s.subjects))='both'
+           OR LOWER(TRIM(s.subjects))=LOWER(TRIM($2))
+         )
+       ORDER BY s.roll_no ASC`,
+      [code, test.subject_name, test.test_series_id]
+    );
+
+    res.json({ test, students: studentsResult.rows });
+  } catch (err) {
+    console.error('GET /test-batch/tests/:testCode/mark-entry error:', err);
+    res.status(500).json({ error: 'Failed to load Test Batch mark entry' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/edit', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const result = await pool.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       RETURNING test_code,marks_entry_status`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    res.json({
+      message: 'Marks unlocked for editing',
+      marks_entry_status: result.rows[0].marks_entry_status
+    });
+  } catch (err) {
+    console.error('POST /test-batch/tests/:testCode/marks/edit error:', err);
+    res.status(400).json({ error: err.message || 'Failed to unlock marks for editing' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'At least one mark record is required' });
+    }
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can receive marks'
+      });
+    }
+
+    if (test.manual_mark_entry_enabled === false) {
+      return res.status(400).json({
+        error: 'Manual mark entry is disabled for this Test Batch test. Use the configured bulk-upload workflow.'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized' && test.lock_marks_after_final_submission !== false) {
+      return res.status(400).json({
+        error: 'Marks for this test have already been finalized and are locked'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const rollNo = String(record.roll_no || '').trim().toUpperCase();
+      const rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
+      const remarks = String(record.remarks ?? record.comments ?? '').trim();
+
+      if (!/^IAT[0-9]{3,}$/.test(rollNo)) {
+        throw new Error('Invalid Test Batch roll number: ' + rollNo);
+      }
+
+      const eligible = await client.query(
+        `SELECT s.roll_no
+         FROM test_batch_students s
+         JOIN test_batch_registrations r
+           ON r.roll_no=s.roll_no
+          AND UPPER(TRIM(r.test_code))=UPPER(TRIM($2))
+          AND r.status='Registered'
+         JOIN test_batch_attendance a
+           ON a.roll_no=s.roll_no
+          AND a.attendance_date=r.writing_date
+          AND r.writing_date=$4::date
+          AND a.status='Present'
+         WHERE s.roll_no=$1
+           AND s.test_series_id=$3
+         LIMIT 1`,
+        [rollNo, code, test.test_series_id, writingDate]
+      );
+
+      if (eligible.rows.length === 0) {
+        throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
+      }
+
+      // Empty marks mean the student has not been marked yet.
+      // Preserve any previously saved mark and allow partial saves.
+      if (!rawMarks) continue;
+
+      const validation = validateTestBatchMarks(test.total_marks, rawMarks);
+      if (!validation.ok) {
+        throw new Error(rollNo + ': ' + validation.error);
+      }
+
+      await client.query(
+        `INSERT INTO test_batch_marks
+          (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT (roll_no,test_code,subject_name)
+         DO UPDATE SET
+           total_marks=EXCLUDED.total_marks,
+           marks_obtained=EXCLUDED.marks_obtained,
+           comments=EXCLUDED.comments,
+           updated_at=CURRENT_TIMESTAMP`,
+        [rollNo, code, test.subject_name, Number(test.total_marks), validation.obtained, remarks || null]
+      );
+    }
+
+    // Saving marks is a draft operation. Do not require every student on
+    // this writing date to have completed the test or entered marks.
+    // Finalization is handled by the separate /marks/finalize endpoint.
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Draft',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Marks saved for the selected writing date. You can save remaining students later.',
+      marks_entry_status: 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks error:', err);
+    res.status(400).json({ error: err.message || 'Failed to save Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/finalize', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const writingDate = String(req.body?.writing_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+
+    const testResult = await client.query(
+      `SELECT id,test_code,test_series_id,subject_name,writing_date,total_marks,status,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    const test = testResult.rows[0];
+
+    if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
+      return res.status(400).json({
+        error: 'Only posted Test Batch tests can be finalized'
+      });
+    }
+
+    if (test.marks_entry_status === 'Finalized') {
+      return res.json({ message: 'Marks are already finalized' });
+    }
+
+    const result = await client.query(
+      `SELECT
+         s.roll_no,
+         COALESCE(NULLIF(TRIM(m.marks_obtained), ''), NULL) AS marks_obtained
+       FROM test_batch_students s
+       JOIN test_batch_registrations r
+         ON r.roll_no=s.roll_no
+        AND UPPER(TRIM(r.test_code))=UPPER(TRIM($3))
+        AND r.status='Registered'
+        AND r.writing_date=$2::date
+       JOIN test_batch_attendance a
+         ON a.roll_no=s.roll_no
+        AND a.attendance_date=$2::date
+        AND a.status='Present'
+       LEFT JOIN test_batch_marks m
+         ON m.roll_no=s.roll_no
+        AND UPPER(TRIM(m.test_code))=UPPER(TRIM($3))
+        AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($4))
+       WHERE s.test_series_id=$1
+       ORDER BY s.roll_no ASC`,
+      [test.test_series_id, writingDate, code, test.subject_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        error: 'No Test Batch students marked Present for this writing date'
+      });
+    }
+
+    const missing = result.rows.filter(row => !row.marks_obtained);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        error: 'Enter marks for all students on the selected writing date before finalizing',
+        missing_roll_numbers: missing.map(row => row.roll_no)
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const remaining = await client.query(
+      `SELECT s.roll_no FROM test_batch_students s
+       JOIN test_batch_registrations r ON r.roll_no=s.roll_no AND UPPER(TRIM(r.test_code))=UPPER(TRIM($1)) AND r.status='Registered'
+       JOIN test_batch_attendance a ON a.roll_no=s.roll_no AND a.attendance_date=r.writing_date AND a.status='Present'
+       LEFT JOIN test_batch_marks m ON m.roll_no=s.roll_no AND UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) AND UPPER(TRIM(m.subject_name))=UPPER(TRIM($2))
+       WHERE s.test_series_id=$3 AND (m.marks_obtained IS NULL OR TRIM(m.marks_obtained)='')`,
+      [code, test.subject_name, test.test_series_id]
+    );
+    const allDatesComplete = remaining.rows.length === 0;
+    await client.query(
+      `UPDATE test_batch_tests SET marks_entry_status=$1::varchar,
+       marks_finalized_at=CASE WHEN $1::varchar='Finalized' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       marks_finalized_by=CASE WHEN $1::varchar='Finalized' THEN $2 ELSE NULL END,
+       updated_at=CURRENT_TIMESTAMP WHERE id=$3`,
+      [allDatesComplete ? 'Finalized' : 'Draft', req.testBatchAdminId, test.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: allDatesComplete ? 'All writing-date marks finalized successfully' : 'Selected writing date checked; other writing dates still need marks',
+      marks_entry_status: allDatesComplete ? 'Finalized' : 'Draft'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/tests/:testCode/marks/finalize error:', err);
+    res.status(400).json({ error: err.message || 'Failed to finalize Test Batch marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/tests/:testCode/marks/draft', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+
+    const testResult = await client.query(
+      `SELECT id,marks_entry_status
+       FROM test_batch_tests
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
+       LIMIT 1`,
+      [code]
+    );
+
+    if (testResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Test Batch test not found' });
+    }
+
+    if (testResult.rows[0].marks_entry_status === 'Finalized') {
+      return res.status(400).json({ error: 'Finalized marks cannot be reset' });
+    }
+
+    await client.query('BEGIN');
+
+    await client.query(
+      `DELETE FROM test_batch_marks
+       WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))`,
+      [code]
+    );
+
+    await client.query(
+      `UPDATE test_batch_tests
+       SET marks_entry_status='Pending',
+           marks_finalized_at=NULL,
+           marks_finalized_by=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=$1`,
+      [testResult.rows[0].id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ message: 'Test Batch draft marks reset successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/tests/:testCode/marks/draft error:', err);
+    res.status(500).json({ error: 'Failed to reset Test Batch draft marks' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
+    res.json({ series: result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/series error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch series' });
+  }
+});
+
+app.get('/test-batch/students/next-roll', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COALESCE(MAX(CAST(SUBSTRING(roll_no FROM 4) AS INTEGER)), 0) AS max_number FROM test_batch_students WHERE roll_no ~ $1',
+      ['^IAT[0-9]+$']
+    );
+    const nextNumber = Number(result.rows[0].max_number || 0) + 1;
+    res.json({ roll_no: 'IAT' + String(nextNumber).padStart(3, '0') });
+  } catch (err) {
+    console.error('GET /test-batch/students/next-roll error:', err);
+    res.status(500).json({ error: 'Failed to generate next Test Batch roll number' });
+  }
+});
+
+app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const { search, seriesId, class: className } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id = $' + values.length;
+    }
+
+    if (className) {
+      values.push(String(className).trim());
+      where += ' AND s.class = $' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
+      'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
+      where + ' ORDER BY s.roll_no ASC',
+      values
+    );
+
+    const classValues = [];
+    let classWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      classValues.push(Number(seriesId));
+      classWhere += ' AND s.test_series_id = $' + classValues.length;
+    }
+
+    if (search) {
+      classValues.push('%' + String(search).trim() + '%');
+      classWhere += ' AND (s.roll_no ILIKE $' + classValues.length + ' OR s.name ILIKE $' + classValues.length + ')';
+    }
+
+    const classResult = await pool.query(
+      'SELECT DISTINCT TRIM(s.class) AS class FROM test_batch_students s ' +
+      classWhere +
+      " AND s.class IS NOT NULL AND TRIM(s.class) <> '' " +
+      'ORDER BY TRIM(s.class) ASC',
+      classValues
+    );
+
+    res.json({
+      students: result.rows,
+      available_classes: classResult.rows
+        .map((row) => String(row.class).trim())
+        .filter(Boolean)
+    });
+  } catch (err) {
+    console.error('GET /test-batch/students error:', err);
+    res.status(500).json({ error: 'Failed to fetch Test Batch students' });
+  }
+});
+
+app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      enquiry_id, admission_token, roll_no,
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    const cleanRollNo = String(roll_no || '').trim().toUpperCase();
+    if (!cleanRollNo) return res.status(400).json({ error:'Roll number is required; enter it manually.' });
+    if (!/^IAT[0-9]{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Test Batch roll number must use the IAT format, for example IAT014.' });
+    if (!name || !className || !test_series_id || !subjects) {
+      return res.status(400).json({ error:'Roll number, student name, class, subjects and test series are required' });
+    }
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+
+    if (!await validateTestBatchSeries(test_series_id)) {
+      return res.status(400).json({ error:'Invalid Test Series' });
+    }
+
+    // Normalize optional email values so whitespace is stored as NULL, not an empty string.
+    const normalizedEmail = email == null ? null : (String(email).trim().toLowerCase() || null);
+
+    await client.query('BEGIN');
+
+    if (enquiry_id) {
+      const admissionLock = await client.query(
+        `SELECT id FROM enquiries
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         FOR UPDATE`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admissionLock.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'This admission session expired or is no longer active. Reopen the enquiry and try again.' });
+      }
+    }
+
+    const duplicateRoll = await client.query(
+      'SELECT 1 FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) LIMIT 1',
+      [cleanRollNo]
+    );
+    if (duplicateRoll.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error:'This Test Batch roll number already exists. Please enter a different roll number.' });
+    }
+
+    const rollNo = cleanRollNo;
+    const finalPassword = password && String(password).trim()
+      ? String(password).trim()
+      : rollNo;
+
+    const inserted = await client.query(
+      'INSERT INTO test_batch_students ' +
+      '(roll_no,name,class,board,mode_of_education,phone,email,school_name,subjects,password,must_reset_password,test_series_id,created_by,date_of_birth,academic_year_from,academic_year_to,parent_name,secondary_contact,reference) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING RETURNING roll_no',
+      [
+        rollNo,
+        String(name).trim(),
+        className ? String(className).trim() : null,
+        board ? String(board).trim() : null,
+        mode_of_education ? String(mode_of_education).trim() : null,
+        phone ? String(phone).trim() : null,
+        normalizedEmail,
+        school_name ? String(school_name).trim() : null,
+        validSubjects,
+        finalPassword,
+        Number(test_series_id),
+        req.testBatchAdminId,
+        date_of_birth || null,
+        academic_year_from || null,
+        academic_year_to || null,
+        parent_name || null,
+        secondary_contact || null,
+        reference || null
+      ]
+    );
+
+    if (!inserted.rows.length) {
+      const emailExists = normalizedEmail
+        ? await client.query(
+            'SELECT 1 FROM test_batch_students WHERE LOWER(TRIM(email))=LOWER(TRIM($1)) LIMIT 1',
+            [normalizedEmail]
+          )
+        : { rows: [] };
+      await client.query('ROLLBACK');
+      if (emailExists.rows.length) {
+        return res.status(409).json({ error:'Email already exists in Test Batch' });
+      }
+      return res.status(409).json({ error:'Could not allocate a unique Test Batch roll number. Please retry.' });
+    }
+
+    if (enquiry_id) {
+      const admitted = await client.query(
+        `UPDATE enquiries
+         SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
+         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         RETURNING id`,
+        [enquiry_id, String(admission_token || '')]
+      );
+      if (!admitted.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error:'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ message:'Test Batch student added successfully', roll_no:rollNo, admitted_enquiry_id:enquiry_id || null });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/students error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Duplicate Test Batch student data' });
+    if (err.code === '23503') return res.status(400).json({ error:'Invalid Test Series or administrator' });
+    res.status(500).json({ error:'Failed to add Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const oldRoll = String(req.params.roll_no).toUpperCase().trim();
+    const {
+      name, class: className, board, mode_of_education,
+      phone, email, school_name, password, test_series_id, subjects,
+      date_of_birth, academic_year_from, academic_year_to,
+      parent_name, secondary_contact, reference
+    } = req.body || {};
+
+    if (!name || !className || !test_series_id || !subjects) return res.status(400).json({ error:'Student name, class, subjects and test series are required' });
+    if (academic_year_from && !/^\d{4}$/.test(String(academic_year_from))) return res.status(400).json({ error:'Academic Year From must be a four-digit year.' });
+    if (academic_year_to && !/^\d{4}$/.test(String(academic_year_to))) return res.status(400).json({ error:'Academic Year To must be a four-digit year.' });
+    if (academic_year_from && academic_year_to && Number(academic_year_to) <= Number(academic_year_from)) return res.status(400).json({ error:'Academic Year To must be later than Academic Year From.' });
+    const validSubjects = validateTestBatchSubjects(subjects);
+    if (!validSubjects) return res.status(400).json({ error:'Select Mathematics, Physics or Both' });
+    if (!await validateTestBatchSeries(test_series_id)) return res.status(400).json({ error:'Invalid Test Series' });
+
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [oldRoll]
+    );
+
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const values = [
+      String(name).trim(),
+      className ? String(className).trim() : null,
+      board ? String(board).trim() : null,
+      mode_of_education ? String(mode_of_education).trim() : null,
+      phone ? String(phone).trim() : null,
+      email ? String(email).trim() : null,
+      school_name ? String(school_name).trim() : null,
+      validSubjects,
+      Number(test_series_id),
+      date_of_birth || null,
+      academic_year_from || null,
+      academic_year_to || null,
+      parent_name || null,
+      secondary_contact || null,
+      reference || null
+    ];
+
+    let query =
+      'UPDATE test_batch_students SET name=$1,class=$2,board=$3,mode_of_education=$4,' +
+      'phone=$5,email=$6,school_name=$7,subjects=$8,test_series_id=$9,date_of_birth=$10,' +
+      'academic_year_from=$11,academic_year_to=$12,parent_name=$13,secondary_contact=$14,reference=$15,' +
+      'updated_at=CURRENT_TIMESTAMP';
+
+    if (password && String(password).trim()) {
+      values.push(String(password).trim(), oldRoll);
+      query += ',password=$16,must_reset_password=TRUE WHERE UPPER(TRIM(roll_no))=$17 RETURNING roll_no';
+    } else {
+      values.push(oldRoll);
+      query += ' WHERE UPPER(TRIM(roll_no))=$16 RETURNING roll_no';
+    }
+
+    const result = await client.query(query, values);
+    await client.query('COMMIT');
+
+    res.json({ message:'Test Batch student updated successfully', roll_no:result.rows[0].roll_no });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /test-batch/students/:roll_no error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Email already exists in Test Batch' });
+    res.status(500).json({ error:'Failed to update Test Batch student', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/test-batch/students/:roll_no', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const roll = String(req.params.roll_no).toUpperCase().trim();
+    await client.query('BEGIN');
+    const found = await client.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1',
+      [roll]
+    );
+    if (found.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+    await client.query('DELETE FROM test_batch_students WHERE UPPER(TRIM(roll_no))=$1', [roll]);
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch student deleted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /test-batch/students/:roll_no error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch student' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { search, seriesId, testCode } = req.query;
+    const values = [];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+    if (testCode) {
+      values.push('%' + String(testCode).trim() + '%');
+      where += ' AND m.test_code ILIKE $' + values.length;
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.roll_no,s.name,ts.name AS test_series_name,m.test_code,m.subject_name,' +
+      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
+      ' ORDER BY m.created_at DESC,m.id DESC',
+      values
+    );
+
+    res.json({ marks:result.rows.map(marksComputedFields) });
+  } catch (err) {
+    console.error('GET /test-batch/marks error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch marks' });
+  }
+});
+
+app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { roll_no,test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    if (!roll_no || !test_code || !subject_name) return res.status(400).json({ error:'Student, test code and subject are required' });
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll_no]
+    );
+    if (student.rows.length === 0) return res.status(404).json({ error:'Test Batch student not found' });
+
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'INSERT INTO test_batch_marks(roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
+      'VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      [
+        String(roll_no).trim().toUpperCase(),
+        String(test_code).trim(),
+        String(subject_name).trim(),
+        Number(total_marks),
+        validation.obtained,
+        comments ? String(comments).trim() : null
+      ]
+    );
+
+    res.status(201).json({ message:'Test Batch mark added successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('POST /test-batch/marks error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to add Test Batch mark', details:err.message });
+  }
+});
+
+app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const { test_code,subject_name,total_marks,marks_obtained,comments } = req.body || {};
+    const validation = validateTestBatchMarks(total_marks, marks_obtained);
+    if (!validation.ok) return res.status(400).json({ error:validation.error });
+
+    const result = await pool.query(
+      'UPDATE test_batch_marks SET test_code=$1,subject_name=$2,total_marks=$3,marks_obtained=$4,' +
+      'comments=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$6 RETURNING *',
+      [String(test_code).trim(),String(subject_name).trim(),Number(total_marks),validation.obtained,comments ? String(comments).trim() : null,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark updated successfully', mark:marksComputedFields(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /test-batch/marks/:id error:', err);
+    if (err.code === '23505') return res.status(400).json({ error:'Mark already exists for this student, test and subject' });
+    res.status(500).json({ error:'Failed to update Test Batch mark' });
+  }
+});
+
+app.delete('/test-batch/marks/:id', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const result = await pool.query('DELETE FROM test_batch_marks WHERE id=$1 RETURNING id', [Number(req.params.id)]);
+    if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
+    res.json({ message:'Test Batch mark deleted successfully' });
+  } catch (err) {
+    console.error('DELETE /test-batch/marks/:id error:', err);
+    res.status(500).json({ error:'Failed to delete Test Batch mark' });
+  }
+});
+
+app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0,10);
+    const { search, seriesId } = req.query;
+    const values = [date];
+    let where = 'WHERE 1=1';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    // Test Batch attendance is date-eligible only.
+    // A student appears on the marking screen only when they have
+    // a registered test application for the selected writing date.
+    const result = await pool.query(
+      `SELECT
+          s.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          (
+            SELECT STRING_AGG(DISTINCT TRIM(tr.test_code), ', ' ORDER BY TRIM(tr.test_code))
+            FROM test_batch_registrations tr
+            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+              AND tr.writing_date = $1
+          ) AS test_codes,
+          a.id,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_students s
+        JOIN test_series ts
+          ON ts.id = s.test_series_id
+        LEFT JOIN test_batch_attendance a
+          ON a.roll_no = s.roll_no
+         AND a.attendance_date = $1
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(s.roll_no))
+            AND tr.writing_date = $1
+        )
+        ORDER BY s.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance' });
+  }
+});
+
+app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  const client = await pool.connect();
+  try {
+    const { records, attendanceDate } = req.body || {};
+    if (!attendanceDate || !Array.isArray(records) || records.length===0) {
+      return res.status(400).json({ error:'attendanceDate and records are required' });
+    }
+
+    await client.query('BEGIN');
+
+    for (const record of records) {
+      const roll = String(record.roll_no || '').trim().toUpperCase();
+      const status = String(record.status || '').trim();
+
+      if (!roll || !['Present','Absent'].includes(status)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error:'Each attendance record needs a valid roll number and status' });
+      }
+
+      const student = await client.query(
+        'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+        [roll]
+      );
+
+      if (student.rows.length===0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error:'Test Batch student not found: ' + roll });
+      }
+
+      // Enforce the same eligibility rule on the server so an API caller
+      // cannot create attendance for a Test Batch student who did not
+      // register for a test on the selected attendance date.
+      const registration = await client.query(
+        `SELECT 1
+         FROM test_batch_registrations tr
+         WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
+           AND tr.writing_date = $2
+         LIMIT 1`,
+        [roll, attendanceDate]
+      );
+
+      if (registration.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `No registered test application found for ${roll} on ${attendanceDate}`
+        });
+      }
+
+      await client.query(
+        'INSERT INTO test_batch_attendance(roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at) ' +
+        'VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,NULL,NULL) ' +
+        'ON CONFLICT(roll_no,attendance_date) DO NOTHING',
+        [roll,attendanceDate,status,req.testBatchAdminId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message:'Test Batch attendance saved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /test-batch/attendance error:', err);
+    res.status(500).json({ error:'Failed to save Test Batch attendance', details:err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
+  try {
+    const status = String(req.body?.status || '').trim();
+    if (!['Present','Absent'].includes(status)) {
+      return res.status(400).json({ error:'Invalid attendance status' });
+    }
+
+    const result = await pool.query(
+      `UPDATE test_batch_attendance a
+       SET status=$1,
+           edited_by=$2,
+           edited_at=CURRENT_TIMESTAMP
+       WHERE a.id=$3
+         AND EXISTS (
+           SELECT 1
+           FROM test_batch_registrations tr
+           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+             AND tr.writing_date = a.attendance_date
+         )
+       RETURNING a.*`,
+      [status,req.testBatchAdminId,Number(req.params.id)]
+    );
+
+    if (result.rows.length===0) {
+      return res.status(404).json({
+        error:'Eligible Test Batch attendance record not found'
+      });
+    }
+
+    res.json({ message:'Test Batch attendance updated successfully', attendance:result.rows[0] });
+  } catch (err) {
+    console.error('PUT /test-batch/attendance/:id error:', err);
+    res.status(500).json({ error:'Failed to update Test Batch attendance' });
+  }
+});
+
+app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const from = req.query.from || new Date().toISOString().slice(0,10);
+    const to = req.query.to || from;
+    const { search, seriesId } = req.query;
+    const values = [from,to];
+    let where = 'WHERE a.attendance_date BETWEEN $1 AND $2';
+
+    if (seriesId) {
+      values.push(Number(seriesId));
+      where += ' AND s.test_series_id=$' + values.length;
+    }
+
+    if (search) {
+      values.push('%' + String(search).trim() + '%');
+      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
+    }
+
+    const result = await pool.query(
+      `SELECT
+          a.id,
+          a.roll_no,
+          s.name,
+          ts.name AS test_series_name,
+          a.attendance_date,
+          a.status,
+          a.marked_by,
+          a.marked_at,
+          a.edited_by,
+          a.edited_at
+        FROM test_batch_attendance a
+        JOIN test_batch_students s
+          ON s.roll_no=a.roll_no
+        JOIN test_series ts
+          ON ts.id=s.test_series_id
+        ${where}
+        AND EXISTS (
+          SELECT 1
+          FROM test_batch_registrations tr
+          WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
+            AND tr.writing_date = a.attendance_date
+        )
+        ORDER BY a.attendance_date DESC,a.roll_no ASC`,
+      values
+    );
+
+    res.json({ attendance:result.rows });
+  } catch (err) {
+    console.error('GET /test-batch/attendance-report error:', err);
+    res.status(500).json({ error:'Failed to fetch Test Batch attendance report' });
+  }
+});
+
+app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (req,res) => {
+  try {
+    const { seriesId, from, to } = req.query;
+    const studentValues = [];
+    let studentWhere = 'WHERE 1=1';
+
+    if (seriesId) {
+      studentValues.push(Number(seriesId));
+      studentWhere += ' AND s.test_series_id=$' + studentValues.length;
+    }
+
+    const totalResult = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM test_batch_students s ' + studentWhere,
+      studentValues
+    );
+
+    const seriesCounts = await pool.query(
+      'SELECT ts.id,ts.name,COUNT(s.roll_no)::int AS count FROM test_series ts ' +
+      'LEFT JOIN test_batch_students s ON s.test_series_id=ts.id ' +
+      'GROUP BY ts.id,ts.name ORDER BY ts.id'
+    );
+
+    const recent = await pool.query(
+      'SELECT s.roll_no,s.name,s.created_at,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id ' + studentWhere +
+      ' ORDER BY s.created_at DESC LIMIT 10',
+      studentValues
+    );
+
+    const dateFrom = from || '1900-01-01';
+    const dateTo = to || '2999-12-31';
+
+    const attendance = await pool.query(
+      'SELECT COUNT(*) FILTER(WHERE a.status IN (\'Present\',\'Absent\'))::int AS total,' +
+      'COUNT(*) FILTER(WHERE a.status=\'Present\')::int AS present ' +
+      'FROM test_batch_attendance a JOIN test_batch_students s ON s.roll_no=a.roll_no ' +
+      'WHERE a.attendance_date BETWEEN $1 AND $2 ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date = a.attendance_date' +
+      ') ' +
+      (seriesId ? 'AND s.test_series_id=$3' : ''),
+      seriesId ? [dateFrom,dateTo,Number(seriesId)] : [dateFrom,dateTo]
+    );
+
+    const marks = await pool.query(
+      'SELECT COALESCE(SUM(CASE WHEN UPPER(TRIM(m.marks_obtained))=\'A\' THEN 0 ELSE CAST(m.marks_obtained AS NUMERIC) END),0) AS obtained,' +
+      'COALESCE(SUM(m.total_marks),0) AS total ' +
+      'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
+      'WHERE 1=1 ' + (seriesId ? 'AND s.test_series_id=$1' : ''),
+      seriesId ? [Number(seriesId)] : []
+    );
+
+    const attTotal=Number(attendance.rows[0].total||0);
+    const attPresent=Number(attendance.rows[0].present||0);
+    const markTotal=Number(marks.rows[0].total||0);
+    const markObtained=Number(marks.rows[0].obtained||0);
+
+    res.json({
+      totalStudents:Number(totalResult.rows[0].count||0),
+      attendancePercentage:attTotal?attPresent/attTotal*100:0,
+      marksPercentage:markTotal?markObtained/markTotal*100:0,
+      seriesCounts:seriesCounts.rows,
+      recentStudents:recent.rows
+    });
+  } catch(err) {
+    console.error('GET /test-batch/dashboard error:',err);
+    res.status(500).json({ error:'Failed to fetch Test Batch dashboard' });
+  }
+});
+
+app.get('/test-batch/student/:roll_no', async (req,res) => {
+  try {
+    const roll=String(req.params.roll_no).toUpperCase().trim();
+    if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
+
+    const studentResult=await pool.query(
+      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
+      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
+      's.test_series_id,ts.name AS test_series_name FROM test_batch_students s ' +
+      'JOIN test_series ts ON ts.id=s.test_series_id WHERE s.roll_no=$1',
+      [roll]
+    );
+
+    if(studentResult.rows.length===0) return res.status(404).json({error:'Test Batch student not found'});
+
+    const marksResult=await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE m.roll_no=$1 ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    const attendanceResult=await pool.query(
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at, ' +
+      'COALESCE((' +
+      '  SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.test_code FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS test_code, ' +
+      'COALESCE((' +
+      '  SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '  JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '  ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '),(' +
+      '  SELECT t.subject_name FROM test_batch_tests t ' +
+      '  WHERE t.writing_date=a.attendance_date ' +
+      '  ORDER BY t.test_code ASC LIMIT 1' +
+      ')) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const attendanceTotal=attendanceResult.rows.length;
+    const attendancePresent=attendanceResult.rows.filter(a=>a.status==='Present').length;
+
+    res.json({
+      student:studentResult.rows[0],
+      marks:marksResult.rows.map(marksComputedFields),
+      attendance:attendanceResult.rows,
+      attendancePercentage:attendanceTotal?attendancePresent/attendanceTotal*100:0
+    });
+  } catch(err) {
+    console.error('GET /test-batch/student/:roll_no error:',err);
+    res.status(500).json({error:'Failed to fetch Test Batch student dashboard'});
+  }
+});
+
+/* =========================================================
+   TEST BATCH MOBILE STUDENT MARKS / ATTENDANCE
+   These endpoints are read-only student endpoints used by
+   the Flutter Test Batch dashboard.
+========================================================= */
+app.get('/test-batch/marks/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'FROM test_batch_marks m ' +
+      'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
+      'WHERE UPPER(TRIM(m.roll_no))=UPPER(TRIM($1)) ' +
+      'ORDER BY m.created_at DESC,m.id DESC',
+      [roll]
+    );
+
+    return res.json(result.rows.map(marksComputedFields));
+  } catch (err) {
+    console.error('GET /test-batch/marks/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch marks' });
+  }
+});
+
+app.get('/test-batch/attendance/:rollNo', async (req,res) => {
+  try {
+    const roll = String(req.params.rollNo || '').toUpperCase().trim();
+    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+      return res.status(400).json({ error:'Invalid Test Batch roll number' });
+    }
+
+    const student = await pool.query(
+      'SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))',
+      [roll]
+    );
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error:'Test Batch student not found' });
+    }
+
+    const result = await pool.query(
+      'SELECT a.id, ' +
+      '       a.attendance_date, ' +
+      '       a.status, ' +
+      '       a.marked_by, a.marked_at, a.edited_by, a.edited_at, ' +
+      '       COALESCE((' +
+      '         SELECT tr.test_code FROM test_batch_registrations tr ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.test_code FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS test_code, ' +
+      '       COALESCE((' +
+      '         SELECT t.subject_name FROM test_batch_registrations tr ' +
+      '         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
+      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '           AND tr.writing_date=a.attendance_date ' +
+      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
+      '       ),(' +
+      '         SELECT t.subject_name FROM test_batch_tests t ' +
+      '         WHERE t.writing_date=a.attendance_date ' +
+      '         ORDER BY t.test_code ASC LIMIT 1' +
+      '       )) AS subject_name ' +
+      'FROM test_batch_attendance a ' +
+      'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
+      'AND EXISTS (' +
+      '  SELECT 1 FROM test_batch_registrations tr ' +
+      '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
+      '    AND tr.writing_date=a.attendance_date' +
+      ') ' +
+      'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
+      [roll]
+    );
+
+    const total = result.rows.length;
+    const present = result.rows.filter((row) => row.status === 'Present').length;
+
+    return res.json({
+      attendance: result.rows,
+      attendancePercentage: total ? (present / total) * 100 : 0
+    });
+  } catch (err) {
+    console.error('GET /test-batch/attendance/:rollNo error:',err);
+    return res.status(500).json({ error:'Failed to load Test Batch attendance' });
+  }
+});
+
+/* =========================================================
+   STUDENT DEVICE TOKEN ROUTES
+========================================================= */
+
+app.post('/device-token', async (req, res) => {
+  const { roll_no, token, platform = 'android' } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+  const devicePlatform = String(platform || 'android').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const student = await pool.query(
+      `SELECT roll_no FROM students WHERE UPPER(TRIM(roll_no)) = $1
+       UNION ALL
+       SELECT roll_no FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = $1
+       LIMIT 1`,
+      [rollNo]
+    );
+
+    if (student.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    await ensureStudentDeviceTokensTable();
+
+    await pool.query(
+      `INSERT INTO student_device_tokens
+        (student_id, device_token, platform, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (device_token)
+       DO UPDATE SET
+         student_id = EXCLUDED.student_id,
+         platform = EXCLUDED.platform,
+         updated_at = CURRENT_TIMESTAMP`,
+      [rollNo, deviceToken, devicePlatform]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('POST /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to register student notification device' });
+  }
+});
+
+app.delete('/device-token', async (req, res) => {
+  const { roll_no, token } = req.body || {};
+  const rollNo = String(roll_no || '').toUpperCase().trim();
+  const deviceToken = String(token || '').trim();
+
+  if (!rollNo || !deviceToken) {
+    return res.status(400).json({ error: 'roll_no and token are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM student_device_tokens WHERE UPPER(TRIM(student_id)) = $1 AND device_token = $2',
+      [rollNo, deviceToken]
+    );
+
+    return res.json({ success: true, removed: result.rowCount || 0 });
+  } catch (error) {
+    console.error('DELETE /device-token error:', error);
+    return res.status(500).json({ error: 'Failed to remove student notification device' });
+  }
+});
+
+
+/* =========================================================
+	SERVER START
+	========================================================= */
+const PORT = process.env.PORT || 5050;
+
+let testBatchPushWorker;
+
+async function ensureStudentDeviceTokensTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_device_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      student_id VARCHAR(100) NOT NULL,
+      device_token TEXT NOT NULL UNIQUE,
+      platform VARCHAR(20) NOT NULL DEFAULT 'android',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_student_device_tokens_student_id
+    ON student_device_tokens (UPPER(TRIM(student_id)))
+  `);
+}
+
+registerRecordEditRoutes(app, pool);
+registerTestBatchEditRequestRoutes(app, pool);
+
+async function startServer() {
+  // Keep public enquiry submissions compatible with databases created before
+  // the latest enquiry form fields were introduced.
+  await pool.query(`
+    ALTER TABLE public.enquiries
+      ADD COLUMN IF NOT EXISTS admission_token TEXT,
+      ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS batch VARCHAR(30) DEFAULT 'Regular Batch',
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS area VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS mode_of_education VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  await pool.query(`
+    ALTER TABLE public.test_batch_students
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+      ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
+      ADD COLUMN IF NOT EXISTS parent_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS secondary_contact VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  // Keep faculty notification archive endpoints compatible with existing databases.
+  // The archived_at column is required by the inbox, archive, restore and 30-day cleanup routes.
+  await pool.query(`
+    ALTER TABLE public.faculty_notifications
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_active
+      ON public.faculty_notifications (faculty_id, created_at DESC)
+      WHERE archived_at IS NULL
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_notifications_archived
+      ON public.faculty_notifications (faculty_id, archived_at DESC)
+      WHERE archived_at IS NOT NULL
+  `);
+
+  await ensureStudentDeviceTokensTable();
+
+  const facultyNotificationService = require('./faculty-notification-service');
+
+  testBatchPushWorker = createTestBatchPushWorker({
+    pool,
+    sendToStudent,
+    sendToFaculty: facultyNotificationService.sendToFaculty,
+    createFacultyNotification: facultyNotificationService.createFacultyNotification,
+  });
+  testBatchPushWorker.start();
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  if (testBatchPushWorker) testBatchPushWorker.stop();
+});
+ + values.length + '))';
     }
     if (subjectId && String(subjectId).trim()) {
       values.push(Number(subjectId));
