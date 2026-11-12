@@ -30,12 +30,11 @@ function normalizeTestBatchBoard(value) {
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
 
-	// Only the first 6 characters define board, class, subject and marks.
-	// Any suffix after those 6 characters is part of the unique test code
-	// and must not affect eligibility matching.
-	// Examples:
-	// S12P70FT1, S12P70V2T1, S12P70C4P1, S12P70C2F -> S12P70
-	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})/);
+	// Board, class, subject and marks are encoded before the test-code suffix.
+	// Two-digit marks remain unchanged; 106 and 140 are supported as three-digit values.
+	// Any suffix after the encoded marks must not affect eligibility matching.
+	// Examples: S12P70FT1 -> S12P70, S12M106C01 -> S12M106
+	const match = code.match(/^([SCI])(\d{2})([MP])(106|140|\d{2})(?!\d)/);
 
 	if (!match) return null;
 

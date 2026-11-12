@@ -70,7 +70,7 @@ function parseTestBatchCode(value) {
   // Test codes normally encode marks with two digits (for example S12P70).
   // Explicitly support the three-digit 140-mark category without consuming
   // numeric suffixes used by existing two-digit-mark test codes.
-  const match = code.match(/^([SCI])(\d{2})([MP])(140|\d{2})(?!\d)/);
+  const match = code.match(/^([SCI])(\d{2})([MP])(106|140|\d{2})(?!\d)/);
 
   if (!match) return null;
 
@@ -79,7 +79,7 @@ function parseTestBatchCode(value) {
 
   let duration = "";
   if ([35, 40, 50].includes(totalMarks)) duration = 90;
-  if ([70, 80, 90, 140].includes(totalMarks)) duration = 180;
+  if ([70, 80, 90, 106, 140].includes(totalMarks)) duration = 180;
 
   return {
     board:
