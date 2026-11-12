@@ -29,10 +29,10 @@ function normalizeTestBatchBoard(value) {
 
 function parseRegularTestCode(testCode) {
 	const raw = String(testCode || '').trim();
-	const attemptMatch = raw.match(/\\s+TEST\\s*(\\d+)$/i);
+	const attemptMatch = raw.match(/\s+TEST\s*(\d+)$/i);
 	const attempt = attemptMatch ? Number(attemptMatch[1]) : null;
 	const base = attemptMatch ? raw.slice(0, attemptMatch.index).trim() : raw;
-	const match = base.match(/^([SCI])(7|8|9|10|11|12)([A-Z]{1,3})(\\d{1,3})C(.+)$/i);
+	const match = base.match(/^([SCI])(7|8|9|10|11|12)([A-Z]{1,3})(\d{1,3})C(.+)$/i);
 	if (!match) return null;
 	const [, boardCode, classCode, subjectCodeRaw, marksCode, chapterRaw] = match;
 	const subjectCode = subjectCodeRaw.toUpperCase();
@@ -50,7 +50,7 @@ function parseRegularTestCode(testCode) {
 		totalMarks: Number(marksCode),
 		chapter,
 		attempt,
-		canonicalCode: raw.toUpperCase().replace(/\\s+/g, ' ')
+		canonicalCode: raw.toUpperCase().replace(/\s+/g, ' ')
 	};
 }
 
