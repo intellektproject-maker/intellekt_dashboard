@@ -50,7 +50,7 @@ function parseTestBatchCode(testCode) {
 		className: classCode,
 		subject: subjectCode === 'M' ? 'Mathematics' : 'Physics',
 		totalMarks: Number(marksCode),
-		baseCode: code.slice(0, 6)
+		baseCode: code.slice(0, match[0].length)
 	};
 }
 
