@@ -3257,9 +3257,12 @@ app.get('/regular-test-code/:testCode', async (req, res) => {
 		return res.status(400).json({ error: 'Invalid test code. Expected board + class + subject + total marks + C + chapter, e.g. S12M50C11.' });
 	}
 	try {
+		const subjectAliases = parsed.subjectCode === 'M'
+			? ['mathematics', 'maths', 'math']
+			: ['physics', 'phy'];
 		const subjectResult = await pool.query(
-			'SELECT subject_id, subject_name FROM subjects WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM($1)) LIMIT 1',
-			[parsed.subjectName]
+			'SELECT subject_id, subject_name FROM subjects WHERE LOWER(TRIM(subject_name)) = ANY($1::text[]) LIMIT 1',
+			[subjectAliases]
 		);
 		if (!subjectResult.rows.length) {
 			return res.status(400).json({ error: 'Subject abbreviation ' + parsed.subjectCode + ' is not configured in the subjects table.' });
