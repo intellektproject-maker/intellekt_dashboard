@@ -1709,7 +1709,7 @@ app.post('/marks', async (req, res) => {
       if (!Number.isFinite(totalMarks) || totalMarks <= 0) throw Object.assign(new Error('A valid total_marks value is required'), { statusCode: 400 });
 
       const studentResult = await client.query(
-        `SELECT roll_no, name, class, board FROM students
+        `SELECT roll_no, name, class, board, batch FROM students
          WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1`,
         [rollNo]
       );
@@ -1725,6 +1725,9 @@ app.post('/marks', async (req, res) => {
       const student = studentResult.rows[0];
       const parsedTest = parseRegularTestCode(testCode);
       if (parsedTest) {
+        if (student.batch && String(student.batch).trim().toLowerCase() !== 'regular batch') {
+          throw Object.assign(new Error('Only Regular Batch students can receive these marks.'), { statusCode: 400 });
+        }
         if (String(student.class).trim() !== parsedTest.className ||
             normalizeTestBatchBoard(student.board) !== normalizeTestBatchBoard(parsedTest.board)) {
           throw Object.assign(new Error('Student ' + rollNo + ' does not match the class and board in test code ' + testCode), { statusCode: 400 });
