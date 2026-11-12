@@ -57,12 +57,10 @@ function parseRegularTestCode(testCode) {
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
 
-	// Only the first 6 characters define board, class, subject and marks.
-	// Any suffix after those 6 characters is part of the unique test code
-	// and must not affect eligibility matching.
-	// Examples:
-	// S12P70FT1, S12P70V2T1, S12P70C4P1, S12P70C2F -> S12P70
-	const match = code.match(/^([SCI])(\d{2})([MP])(\d{2})/);
+	// The code prefix contains board, class, subject and a two- or
+	// three-digit maximum mark. The remaining suffix identifies the test.
+	// Examples: S12P70C01 -> S12P70, S12M106C01 -> S12M106.
+	const match = code.match(/^([SCI])(\d{2})([MP])(\d{3}|\d{2})(?!\d)/);
 
 	if (!match) return null;
 
@@ -78,7 +76,7 @@ function parseTestBatchCode(testCode) {
 		className: classCode,
 		subject: subjectCode === 'M' ? 'Mathematics' : 'Physics',
 		totalMarks: Number(marksCode),
-		baseCode: code.slice(0, 6)
+		baseCode: match[0]
 	};
 }
 
