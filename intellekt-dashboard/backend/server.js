@@ -27,6 +27,33 @@ function normalizeTestBatchBoard(value) {
 	return board;
 }
 
+function parseRegularTestCode(testCode) {
+	const raw = String(testCode || '').trim();
+	const attemptMatch = raw.match(/\\s+TEST\\s*(\\d+)$/i);
+	const attempt = attemptMatch ? Number(attemptMatch[1]) : null;
+	const base = attemptMatch ? raw.slice(0, attemptMatch.index).trim() : raw;
+	const match = base.match(/^([SCI])(7|8|9|10|11|12)([A-Z]{1,3})(\\d{1,3})C(.+)$/i);
+	if (!match) return null;
+	const [, boardCode, classCode, subjectCodeRaw, marksCode, chapterRaw] = match;
+	const subjectCode = subjectCodeRaw.toUpperCase();
+	const subjectMap = { M: 'Mathematics', P: 'Physics' };
+	const subjectName = subjectMap[subjectCode];
+	if (!subjectName) return null;
+	const chapter = String(chapterRaw || '').trim();
+	if (!chapter) return null;
+	return {
+		boardCode: boardCode.toUpperCase(),
+		board: boardCode.toUpperCase() === 'S' ? 'State Board' : boardCode.toUpperCase() === 'C' ? 'CBSE' : 'ISC',
+		className: classCode,
+		subjectCode,
+		subjectName,
+		totalMarks: Number(marksCode),
+		chapter,
+		attempt,
+		canonicalCode: raw.toUpperCase().replace(/\\s+/g, ' ')
+	};
+}
+
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
 
@@ -3216,8 +3243,41 @@ app.get('/students-by-class/:class', async (req, res) => {
 		res.status(500).json({ error: 'Database error' });
 	}
 });
+app.get('/regular-test-code/:testCode', async (req, res) => {
+	const parsed = parseRegularTestCode(req.params.testCode);
+	if (!parsed) {
+		return res.status(400).json({ error: 'Invalid test code. Expected board + class + subject + total marks + C + chapter, e.g. S12M50C11.' });
+	}
+	try {
+		const subjectResult = await pool.query(
+			'SELECT subject_id, subject_name FROM subjects WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM($1)) LIMIT 1',
+			[parsed.subjectName]
+		);
+		if (!subjectResult.rows.length) {
+			return res.status(400).json({ error: 'Subject abbreviation ' + parsed.subjectCode + ' is not configured in the subjects table.' });
+		}
+		const subject = subjectResult.rows[0];
+		const duplicateResult = await pool.query(
+			`SELECT EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_marks,
+				 EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_posted_test`,
+			[parsed.canonicalCode]
+		);
+		return res.json({
+			...parsed,
+			subjectId: subject.subject_id,
+			subjectName: subject.subject_name,
+			duplicate: duplicateResult.rows[0].has_marks || duplicateResult.rows[0].has_posted_test,
+			hasMarks: duplicateResult.rows[0].has_marks,
+			hasPostedTest: duplicateResult.rows[0].has_posted_test
+		});
+	} catch (err) {
+		console.error('GET /regular-test-code/:testCode error:', err);
+		return res.status(500).json({ error: 'Failed to validate regular test code', details: err.message });
+	}
+});
+
 app.get('/enter-marks-students', async (req, res) => {
-  const { className, board, testCode } = req.query || {};
+  const { className, board, testCode, subjectId } = req.query || {};
   if (!className || !board) {
     return res.status(400).json({ error: 'className and board are required' });
   }
@@ -3225,9 +3285,18 @@ app.get('/enter-marks-students', async (req, res) => {
   try {
     const values = [String(className).trim(), String(board).trim()];
     let codeFilter = '';
+    let subjectFilter = '';
     if (testCode && String(testCode).trim()) {
       values.push(String(testCode).trim().toUpperCase());
-      codeFilter = `AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($3))`;
+      codeFilter = `AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(${values.length}))`;
+    }
+    if (subjectId && String(subjectId).trim()) {
+      values.push(Number(subjectId));
+      subjectFilter = `AND EXISTS (
+        SELECT 1 FROM student_subjects ss
+        WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+          AND ss.subject_id = ${values.length}
+      )`;
     }
 
     const result = await pool.query(
@@ -3237,6 +3306,7 @@ app.get('/enter-marks-students', async (req, res) => {
        WHERE TRIM(s.class) = TRIM($1)
          AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
          AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+         ${subjectFilter}
        ORDER BY s.roll_no ASC`,
       values
     );
