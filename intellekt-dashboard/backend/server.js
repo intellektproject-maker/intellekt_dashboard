@@ -1723,6 +1723,34 @@ app.post('/marks', async (req, res) => {
       }
 
       const student = studentResult.rows[0];
+      const parsedTest = parseRegularTestCode(testCode);
+      if (parsedTest) {
+        if (String(student.class).trim() !== parsedTest.className ||
+            normalizeTestBatchBoard(student.board) !== normalizeTestBatchBoard(parsedTest.board)) {
+          throw Object.assign(new Error('Student ' + rollNo + ' does not match the class and board in test code ' + testCode), { statusCode: 400 });
+        }
+        if (totalMarks !== parsedTest.totalMarks) {
+          throw Object.assign(new Error('Total marks must match the test code (' + parsedTest.totalMarks + ').'), { statusCode: 400 });
+        }
+        const aliases = parsedTest.subjectCode === 'M'
+          ? ['mathematics', 'maths', 'math']
+          : ['physics', 'phy'];
+        const subjectResult = await client.query(
+          'SELECT subject_id FROM subjects WHERE LOWER(TRIM(subject_name)) = ANY($1::text[]) LIMIT 1',
+          [aliases]
+        );
+        if (!subjectResult.rows.length) {
+          throw Object.assign(new Error('Subject is not configured.'), { statusCode: 400 });
+        }
+        const enrollment = await client.query(
+          `SELECT 1 FROM student_subjects
+           WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND subject_id = $2 LIMIT 1`,
+          [student.roll_no, subjectResult.rows[0].subject_id]
+        );
+        if (!enrollment.rows.length) {
+          throw Object.assign(new Error('Student ' + rollNo + ' is not enrolled in ' + parsedTest.subjectName + '.'), { statusCode: 400 });
+        }
+      }
       await client.query(
         `INSERT INTO marks (roll_no, student_name, test_code, marks_obtained, comments, total_marks)
          VALUES ($1, $2, $3, $4, $5, $6)
