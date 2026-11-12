@@ -67,10 +67,9 @@ function normalizeStudent(row) {
 function parseTestBatchCode(value) {
   const code = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
-  // Test codes normally encode marks with two digits (for example S12P70).
-  // Explicitly support the three-digit 140-mark category without consuming
-  // numeric suffixes used by existing two-digit-mark test codes.
-  const match = code.match(/^([SCI])(\d{2})([MP])(140|\d{2})(?!\d)/);
+  // Support both two- and three-digit maximum marks without consuming
+  // numeric suffixes used by the test-code chapter/attempt identifier.
+  const match = code.match(/^([SCI])(\d{2})([MP])(\d{3}|\d{2})(?!\d)/);
 
   if (!match) return null;
 
