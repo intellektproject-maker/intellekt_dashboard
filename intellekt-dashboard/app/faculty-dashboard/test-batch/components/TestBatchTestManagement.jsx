@@ -78,7 +78,7 @@ function parseTestBatchCode(value) {
 
   let duration = "";
   if ([35, 40, 50].includes(totalMarks)) duration = 90;
-  if ([70, 80, 90, 140].includes(totalMarks)) duration = 180;
+  if ([70, 80, 90, 106, 140].includes(totalMarks)) duration = 180;
 
   return {
     board:
