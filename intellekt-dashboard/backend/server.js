@@ -3317,26 +3317,19 @@ app.get('/regular-test-code/:testCode', async (req, res) => {
 
 app.get('/enter-marks-students', async (req, res) => {
   const { className, board, testCode, subjectId } = req.query || {};
-  if (!className || !board) {
-    return res.status(400).json({ error: 'className and board are required' });
-  }
-
+  if (!className || !board) return res.status(400).json({ error: 'className and board are required' });
   try {
     const values = [String(className).trim(), String(board).trim()];
     let codeFilter = '';
     let subjectFilter = '';
     if (testCode && String(testCode).trim()) {
       values.push(String(testCode).trim().toUpperCase());
-      codeFilter = 'AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(
+      codeFilter = 'AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($' + values.length + '))';
     }
     if (subjectId && String(subjectId).trim()) {
       values.push(Number(subjectId));
-      subjectFilter = 'AND EXISTS (
-        SELECT 1 FROM student_subjects ss
-        WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
-          AND ss.subject_id = 
+      subjectFilter = 'AND EXISTS (SELECT 1 FROM student_subjects ss WHERE UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no)) AND ss.subject_id = $' + values.length + ')';
     }
-
     const result = await pool.query(
       `SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
        FROM students s
