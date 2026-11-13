@@ -224,6 +224,43 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     }
   });
 
+
+  app.post('/test-batch/record-edit-requests/bulk-attendance', async (req, res) => {
+    const facultyId = cleanId(req.body?.facultyId);
+    const attendanceDate = String(req.body?.attendance_date || '').trim();
+    const rolls = [...new Set((Array.isArray(req.body?.roll_nos) ? req.body.roll_nos : [])
+      .map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))];
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(attendanceDate) || !rolls.length)
+      return res.status(400).json({ error: 'Attendance date and student roll numbers are required.' });
+    try {
+      await ensureSchema();
+      const faculty = await validFaculty(facultyId);
+      if (!faculty) return res.status(403).json({ error: 'Faculty account was not found.' });
+      const rows = await pool.query(
+        "SELECT a.roll_no,a.status,s.name FROM test_batch_attendance a JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(a.roll_no)) WHERE a.attendance_date=$1 AND UPPER(TRIM(a.roll_no))=ANY($2::text[]) ORDER BY a.roll_no",
+        [attendanceDate, rolls]
+      );
+      if (!rows.rows.length) return res.status(404).json({ error: 'No saved attendance found for the selected students.' });
+      const snapshot = rows.rows.map(row => ({roll_no:row.roll_no,status:row.status}));
+      const existing = await pool.query(
+        "SELECT id FROM test_batch_record_edit_requests WHERE record_type='attendance' AND roll_no='*' AND attendance_date=$1 AND status IN ('Pending','Approved') LIMIT 1",
+        [attendanceDate]
+      );
+      if (existing.rows.length) return res.status(409).json({ error: 'An overall attendance edit request for this date is already pending or approved.' });
+      const inserted = await pool.query(
+        "INSERT INTO test_batch_record_edit_requests (record_type,roll_no,student_name,attendance_date,original_value,requested_value,requested_by,requested_by_name) VALUES ('attendance','*',$1,$2,$3,'BULK_EDIT',$4,$5) RETURNING *",
+        [rows.rows.length + ' registered students', attendanceDate, JSON.stringify(snapshot), facultyId, faculty.name]
+      );
+      await pool.query("INSERT INTO faculty_notifications (faculty_id,module_name,message) VALUES ('IG001','record-edit-request',$1),('IG002','record-edit-request',$1)",
+        [faculty.name + ' requested overall Test Batch attendance edit for ' + attendanceDate + ' (' + rows.rows.length + ' students).']);
+      return res.status(201).json({message:'Overall attendance edit request sent to the admins.',request:inserted.rows[0]});
+    } catch (error) {
+      console.error('POST overall Test Batch attendance edit request error:', error);
+      return res.status(500).json({error:'Could not submit overall Test Batch attendance edit request.'});
+    }
+  });
+
   app.get('/test-batch/record-edit-requests/mine', async (req, res) => {
     const facultyId = cleanId(req.query.facultyId);
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
@@ -340,6 +377,39 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         await client.query("UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
         await client.query('COMMIT');
         return res.json({ message: 'Approved Test Batch schedule edit applied successfully.', test: updated.rows[0] });
+      }
+
+      if (request.record_type === 'attendance' && request.roll_no === '*') {
+        const records = Array.isArray(req.body?.records) ? req.body.records : [];
+        let snapshot;
+        try { snapshot = JSON.parse(request.original_value); } catch { snapshot = null; }
+        if (!Array.isArray(snapshot) || !records.length) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({error:'A valid set of attendance updates is required.'});
+        }
+        const before = new Map(snapshot.map(row => [String(row.roll_no).trim().toUpperCase(), String(row.status)]));
+        const seen = new Set();
+        for (const row of records) {
+          const roll = String(row.roll_no || '').trim().toUpperCase();
+          const next = String(row.status || '').trim();
+          if (!before.has(roll) || seen.has(roll) || !['Present','Absent'].includes(next)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({error:'Invalid or duplicate attendance update.'});
+          }
+          seen.add(roll);
+          const current = await client.query("SELECT status FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=$1 AND attendance_date=$2 FOR UPDATE", [roll, request.attendance_date]);
+          if (!current.rows.length || String(current.rows[0].status) !== before.get(roll)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({error:'Attendance for ' + roll + ' changed after approval. Submit a new request.'});
+          }
+        }
+        for (const row of records) {
+          await client.query("UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$3 AND attendance_date=$4",
+            [row.status, facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date]);
+        }
+        await client.query("UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
+        await client.query('COMMIT');
+        return res.json({message:'Overall approved Test Batch attendance edit applied successfully.',updated:records.length});
       }
       if (request.record_type === 'marks' && request.roll_no === '*') {
         const records = Array.isArray(req.body?.records) ? req.body.records : [];
