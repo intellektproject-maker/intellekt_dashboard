@@ -6953,7 +6953,7 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
     const code = String(req.params.testCode || '').trim().toUpperCase();
     const records = Array.isArray(req.body?.records) ? req.body.records : [];
     const writingDate = String(req.body?.writing_date || '').trim();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(writingDate)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) {
       return res.status(400).json({ error: 'A valid writing_date is required' });
     }
 
@@ -7817,13 +7817,15 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
 });
 
 app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => {
+  const client = await pool.connect();
   try {
     const status = String(req.body?.status || '').trim();
     if (!['Present','Absent'].includes(status)) {
       return res.status(400).json({ error:'Invalid attendance status' });
     }
 
-    const result = await pool.query(
+    await client.query('BEGIN');
+    const result = await client.query(
       `UPDATE test_batch_attendance a
        SET status=$1,
            edited_by=$2,
@@ -7834,21 +7836,57 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
            FROM test_batch_registrations tr
            WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
              AND tr.writing_date = a.attendance_date
+             AND tr.status='Registered'
          )
        RETURNING a.*`,
       [status,req.testBatchAdminId,Number(req.params.id)]
     );
 
     if (result.rows.length===0) {
-      return res.status(404).json({
-        error:'Eligible Test Batch attendance record not found'
-      });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error:'Eligible Test Batch attendance record not found' });
     }
 
-    res.json({ message:'Test Batch attendance updated successfully', attendance:result.rows[0] });
+    const attendance = result.rows[0];
+    if (status === 'Absent') {
+      const registeredTests = await client.query(
+        `SELECT DISTINCT t.test_code,t.subject_name,t.total_marks
+         FROM test_batch_registrations r
+         JOIN test_batch_tests t
+           ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+         WHERE UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+           AND r.writing_date=$2::date
+           AND r.status='Registered'`,
+        [attendance.roll_no,attendance.attendance_date]
+      );
+
+      for (const test of registeredTests.rows) {
+        await client.query(
+          `INSERT INTO test_batch_marks
+            (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+           VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+           ON CONFLICT(roll_no,test_code,subject_name) DO UPDATE SET
+             total_marks=EXCLUDED.total_marks,
+             marks_obtained='A',
+             updated_at=CURRENT_TIMESTAMP`,
+          [attendance.roll_no,test.test_code,test.subject_name,Number(test.total_marks)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: status === 'Absent'
+        ? 'Test Batch attendance updated and marks automatically recorded as A'
+        : 'Test Batch attendance updated successfully',
+      attendance
+    });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('PUT /test-batch/attendance/:id error:', err);
-    res.status(500).json({ error:'Failed to update Test Batch attendance' });
+    res.status(err.code ? 500 : 400).json({ error:err.message || 'Failed to update Test Batch attendance' });
+  } finally {
+    client.release();
   }
 });
 
