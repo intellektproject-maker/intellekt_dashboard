@@ -3588,6 +3588,7 @@ app.post('/students', async (req, res) => {
 			password,
 			date_of_birth,
 			batch,
+			test_writing_day,
 			academic_year_from,
 			academic_year_to,
 			parent_name,
@@ -8375,6 +8376,10 @@ async function startServer() {
       ADD COLUMN IF NOT EXISTS area VARCHAR(150),
       ADD COLUMN IF NOT EXISTS mode_of_education VARCHAR(50),
       ADD COLUMN IF NOT EXISTS reference VARCHAR(150)
+  `);
+  await pool.query(`
+    ALTER TABLE public.students
+      ADD COLUMN IF NOT EXISTS test_writing_day VARCHAR(10)
   `);
   await pool.query(`
     ALTER TABLE public.test_batch_students
