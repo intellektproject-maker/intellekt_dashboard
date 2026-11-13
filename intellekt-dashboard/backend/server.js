@@ -27,6 +27,31 @@ function normalizeTestBatchBoard(value) {
 	return board;
 }
 
+function parseRegularTestCode(testCode) {
+	const raw = String(testCode || '').trim();
+	const attemptMatch = raw.match(/\s+TEST\s*(\d+)$/i);
+	const attempt = attemptMatch ? Number(attemptMatch[1]) : null;
+	const base = attemptMatch ? raw.slice(0, attemptMatch.index).trim() : raw;
+	const match = base.match(/^([SCI])(7|8|9|10|11|12)(M|P)(\d{1,3})C(.+)$/i);
+	if (!match) return null;
+	const [, boardCode, classCode, subjectCodeRaw, marksCode, chapterRaw] = match;
+	const subjectCode = subjectCodeRaw.toUpperCase();
+	const subjectName = subjectCode === 'M' ? 'Mathematics' : 'Physics';
+	const chapter = String(chapterRaw || '').trim();
+	if (!chapter || Number(marksCode) <= 0) return null;
+	return {
+		boardCode: boardCode.toUpperCase(),
+		board: boardCode.toUpperCase() === 'S' ? 'State Board' : boardCode.toUpperCase() === 'C' ? 'CBSE' : 'ISC',
+		className: classCode,
+		subjectCode,
+		subjectName,
+		totalMarks: Number(marksCode),
+		chapter,
+		attempt,
+		canonicalCode: raw.toUpperCase().replace(/\s+/g, ' ')
+	};
+}
+
 function parseTestBatchCode(testCode) {
 	const code = String(testCode || '').trim().toUpperCase().replace(/\s+/g, '');
 
@@ -1667,144 +1692,109 @@ app.get('/faculty/:id', async (req, res) => {
 	MARKS SAVE / MANAGE / UPDATE
 	========================================================= */
 app.post('/marks', async (req, res) => {
-	const { records } = req.body;
-
-	if (!records || !Array.isArray(records) || records.length === 0) {
+	const { records } = req.body || {};
+	if (!Array.isArray(records) || records.length === 0) {
 		return res.status(400).json({ error: 'records are required' });
 	}
-
 	const client = await pool.connect();
 	try {
 		await client.query('BEGIN');
 		const queuedGroups = new Map();
 		for (const record of records) {
-			if (record.marks === undefined || record.marks === null || record.marks === '') {
-				continue;
-			}
-
-			const testResult = await client.query(
-				`
-				SELECT test_code, subject_id, total_marks
-				FROM tests
-				WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
-				`,
-				[record.test_code]
-			);
-
-			if (testResult.rows.length === 0) {
-				return res.status(400).json({
-					error: `Invalid test code: ${record.test_code}`
-				});
-			}
-
-			const test = testResult.rows[0];
-
-			const studentResult = await client.query(
-				`
-				SELECT s.roll_no, s.name, s.class, s.board
-				FROM students s
-				JOIN student_subjects ss
-					ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
-				WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
-				AND ss.subject_id = $2
-				`,
-				[record.roll_no, test.subject_id]
-			);
-
-			if (studentResult.rows.length === 0) {
-				return res.status(400).json({
-					error: `${record.roll_no} is not eligible for this test subject`
-				});
-			}
-
+			if (record.marks === undefined || record.marks === null || record.marks === '') continue;
+			const rollNo = String(record.roll_no || '').trim();
+			const testCode = String(record.test_code || '').trim().toUpperCase();
 			const cleanMarks = String(record.marks).trim().toUpperCase();
-			const totalMarks = Number(test.total_marks);
-
-			if (cleanMarks !== 'A') {
-				const obtainedMarks = Number(cleanMarks);
-
-				if (!Number.isInteger(obtainedMarks) || obtainedMarks < 0) {
-					return res.status(400).json({
-						error: `Invalid marks for ${record.roll_no}`
-					});
+			if (!rollNo || !testCode) throw Object.assign(new Error('roll_no and test_code are required'), { statusCode: 400 });
+			const parsed = parseRegularTestCode(testCode);
+			let subjectId = null;
+			let totalMarks = Number(record.total_marks);
+			let canonicalCode = testCode;
+			const studentResult = await client.query(
+				'SELECT roll_no, name, class, board, batch FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+				[rollNo]
+			);
+			if (!studentResult.rows.length) throw Object.assign(new Error('Student not found: ' + rollNo), { statusCode: 400 });
+			const student = studentResult.rows[0];
+			if (parsed) {
+				if (student.batch && String(student.batch).trim().toLowerCase() !== 'regular batch') {
+					throw Object.assign(new Error('Manual test-code marks are only for Regular Batch students.'), { statusCode: 400 });
 				}
-
-				if (obtainedMarks > totalMarks) {
-					return res.status(400).json({
-						error: `Marks for ${record.roll_no} cannot be greater than total marks (${totalMarks})`
-					});
+				if (String(student.class).trim() !== parsed.className ||
+					normalizeTestBatchBoard(student.board) !== normalizeTestBatchBoard(parsed.board)) {
+					throw Object.assign(new Error('Student ' + rollNo + ' does not match the class and board in test code ' + testCode), { statusCode: 400 });
+				}
+				if (totalMarks !== parsed.totalMarks) {
+					throw Object.assign(new Error('Total marks must match the test code (' + parsed.totalMarks + ').'), { statusCode: 400 });
+				}
+				const aliases = parsed.subjectCode === 'M' ? ['mathematics', 'maths', 'math'] : ['physics', 'phy'];
+				const subjectResult = await client.query(
+					'SELECT subject_id FROM subjects WHERE LOWER(TRIM(subject_name)) = ANY($1::text[]) LIMIT 1',
+					[aliases]
+				);
+				if (!subjectResult.rows.length) throw Object.assign(new Error('Subject is not configured.'), { statusCode: 400 });
+				subjectId = subjectResult.rows[0].subject_id;
+				const enrollment = await client.query(
+					'SELECT 1 FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND subject_id = $2 LIMIT 1',
+					[student.roll_no, subjectId]
+				);
+				if (!enrollment.rows.length) throw Object.assign(new Error('Student ' + rollNo + ' is not enrolled in ' + parsed.subjectName + '.'), { statusCode: 400 });
+				canonicalCode = parsed.canonicalCode;
+			} else {
+				const testResult = await client.query(
+					'SELECT test_code, subject_id, total_marks FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))',
+					[testCode]
+				);
+				if (!testResult.rows.length) throw Object.assign(new Error('Invalid test code: ' + testCode), { statusCode: 400 });
+				subjectId = testResult.rows[0].subject_id;
+				totalMarks = Number(testResult.rows[0].total_marks);
+				const eligible = await client.query(
+					'SELECT 1 FROM student_subjects WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND subject_id = $2 LIMIT 1',
+					[student.roll_no, subjectId]
+				);
+				if (!eligible.rows.length) throw Object.assign(new Error(rollNo + ' is not eligible for this test subject'), { statusCode: 400 });
+			}
+			if (cleanMarks !== 'A') {
+				const obtained = Number(cleanMarks);
+				if (!Number.isInteger(obtained) || obtained < 0 || obtained > totalMarks) {
+					throw Object.assign(new Error('Marks for ' + rollNo + ' must be between 0 and ' + totalMarks + ', or A for absent'), { statusCode: 400 });
 				}
 			}
-
-					await client.query(
-				`
-				INSERT INTO marks (
-					roll_no,
-					student_name,
-					test_code,
-					marks_obtained,
-					comments,
-					total_marks
-				)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (roll_no, test_code) DO NOTHING
-				`,
-				[
-					studentResult.rows[0].roll_no,
-					studentResult.rows[0].name,
-					String(test.test_code).toUpperCase().trim(),
-					cleanMarks,
-					cleanMarks === 'A' ? 'Absent' : record.comments || null,
-					totalMarks
-				]
-			);
-
 			await client.query(
-				`
-				DELETE FROM student_notifications
-				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
-				  AND module_name = 'marks'
-				`,
-				[studentResult.rows[0].roll_no]
+				`INSERT INTO marks (roll_no, student_name, test_code, marks_obtained, comments, total_marks)
+				 VALUES ($1, $2, $3, $4, $5, $6)
+				 ON CONFLICT (roll_no, test_code) DO NOTHING`,
+				[student.roll_no, student.name, canonicalCode, cleanMarks, cleanMarks === 'A' ? 'Absent' : (record.comments || null), totalMarks]
 			);
-
 			await client.query(
-				`
-				INSERT INTO student_notifications
-				(roll_no, module_name, message, is_read)
-				VALUES ($1, 'marks', 'New marks have been uploaded', FALSE)
-				`,
-				[studentResult.rows[0].roll_no]
+				"DELETE FROM student_notifications WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND module_name = 'marks'",
+				[student.roll_no]
 			);
-
-			const student = studentResult.rows[0];
-			const eventKey = makeEventKey('marks', test.test_code, student.class, student.board);
+			await client.query(
+				"INSERT INTO student_notifications (roll_no, module_name, message, is_read) VALUES ($1, 'marks', 'New marks have been uploaded', FALSE)",
+				[student.roll_no]
+			);
+			const eventKey = makeEventKey('marks', canonicalCode, student.class, student.board);
 			queuedGroups.set(eventKey, {
-				eventKey,
-				moduleName: 'marks',
-				className: student.class,
-				board: student.board,
-				subjectId: Number(test.subject_id),
-				title: 'Marks posted',
-				message: `Marks for ${String(test.test_code).trim().toUpperCase()} have been posted`,
-				payload: { test_code: String(test.test_code).trim().toUpperCase() }
+				eventKey, moduleName: 'marks', className: student.class, board: student.board,
+				subjectId: subjectId ? Number(subjectId) : null, title: 'Marks posted',
+				message: 'Marks for ' + canonicalCode + ' have been posted',
+				payload: { test_code: canonicalCode, total_marks: totalMarks }
 			});
 		}
-
 		let notificationQueued = false;
 		for (const event of queuedGroups.values()) {
 			const queued = await queueNotificationEvent(client, event);
 			notificationQueued = notificationQueued || queued.queued;
 		}
-
 		await client.query('COMMIT');
-		res.json({ message: 'Marks saved successfully', notificationQueued });
+		return res.json({ message: 'Marks saved successfully', notificationQueued });
 	} catch (err) {
 		await client.query('ROLLBACK');
 		console.error('POST /marks error:', err);
-		res.status(500).json({
-			error: 'Marks save failed',
-			details: err.message
+		return res.status(err.statusCode || 500).json({
+			error: err.statusCode ? err.message : 'Marks save failed',
+			...(err.statusCode ? {} : { details: err.message })
 		});
 	} finally {
 		client.release();
@@ -3363,74 +3353,70 @@ app.get('/students-by-class/:class', async (req, res) => {
 		res.status(500).json({ error: 'Database error' });
 	}
 });
-app.get('/enter-marks-students', async (req, res) => {
-	const { className, board, testCode } = req.query;
-
-	if (!className || !board || !testCode) {
-		return res.status(400).json({
-			error: 'className, board and testCode are required'
-		});
+app.get('/regular-test-code/:testCode', async (req, res) => {
+	const parsed = parseRegularTestCode(req.params.testCode);
+	if (!parsed) {
+		return res.status(400).json({ error: 'Invalid test code. Expected board + class + subject + total marks + C + chapter, e.g. S12M50C11.' });
 	}
-
 	try {
-		const testResult = await pool.query(
-			`
-			SELECT subject_id, TRIM(class) AS class, TRIM(board) AS board
-			FROM tests
-			WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))
-			`,
-			[testCode]
+		const subjectAliases = parsed.subjectCode === 'M'
+			? ['mathematics', 'maths', 'math']
+			: ['physics', 'phy'];
+		const subjectResult = await pool.query(
+			'SELECT subject_id, subject_name FROM subjects WHERE LOWER(TRIM(subject_name)) = ANY($1::text[]) LIMIT 1',
+			[subjectAliases]
 		);
-
-		if (testResult.rows.length === 0) {
-			return res.status(404).json({ error: 'Test not found' });
+		if (!subjectResult.rows.length) {
+			return res.status(400).json({ error: 'Subject abbreviation ' + parsed.subjectCode + ' is not configured in the subjects table.' });
 		}
-
-		const test = testResult.rows[0];
-
-		if (
-			String(test.class).trim() !== String(className).trim() ||
-			String(test.board).trim().toUpperCase() !== String(board).trim().toUpperCase()
-		) {
-			return res.status(400).json({
-				error: 'Selected test does not match selected class/board'
-			});
-		}
-
-		const result = await pool.query(
-			`
-			SELECT DISTINCT
-				s.roll_no,
-				s.name,
-				m.marks_obtained,
-				m.comments,
-				COALESCE(m.total_marks, t.total_marks) AS total_marks
-			FROM students s
-			JOIN student_subjects ss
-				ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
-			JOIN tests t
-				ON UPPER(TRIM(t.test_code)) = UPPER(TRIM($3))
-			LEFT JOIN marks m
-				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
-				AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
-			WHERE TRIM(s.class) = TRIM($1)
-			AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
-			AND ss.subject_id = t.subject_id
-			ORDER BY s.roll_no ASC
-			`,
-			[className, board, testCode]
+		const duplicateResult = await pool.query(
+			'SELECT EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_marks',
+			[parsed.canonicalCode]
 		);
-
-		res.json(result.rows);
-	} catch (err) {
-		console.error('GET /enter-marks-students error:', err);
-		res.status(500).json({
-			error: 'Failed to fetch students',
-			details: err.message
+		return res.json({
+			...parsed,
+			subjectId: subjectResult.rows[0].subject_id,
+			subjectName: subjectResult.rows[0].subject_name,
+			duplicate: duplicateResult.rows[0].has_marks === true,
+			hasMarks: duplicateResult.rows[0].has_marks === true
 		});
+	} catch (err) {
+		console.error('GET /regular-test-code/:testCode error:', err);
+		return res.status(500).json({ error: 'Failed to validate regular test code', details: err.message });
 	}
 });
 
+app.get('/enter-marks-students', async (req, res) => {
+	const { className, board, testCode, subjectId } = req.query || {};
+	if (!className || !board || !testCode || !subjectId) {
+		return res.status(400).json({ error: 'className, board, testCode and subjectId are required' });
+	}
+	const parsed = parseRegularTestCode(testCode);
+	if (!parsed) return res.status(400).json({ error: 'Invalid Regular Batch test code.' });
+	if (String(className).trim() !== parsed.className ||
+		normalizeTestBatchBoard(board) !== normalizeTestBatchBoard(parsed.board)) {
+		return res.status(400).json({ error: 'Selected class or board does not match the test code.' });
+	}
+	try {
+		const result = await pool.query(
+			`SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+			 FROM students s
+			 JOIN student_subjects ss ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+			 LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
+			   AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($4))
+			 WHERE TRIM(s.class) = TRIM($1)
+			   AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+			   AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+			   AND ss.subject_id = $3
+			 ORDER BY s.roll_no ASC`,
+			[String(className).trim(), String(board).trim(), Number(subjectId), parsed.canonicalCode]
+		);
+		return res.json(result.rows);
+	} catch (err) {
+		console.error('GET /enter-marks-students error:', err);
+		return res.status(500).json({ error: 'Failed to fetch students', details: err.message });
+	}
+});
 
 /* =========================================================
 	STUDENT FETCH ROUTES
