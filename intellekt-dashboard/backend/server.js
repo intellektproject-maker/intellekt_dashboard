@@ -4753,7 +4753,7 @@ app.post('/enquiries', async (req, res) => {
 		}
 
 		const cleanDateOfBirth = String(dateOfBirth || '').trim();
-		if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
 			return res.status(400).json({ message: 'Please provide a valid date of birth' });
 		}
 
