@@ -31,7 +31,16 @@ function FacultyProfileInner() {
   const [testCodes, setTestCodes] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
   const [activeSection, setActiveSection] = useState('');
+  const [manageModalOpen, setManageModalOpen] = useState(false);
   const selectedBatch = searchParams.get('batch') === 'test' ? 'Test Batch' : 'Regular Batch';
+
+  useEffect(() => {
+    const requestedSection = searchParams.get('taskSection');
+    const allowedSections = ['allTasks', 'dailyTasks', 'myTasks', 'myChecklist'];
+    if (requestedSection && allowedSections.includes(requestedSection)) {
+      setActiveSection(requestedSection);
+    }
+  }, [searchParams]);
 
   function handleBatchChange(batch) {
     const params = new URLSearchParams(searchParams.toString());
@@ -767,24 +776,15 @@ function FacultyProfileInner() {
               <p className="mt-1 text-sm text-gray-500">Enter and manage test marks</p>
             </Link>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setManageModalOpen(true)}
+              className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+            >
               <div className="mb-3 text-2xl text-blue-900">♙</div>
-              <h4 className="font-bold text-gray-900">Manage Students / Faculty</h4>
-              <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-blue-700">
-                <Link
-                  href={`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
-                  className="hover:underline"
-                >
-                  Students
-                </Link>
-                <Link
-                  href={`/faculty-dashboard/manage/faculty?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
-                  className="hover:underline"
-                >
-                  Faculty
-                </Link>
-              </div>
-            </div>
+              <h4 className="font-bold text-gray-900">Manage</h4>
+              <p className="mt-1 text-sm text-gray-500">Manage students and faculty accounts</p>
+            </button>
 
             {canAccessAllTasks && (
               <Link
@@ -825,134 +825,7 @@ function FacultyProfileInner() {
           </div>
         </div>
 
-        <div id="task-management" className="mb-8 scroll-mt-6">
-          <h3 className="mb-6 text-2xl md:text-3xl font-bold text-blue-700">
-            Task Management
-          </h3>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            {canAccessAllTasks && (
-              <button
-                type="button"
-                onClick={async () => {
-                  setActiveSection(
-                    activeSection === 'allTasks' ? '' : 'allTasks'
-                  );
-
-                  await markFacultyNotificationRead('all-tasks');
-                }}
-                className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                  activeSection === 'allTasks'
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <h4 className="text-xl font-bold text-blue-700">
-                    All Faculty Assigned Tasks
-                  </h4>
-
-                  {hasFacultyNotification('all-tasks') && (
-                    <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
-                  )}
-                </div>
-
-                <p className="text-gray-600 text-base">
-                  View, filter and delete tasks assigned to all faculty members.
-                </p>
-              </button>
-            )}
-
-            {canAccessAllTasks && (
-              <button
-                type="button"
-                onClick={async () => {
-                  setActiveSection(
-                    activeSection === 'dailyTasks' ? '' : 'dailyTasks'
-                  );
-
-                  await markFacultyNotificationRead('daily-tasks');
-                }}
-                className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                  activeSection === 'dailyTasks'
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <h4 className="text-xl font-bold text-blue-700">
-                    All Faculty Daily Task
-                  </h4>
-
-                  {hasFacultyNotification('daily-tasks') && (
-                    <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
-                  )}
-                </div>
-
-                <p className="text-gray-600 text-base">
-                  View daily repeated tasks for all faculty.
-                </p>
-              </button>
-            )}
-
-            {canAccessAllTasks && (
-              <button
-                type="button"
-                onClick={() =>
-                  setActiveSection(
-                    activeSection === 'myTasks' ? '' : 'myTasks'
-                  )
-                }
-                className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                  activeSection === 'myTasks'
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <h4 className="mb-3 text-xl font-bold text-blue-700">
-                  Task Assignment
-                </h4>
-
-                <p className="text-gray-600 text-base">
-                  Assign weekly or daily tasks.
-                </p>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={async () => {
-                const nextSection =
-                  activeSection === 'myChecklist' ? '' : 'myChecklist';
-
-                setActiveSection(nextSection);
-
-                if (nextSection === 'myChecklist') {
-                  await markFacultyNotificationRead('tasks');
-                }
-              }}
-              className={`rounded-2xl border p-7 text-left shadow-md transition ${
-                activeSection === 'myChecklist'
-                  ? 'border-blue-600 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <h4 className="text-xl font-bold text-blue-700">
-                  My Task Checklist
-                </h4>
-
-                {hasFacultyNotification('tasks') && (
-                  <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
-                )}
-              </div>
-
-              <p className="text-gray-600 text-base">
-                View, filter and update my assigned tasks.
-              </p>
-            </button>
-          </div>
-        </div>
+        <div id="task-management" className="mb-8 scroll-mt-6" />
 
         {canAccessAllTasks && activeSection === 'myTasks' && (
           <div className="mb-8 rounded-2xl bg-white p-6 shadow-md md:p-8">
@@ -1448,6 +1321,51 @@ function FacultyProfileInner() {
           </div>
         )}
       </div>
+
+      {manageModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setManageModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manage-modal-title"
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h3 id="manage-modal-title" className="text-xl font-bold text-blue-900">
+                Manage
+              </h3>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setManageModalOpen(false)}
+                className="rounded-full px-3 py-1 text-xl text-gray-500 hover:bg-gray-100"
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <Link
+                href={`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                onClick={() => setManageModalOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-4 text-center font-semibold text-blue-900 transition hover:border-blue-300 hover:bg-blue-50"
+              >
+                Students
+              </Link>
+              <Link
+                href={`/faculty-dashboard/manage/faculty?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                onClick={() => setManageModalOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-4 text-center font-semibold text-blue-900 transition hover:border-blue-300 hover:bg-blue-50"
+              >
+                Faculty
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
