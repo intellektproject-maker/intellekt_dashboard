@@ -146,7 +146,7 @@ export default function Login() {
 
 									<input
 										type="text"
-														placeholder="e.g. 26IA001"
+														placeholder="User ID"
 										value={roll}
 										onChange={(e) => setRoll(e.target.value.toUpperCase())}
 										className="
