@@ -1765,6 +1765,14 @@ app.post('/marks', async (req, res) => {
 				);
 				if (!eligible.rows.length) throw Object.assign(new Error(rollNo + ' is not eligible for this test subject'), { statusCode: 400 });
 			}
+			if (record.batch === 'Regular Batch' && parsed) {
+				await client.query(
+					`INSERT INTO tests (test_code, test_date, subject_id, total_marks, portion, class, board)
+						 SELECT $1, $2, $3, $4, $5, $6, $7
+						 WHERE NOT EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))`,
+						[canonicalCode, record.test_date || null, subjectId, totalMarks, record.portion || null, student.class, student.board]
+				);
+			}
 			if (cleanMarks !== 'A') {
 				const obtained = Number(cleanMarks);
 				if (!Number.isInteger(obtained) || obtained < 0 || obtained > totalMarks) {
@@ -3381,15 +3389,18 @@ app.get('/regular-test-code/:testCode', async (req, res) => {
 			return res.status(400).json({ error: 'Subject abbreviation ' + parsed.subjectCode + ' is not configured in the subjects table.' });
 		}
 		const duplicateResult = await pool.query(
-			'SELECT EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_marks',
+			`SELECT (
+					EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))
+					OR EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))
+				) AS already_exists`,
 			[parsed.canonicalCode]
 		);
 		return res.json({
 			...parsed,
 			subjectId: subjectResult.rows[0].subject_id,
 			subjectName: subjectResult.rows[0].subject_name,
-			duplicate: duplicateResult.rows[0].has_marks === true,
-			hasMarks: duplicateResult.rows[0].has_marks === true
+			duplicate: duplicateResult.rows[0].already_exists === true,
+			hasMarks: duplicateResult.rows[0].already_exists === true
 		});
 	} catch (err) {
 		console.error('GET /regular-test-code/:testCode error:', err);
