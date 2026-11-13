@@ -446,7 +446,18 @@ app.get('/marks/:roll', async (req, res) => {
       [roll]
     );
 
-    res.json(result.rows);
+    const rows = result.rows.map((row) => {
+      const parsed = parseRegularTestCode(row.test_code);
+      if (!parsed) return row;
+      return {
+        ...row,
+        subject_name: parsed.subjectName,
+        chapter: parsed.chapter,
+        total_marks: row.total_marks || parsed.totalMarks,
+        attempt: parsed.attempt
+      };
+    });
+    res.json(rows);
   } catch (err) {
     console.error('GET /marks/:roll error:', err);
     res.status(500).json({ error: 'Database error' });
