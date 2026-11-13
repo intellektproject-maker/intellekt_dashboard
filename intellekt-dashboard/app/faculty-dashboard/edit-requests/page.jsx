@@ -221,7 +221,7 @@ export default function EditRequestsPage() {
                     <td className="p-3">{scopeLabel(request)}</td>
                     <td className="p-3">{recordLabel(request)}</td>
                     <td className="p-3">{currentValueLabel(request)}</td>
-                    <td className="p-3 font-semibold">{request.record_type === "schedule" ? "Edit schedule permission" : request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
+                    <td className="p-3 font-semibold">{request.record_type === "schedule" ? "Edit schedule permission" : request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.roll_no === "*" && request.requested_value === "BULK_EDIT" ? "Overall edit permission" : request.record_type === "marks" && String(request.original_value ?? "").trim() === String(request.requested_value ?? "").trim() ? "Edit permission" : request.requested_value ?? "-"}</td>
                     <td className="p-3">{dateLabel(request.created_at)}</td>
                     <td className="p-3">
                       <span className={
