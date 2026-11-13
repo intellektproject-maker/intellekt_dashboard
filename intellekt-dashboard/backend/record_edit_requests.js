@@ -101,7 +101,7 @@ function registerRecordEditRoutes(app, pool) {
       } else {
         const date = String(attendance_date || '').trim();
         const subject = Number(subject_id);
-        if (!date || !Number.isInteger(subject) || subject <= 0 || !['Present', 'Absent'].includes(requested)) {
+        if (!date || !Number.isInteger(subject) || subject <= 0 || (roll === '*' ? requested !== 'BULK_EDIT' : !['Present', 'Absent'].includes(requested))) {
           return res.status(400).json({ error: 'A valid attendance_date, subject_id and Present/Absent value are required.' });
         }
         if (roll === '*') {
