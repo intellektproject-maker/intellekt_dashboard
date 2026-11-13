@@ -68,123 +68,23 @@ function FacultyLayoutContent({ children }) {
 
         <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 px-6 pb-4">
           <Link
-            href={`/faculty-dashboard/profile?id=${facultyId}&batch=${selectedBatch}`}
+            href={`/faculty-dashboard/profile?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}#task-management`}
             onClick={() => setMenuOpen(false)}
-            className={linkClass(isActive("/faculty-dashboard/profile"))}
+            className={linkClass(false)}
           >
-            Profile
+            Task Management
           </Link>
 
-          {selectedBatch === "regular" ? (
-            <>
-              <Link href={`/faculty-dashboard/attendance?id=${facultyId}&batch=regular`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/attendance"))}>Attendance</Link>
-              <Link href={`/faculty-dashboard/test?id=${facultyId}&batch=regular`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/test"))}>Test</Link>
-            </>
-          ) : (
-            <>
-              <Link href={`/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&section=attendance&batch=test`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/test-batch") && searchParams.get("section") === "attendance")}>Attendance</Link>
-              <Link href={`/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&batch=test`} onClick={() => setMenuOpen(false)} className={linkClass(isActive("/faculty-dashboard/test-batch") && searchParams.get("section") !== "attendance")}>Test</Link>
-              {isPrivilegedFaculty && (
-                <Link
-                  href={`/faculty-dashboard/manage-test-batch-students?id=${encodeURIComponent(facultyId)}&batch=test`}
-                  onClick={() => setMenuOpen(false)}
-                  className={linkClass(isActive("/faculty-dashboard/manage-test-batch-students"))}
-                >
-                  Manage Test Batch Students
-                </Link>
-              )}
-            </>
-          )}
           <Link
-  href={`/faculty-dashboard/syllabus?id=${facultyId}&batch=${selectedBatch}`}
-  onClick={() => setMenuOpen(false)}
-  className={linkClass(isActive("/faculty-dashboard/syllabus"))}
->
-  Syllabus
-</Link>
-
-          <div className="rounded-lg">
-            <button
-              type="button"
-              onClick={() => setManageOpen(!manageOpen)}
-              className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-base font-medium transition ${
-                pathname.startsWith("/faculty-dashboard/manage")
-                  ? "bg-blue-100 text-blue-700"
-                  : "text-gray-800 hover:bg-gray-100"
-              }`}
-            >
-              <span>Manage</span>
-              <span className="text-sm">{manageOpen ? "▲" : "▼"}</span>
-            </button>
-
-            {manageOpen && (
-              <div className="mt-2 ml-3 flex flex-col gap-2 border-l-2 border-gray-200 pl-3">
-                <Link
-                  href={`/faculty-dashboard/manage/students?id=${facultyId}&batch=${selectedBatch}`}
-                  onClick={() => setMenuOpen(false)}
-                  className={subLinkClass(
-                    isActive("/faculty-dashboard/manage/students")
-                  )}
-                >
-                  Students
-                </Link>
-
-                <Link
-                  href={`/faculty-dashboard/manage/faculty?id=${facultyId}&batch=${selectedBatch}`}
-                  onClick={() => setMenuOpen(false)}
-                  className={subLinkClass(
-                    isActive("/faculty-dashboard/manage/faculty")
-                  )}
-                >
-                  Faculty
-                </Link>
-              </div>
-            )}
-          </div>
-
-
-
-          {isPrivilegedFaculty && (
-            <>
-
-              <Link
-                href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
-                onClick={() => setMenuOpen(false)}
-                className={linkClass(isActive("/faculty-dashboard/student-record"))}
-              >
-                Student Record
-              </Link>
-              <Link
-                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
-                onClick={() => setMenuOpen(false)}
-                className={linkClass(isActive("/faculty-dashboard/enquiries"))}
-              >
-                Enquiries
-              </Link>
-              <Link
-                href={`/faculty-dashboard/requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
-                onClick={() => setMenuOpen(false)}
-                className={subLinkClass(isActive("/faculty-dashboard/requests"))}
-              >
-                Requests
-              </Link>
-            </>
-          )}
-
-          {/^IG\d{3,}$/.test(facultyId.trim()) && (
-            <Link
-              href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
-              onClick={() => setMenuOpen(false)}
-              className={linkClass(isActive("/faculty-dashboard/edit-requests"))}
-            >
-              Edit Requests
-            </Link>
-          )}
+            href={`/faculty-dashboard/syllabus?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
+            onClick={() => setMenuOpen(false)}
+            className={linkClass(isActive("/faculty-dashboard/syllabus"))}
+          >
+            Syllabus
+          </Link>
 
           <Link
-            href={`/reset-password?id=${facultyId}&role=${
-              isPrivilegedFaculty ? "admin" : "faculty"
-            }`}
+            href={`/reset-password?id=${encodeURIComponent(facultyId)}&role=${isPrivilegedFaculty ? "admin" : "faculty"}`}
             onClick={() => setMenuOpen(false)}
             className={linkClass(isActive("/reset-password"))}
           >
