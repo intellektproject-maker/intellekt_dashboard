@@ -3389,18 +3389,34 @@ app.get('/regular-test-code/:testCode', async (req, res) => {
 			return res.status(400).json({ error: 'Subject abbreviation ' + parsed.subjectCode + ' is not configured in the subjects table.' });
 		}
 		const duplicateResult = await pool.query(
-			`SELECT (
-					EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))
-					OR EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))
-				) AS already_exists`,
+			`SELECT
+					EXISTS (SELECT 1 FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_marks,
+					EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))) AS has_test`,
 			[parsed.canonicalCode]
 		);
+		const metadataResult = await pool.query(
+			`SELECT test_date, portion, chapter, class, board, total_marks
+				 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)) LIMIT 1`,
+			[parsed.canonicalCode]
+		);
+		const savedTotalResult = await pool.query(
+			'SELECT total_marks FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)) LIMIT 1',
+			[parsed.canonicalCode]
+		);
+		const metadata = metadataResult.rows[0] || {};
+
 		return res.json({
 			...parsed,
 			subjectId: subjectResult.rows[0].subject_id,
 			subjectName: subjectResult.rows[0].subject_name,
-			duplicate: duplicateResult.rows[0].already_exists === true,
-			hasMarks: duplicateResult.rows[0].already_exists === true
+			duplicate: duplicateResult.rows[0].has_marks === true || duplicateResult.rows[0].has_test === true,
+			hasMarks: duplicateResult.rows[0].has_marks === true,
+			testDate: metadata.test_date ? String(metadata.test_date).slice(0, 10) : '',
+			portion: metadata.portion || '',
+			chapter: metadata.chapter || parsed.chapter,
+			className: metadata.class || parsed.className,
+			board: metadata.board || parsed.board,
+			totalMarks: metadata.total_marks || savedTotalResult.rows[0]?.total_marks || parsed.totalMarks
 		});
 	} catch (err) {
 		console.error('GET /regular-test-code/:testCode error:', err);
