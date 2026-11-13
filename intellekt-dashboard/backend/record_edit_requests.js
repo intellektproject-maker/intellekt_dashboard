@@ -33,7 +33,9 @@ function registerRecordEditRoutes(app, pool) {
           ON record_edit_requests(status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_record_edit_requests_requester
           ON record_edit_requests(requested_by, status);
-      `).then(() => pool.query(
+      `).then(() => pool.query("ALTER TABLE record_edit_requests ADD COLUMN IF NOT EXISTS class_name TEXT"))
+        .then(() => pool.query("ALTER TABLE record_edit_requests ADD COLUMN IF NOT EXISTS board TEXT"))
+        .then(() => pool.query(
         "ALTER TABLE record_edit_requests DROP CONSTRAINT IF EXISTS record_edit_requests_record_type_check"
       )).then(() => pool.query(
         "ALTER TABLE record_edit_requests ADD CONSTRAINT record_edit_requests_record_type_check CHECK (record_type IN ('marks','attendance','schedule'))"
