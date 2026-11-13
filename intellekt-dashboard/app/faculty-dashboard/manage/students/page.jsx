@@ -39,6 +39,7 @@ const [boardFilter, setBoardFilter] = useState("");
     board: "",
     date_of_birth: "",
     batch: "",
+    test_writing_day: "",
     academic_year_from: "",
     academic_year_to: "",
     parent_name: "",
@@ -90,6 +91,7 @@ const [boardFilter, setBoardFilter] = useState("");
           board,
           date_of_birth: enquiry.date_of_birth ? String(enquiry.date_of_birth).slice(0, 10) : "",
           batch: "Regular Batch",
+          test_writing_day: enquiry.test_writing_day || "",
           academic_year_from: enquiry.academic_year_from ? String(enquiry.academic_year_from) : "",
           academic_year_to: enquiry.academic_year_to ? String(enquiry.academic_year_to) : "",
           parent_name: enquiry.parent_name || "",
@@ -473,6 +475,7 @@ return searchMatch && classMatch && boardMatch;
         board: form.board.trim(),
         date_of_birth: form.date_of_birth || null,
         batch: form.batch,
+        test_writing_day: form.batch === "Regular Batch" ? form.test_writing_day : null,
         academic_year_from: form.academic_year_from || null,
         academic_year_to: form.academic_year_to || null,
         parent_name: form.parent_name.trim(),
@@ -557,6 +560,7 @@ return searchMatch && classMatch && boardMatch;
         board: data.board || "",
         date_of_birth: data.date_of_birth ? String(data.date_of_birth).slice(0, 10) : "",
         batch: data.batch || "Regular Batch",
+        test_writing_day: data.test_writing_day || "",
         academic_year_from: data.academic_year_from ? String(data.academic_year_from) : "",
         academic_year_to: data.academic_year_to ? String(data.academic_year_to) : "",
         parent_name: data.parent_name || "",
@@ -1228,6 +1232,15 @@ setBoardFilter("");
                   ))}
                 </div>
               </div>
+              {form.batch === "Regular Batch" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Test Writing Day</label>
+                  <select name="test_writing_day" value={form.test_writing_day} onChange={handleInputChange} required className="w-full border rounded-lg px-4 py-3 bg-white">
+                    <option value="">Select test writing day</option>
+                    {["Sunday", "Monday", "Tuesday"].map((day) => <option key={day} value={day}>{day}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year From</label>
                 <select name="academic_year_from" value={form.academic_year_from} onChange={(e) => setForm((prev) => ({...prev, academic_year_from: e.target.value, academic_year_to: prev.academic_year_to && Number(prev.academic_year_to) > Number(e.target.value) ? prev.academic_year_to : ""}))} className="w-full border rounded-lg px-4 py-3 bg-white">
