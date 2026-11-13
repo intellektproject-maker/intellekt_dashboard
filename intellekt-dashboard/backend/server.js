@@ -3656,13 +3656,14 @@ app.post('/students', async (req, res) => {
 			password,
 			date_of_birth,
 			batch,
+			test_writing_day,
 			academic_year_from,
 			academic_year_to,
 			parent_name,
 			secondary_contact,
 			reference
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		`,
 			[
 				newRoll,
@@ -3675,6 +3676,7 @@ app.post('/students', async (req, res) => {
 				finalPassword,
 				date_of_birth || null,
 				batch || 'Regular Batch',
+				(batch || 'Regular Batch') === 'Regular Batch' && ['Sunday', 'Monday', 'Tuesday'].includes(test_writing_day) ? test_writing_day : null,
 				academic_year_from || null,
 				academic_year_to || null,
 				parent_name || null,
@@ -8364,6 +8366,7 @@ async function startServer() {
       ADD COLUMN IF NOT EXISTS admission_token TEXT,
       ADD COLUMN IF NOT EXISTS admission_started_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS batch VARCHAR(30) DEFAULT 'Regular Batch',
+      ADD COLUMN IF NOT EXISTS test_writing_day VARCHAR(10),
       ADD COLUMN IF NOT EXISTS date_of_birth DATE,
       ADD COLUMN IF NOT EXISTS academic_year_from VARCHAR(4),
       ADD COLUMN IF NOT EXISTS academic_year_to VARCHAR(4),
