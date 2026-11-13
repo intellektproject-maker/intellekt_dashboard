@@ -776,15 +776,26 @@ function FacultyProfileInner() {
               <p className="mt-1 text-sm text-gray-500">Enter and manage test marks</p>
             </Link>
 
-            <button
-              type="button"
-              onClick={() => setManageModalOpen(true)}
-              className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
-            >
-              <div className="mb-3 text-2xl text-blue-900">♙</div>
-              <h4 className="font-bold text-gray-900">Manage</h4>
-              <p className="mt-1 text-sm text-gray-500">Manage students and faculty accounts</p>
-            </button>
+            {selectedBatch === 'Test Batch' ? (
+              <Link
+                href={`/faculty-dashboard/manage-test-batch-students?id=${encodeURIComponent(facultyId)}&batch=test`}
+                className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+              >
+                <div className="mb-3 text-2xl text-blue-900">♙</div>
+                <h4 className="font-bold text-gray-900">Students</h4>
+                <p className="mt-1 text-sm text-gray-500">View and manage Test Batch students</p>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setManageModalOpen(true)}
+                className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+              >
+                <div className="mb-3 text-2xl text-blue-900">♙</div>
+                <h4 className="font-bold text-gray-900">Manage</h4>
+                <p className="mt-1 text-sm text-gray-500">Manage students and faculty accounts</p>
+              </button>
+            )}
 
             {canAccessAllTasks && (
               <Link
