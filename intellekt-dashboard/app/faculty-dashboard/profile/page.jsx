@@ -797,13 +797,9 @@ function FacultyProfileInner() {
               </button>
             )}
 
-            {canAccessAllTasks && (
+            {selectedBatch !== 'Test Batch' && canAccessAllTasks && (
               <Link
-                href={
-                  selectedBatch === 'Test Batch'
-                    ? `/faculty-dashboard/test-batch/student-record?id=${encodeURIComponent(facultyId)}&batch=test`
-                    : `/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}&batch=regular`
-                }
+                href={`/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}&batch=regular`}
                 className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
               >
                 <div className="mb-3 text-2xl text-blue-900">▣</div>
@@ -812,9 +808,9 @@ function FacultyProfileInner() {
               </Link>
             )}
 
-            {canAccessAllTasks && (
+            {selectedBatch !== 'Test Batch' && canAccessAllTasks && (
               <Link
-                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}&batch=regular`}
                 className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
               >
                 <div className="mb-3 text-2xl text-blue-900">✉</div>
@@ -823,7 +819,7 @@ function FacultyProfileInner() {
               </Link>
             )}
 
-            {/^IG\d{3,}$/.test(facultyId.trim()) && (
+            {selectedBatch !== 'Test Batch' && /^IG\d{3,}$/.test(facultyId.trim()) && (
               <Link
                 href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
                 className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
