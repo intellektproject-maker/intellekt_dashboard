@@ -4742,14 +4742,17 @@ app.post('/enquiries', async (req, res) => {
 		}
 
 		const cleanDateOfBirth = String(dateOfBirth || '').trim();
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
+		if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(cleanDateOfBirth) || Number.isNaN(Date.parse(cleanDateOfBirth)) || cleanDateOfBirth > new Date().toISOString().slice(0, 10)) {
 			return res.status(400).json({ message: 'Please provide a valid date of birth' });
 		}
 
-		if (!/^\d{10}$/.test(cleanMobile)) {
-			return res.status(400).json({
-				message: 'Phone number must contain exactly 10 digits'
-			});
+		const [birthYear, birthMonth, birthDay] = cleanDateOfBirth.split('-').map(Number);
+		const today = new Date();
+		let studentAge = today.getFullYear() - birthYear;
+		if (today.getMonth() + 1 < birthMonth ||
+			(today.getMonth() + 1 === birthMonth && today.getDate() < birthDay)) studentAge--;
+		if (studentAge < 12 || studentAge > 19) {
+			return res.status(400).json({ message: 'Student must be between 12 and 19 years old' });
 		}
 
 		if (!cleanSecondary) {
