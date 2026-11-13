@@ -7038,6 +7038,21 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
         throw new Error(rollNo + ': ' + validation.error);
       }
 
+      // Faculty may enter a mark for the first time, but changing an existing
+      // Test Batch mark must go through the admin-approved edit-request flow.
+      const savedMark = await client.query(
+        `SELECT marks_obtained FROM test_batch_marks
+         WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))
+           AND UPPER(TRIM(test_code))=UPPER(TRIM($2))
+           AND LOWER(TRIM(subject_name))=LOWER(TRIM($3))
+         FOR UPDATE`,
+        [rollNo, code, test.subject_name]
+      );
+      if (req.testBatchFacultyId && savedMark.rows.length &&
+          String(savedMark.rows[0].marks_obtained).trim().toUpperCase() !== validation.obtained) {
+        throw new Error('This mark is already saved. Request edit permission from an admin before changing it.');
+      }
+
       await client.query(
         `INSERT INTO test_batch_marks
           (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
@@ -7760,8 +7775,20 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
         throw new Error(`No registered test application found for ${roll} on ${attendanceDate}`);
       }
 
-      // Update an existing attendance record as well as inserting a new one.
-      // This ensures changing a student to Absent is not silently ignored.
+      // Faculty can create attendance, but changing a saved status requires
+      // an approved Test Batch edit request.
+      const savedAttendance = await client.query(
+        `SELECT status FROM test_batch_attendance
+         WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND attendance_date=$2::date
+         FOR UPDATE`,
+        [roll, attendanceDate]
+      );
+      if (req.testBatchFacultyId && savedAttendance.rows.length &&
+          String(savedAttendance.rows[0].status) !== status) {
+        throw new Error('Attendance is already saved. Request edit permission from an admin before changing it.');
+      }
+
+      // Update unchanged saved values safely, or create a new attendance record.
       await client.query(
         `INSERT INTO test_batch_attendance
           (roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at)
@@ -7788,6 +7815,18 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
         );
 
         for (const test of registeredTests.rows) {
+          const previousMark = await client.query(
+            `SELECT marks_obtained FROM test_batch_marks
+             WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1))
+               AND UPPER(TRIM(test_code))=UPPER(TRIM($2))
+               AND LOWER(TRIM(subject_name))=LOWER(TRIM($3))
+             FOR UPDATE`,
+            [roll, test.test_code, test.subject_name]
+          );
+          if (req.testBatchFacultyId && previousMark.rows.length &&
+              String(previousMark.rows[0].marks_obtained).trim().toUpperCase() !== 'A') {
+            throw new Error('A saved mark exists for ' + roll + ' in ' + test.test_code + '. Request admin approval before changing it to absent.');
+          }
           await client.query(
             `INSERT INTO test_batch_marks
               (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
