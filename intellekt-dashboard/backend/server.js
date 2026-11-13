@@ -6953,14 +6953,17 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
     const code = String(req.params.testCode || '').trim().toUpperCase();
     const records = Array.isArray(req.body?.records) ? req.body.records : [];
     const writingDate = String(req.body?.writing_date || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(writingDate)) return res.status(400).json({ error: 'A valid writing_date is required' });
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(writingDate)) {
+      return res.status(400).json({ error: 'A valid writing_date is required' });
+    }
 
     if (records.length === 0) {
       return res.status(400).json({ error: 'At least one mark record is required' });
     }
 
     const testResult = await client.query(
-      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,marks_entry_status
+      `SELECT id,test_code,test_series_id,subject_name,total_marks,status,
+              marks_entry_status,manual_mark_entry_enabled,lock_marks_after_final_submission
        FROM test_batch_tests
        WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1))
        LIMIT 1`,
@@ -6974,9 +6977,7 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
     const test = testResult.rows[0];
 
     if (!['Scheduled', 'Active', 'Completed', 'Returned'].includes(test.status)) {
-      return res.status(400).json({
-        error: 'Only posted Test Batch tests can receive marks'
-      });
+      return res.status(400).json({ error: 'Only posted Test Batch tests can receive marks' });
     }
 
     if (test.manual_mark_entry_enabled === false) {
@@ -6986,47 +6987,51 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
     }
 
     if (test.marks_entry_status === 'Finalized' && test.lock_marks_after_final_submission !== false) {
-      return res.status(400).json({
-        error: 'Marks for this test have already been finalized and are locked'
-      });
+      return res.status(400).json({ error: 'Marks for this test have already been finalized and are locked' });
     }
 
     await client.query('BEGIN');
 
     for (const record of records) {
       const rollNo = String(record.roll_no || '').trim().toUpperCase();
-      const rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
+      let rawMarks = String(record.marks_obtained ?? '').trim().toUpperCase();
       const remarks = String(record.remarks ?? record.comments ?? '').trim();
 
       if (!/^IAT[0-9]{3,}$/.test(rollNo)) {
         throw new Error('Invalid Test Batch roll number: ' + rollNo);
       }
 
+      // Both Present and Absent students are eligible for this test/date.
+      // An Absent attendance record always takes precedence and stores A.
       const eligible = await client.query(
-        `SELECT s.roll_no
+        `SELECT s.roll_no,a.status AS attendance_status
          FROM test_batch_students s
          JOIN test_batch_registrations r
-           ON r.roll_no=s.roll_no
+           ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(s.roll_no))
           AND UPPER(TRIM(r.test_code))=UPPER(TRIM($2))
           AND r.status='Registered'
-         JOIN test_batch_attendance a
-           ON a.roll_no=s.roll_no
-          AND a.attendance_date=r.writing_date
           AND r.writing_date=$4::date
-          AND a.status='Present'
-         WHERE s.roll_no=$1
+         JOIN test_batch_attendance a
+           ON UPPER(TRIM(a.roll_no))=UPPER(TRIM(s.roll_no))
+          AND a.attendance_date=$4::date
+          AND a.status IN ('Present','Absent')
+         WHERE UPPER(TRIM(s.roll_no))=UPPER(TRIM($1))
            AND s.test_series_id=$3
          LIMIT 1`,
         [rollNo, code, test.test_series_id, writingDate]
       );
 
       if (eligible.rows.length === 0) {
-        throw new Error('Student ' + rollNo + ' did not appear for this Test Batch test');
+        throw new Error('Student ' + rollNo + ' must have Present or Absent attendance for this test writing date');
       }
 
-      // Empty marks mean the student has not been marked yet.
-      // Preserve any previously saved mark and allow partial saves.
-      if (!rawMarks) continue;
+      if (eligible.rows[0].attendance_status === 'Absent') {
+        rawMarks = 'A';
+      } else if (!rawMarks) {
+        // Empty marks for a Present student mean not entered yet.
+        // Preserve existing marks and allow partial saves.
+        continue;
+      }
 
       const validation = validateTestBatchMarks(test.total_marks, rawMarks);
       if (!validation.ok) {
@@ -7041,15 +7046,15 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
          DO UPDATE SET
            total_marks=EXCLUDED.total_marks,
            marks_obtained=EXCLUDED.marks_obtained,
-           comments=EXCLUDED.comments,
+           comments=CASE
+             WHEN EXCLUDED.marks_obtained='A' THEN COALESCE(test_batch_marks.comments, EXCLUDED.comments)
+             ELSE EXCLUDED.comments
+           END,
            updated_at=CURRENT_TIMESTAMP`,
         [rollNo, code, test.subject_name, Number(test.total_marks), validation.obtained, remarks || null]
       );
     }
 
-    // Saving marks is a draft operation. Do not require every student on
-    // this writing date to have completed the test or entered marks.
-    // Finalization is handled by the separate /marks/finalize endpoint.
     await client.query(
       `UPDATE test_batch_tests
        SET marks_entry_status='Draft',
@@ -7063,13 +7068,15 @@ app.post('/test-batch/tests/:testCode/marks', requireTestBatchAttendanceMarksAcc
     await client.query('COMMIT');
 
     res.json({
-      message: 'Marks saved for the selected writing date. You can save remaining students later.',
+      message: 'Marks saved for the selected writing date. Absent students are automatically recorded as A.',
       marks_entry_status: 'Draft'
     });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /test-batch/tests/:testCode/marks error:', err);
-    res.status(400).json({ error: err.message || 'Failed to save Test Batch marks' });
+    res.status(err.code ? 500 : 400).json({
+      error: err.message || 'Failed to save Test Batch marks'
+    });
   } finally {
     client.release();
   }
@@ -7727,8 +7734,7 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
       const status = String(record.status || '').trim();
 
       if (!roll || !['Present','Absent'].includes(status)) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error:'Each attendance record needs a valid roll number and status' });
+        throw new Error('Each attendance record needs a valid roll number and status');
       }
 
       const student = await client.query(
@@ -7737,43 +7743,74 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
       );
 
       if (student.rows.length===0) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error:'Test Batch student not found: ' + roll });
+        throw new Error('Test Batch student not found: ' + roll);
       }
 
-      // Enforce the same eligibility rule on the server so an API caller
-      // cannot create attendance for a Test Batch student who did not
-      // register for a test on the selected attendance date.
       const registration = await client.query(
         `SELECT 1
          FROM test_batch_registrations tr
-         WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM($1))
-           AND tr.writing_date = $2
+         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM($1))
+           AND tr.writing_date=$2::date
+           AND tr.status='Registered'
          LIMIT 1`,
         [roll, attendanceDate]
       );
 
-      if (registration.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: `No registered test application found for ${roll} on ${attendanceDate}`
-        });
+      if (registration.rows.length===0) {
+        throw new Error(`No registered test application found for ${roll} on ${attendanceDate}`);
       }
 
+      // Update an existing attendance record as well as inserting a new one.
+      // This ensures changing a student to Absent is not silently ignored.
       await client.query(
-        'INSERT INTO test_batch_attendance(roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at) ' +
-        'VALUES($1,$2,$3,$4,CURRENT_TIMESTAMP,NULL,NULL) ' +
-        'ON CONFLICT(roll_no,attendance_date) DO NOTHING',
-        [roll,attendanceDate,status,req.testBatchAdminId]
+        `INSERT INTO test_batch_attendance
+          (roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at)
+         VALUES($1,$2::date,$3,$4,CURRENT_TIMESTAMP,NULL,NULL)
+         ON CONFLICT(roll_no,attendance_date) DO UPDATE SET
+           status=EXCLUDED.status,
+           edited_by=EXCLUDED.marked_by,
+           edited_at=CURRENT_TIMESTAMP`,
+        [roll,attendanceDate,status,req.testBatchFacultyId || req.testBatchAdminId]
       );
+
+      if (status === 'Absent') {
+        // Automatically write A for every registered test the student had
+        // on this writing date, including when an earlier numeric mark exists.
+        const registeredTests = await client.query(
+          `SELECT DISTINCT t.test_code,t.subject_name,t.total_marks
+           FROM test_batch_registrations r
+           JOIN test_batch_tests t
+             ON UPPER(TRIM(t.test_code))=UPPER(TRIM(r.test_code))
+           WHERE UPPER(TRIM(r.roll_no))=UPPER(TRIM($1))
+             AND r.writing_date=$2::date
+             AND r.status='Registered'`,
+          [roll, attendanceDate]
+        );
+
+        for (const test of registeredTests.rows) {
+          await client.query(
+            `INSERT INTO test_batch_marks
+              (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
+             VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+             ON CONFLICT(roll_no,test_code,subject_name) DO UPDATE SET
+               total_marks=EXCLUDED.total_marks,
+               marks_obtained='A',
+               updated_at=CURRENT_TIMESTAMP`,
+            [roll,test.test_code,test.subject_name,Number(test.total_marks)]
+          );
+        }
+      }
     }
 
     await client.query('COMMIT');
-    res.json({ message:'Test Batch attendance saved successfully' });
+    res.json({ message:'Test Batch attendance and absent marks saved successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /test-batch/attendance error:', err);
-    res.status(500).json({ error:'Failed to save Test Batch attendance', details:err.message });
+    res.status(err.code ? 500 : 400).json({
+      error: err.message || 'Failed to save Test Batch attendance',
+      ...(err.code ? { details: err.message } : {})
+    });
   } finally {
     client.release();
   }
