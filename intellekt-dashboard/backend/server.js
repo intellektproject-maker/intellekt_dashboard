@@ -5984,7 +5984,7 @@ function validateTestBatchMarks(totalMarks, obtained) {
   if (!raw) return { ok:false, error:'Obtained marks are required' };
   if (raw === 'A') return { ok:true, obtained:'A' };
   const numeric = Number(raw);
-  if (!/^([0-9]+)(\\.[0-9]+)?$/.test(raw)) {
+  if (!/^([0-9]+)(\.[0-9]+)?$/.test(raw)) {
     return { ok:false, error:'Obtained marks must be a valid number, or A' };
   }
   if (/^0+[0-9]/.test(raw)) {
