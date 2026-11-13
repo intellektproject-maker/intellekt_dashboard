@@ -104,17 +104,27 @@ function registerRecordEditRoutes(app, pool) {
         if (!date || !Number.isInteger(subject) || subject <= 0 || !['Present', 'Absent'].includes(requested)) {
           return res.status(400).json({ error: 'A valid attendance_date, subject_id and Present/Absent value are required.' });
         }
-        studentResult = await pool.query(
-          `SELECT s.name, a.status AS original_value
-           FROM students s
-           JOIN attendance a ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
-           WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
-             AND a.subject_id = $2 AND a.attendance_date = $3
-           LIMIT 1`,
-          [roll, subject, date]
-        );
-        if (!studentResult.rows.length) return res.status(404).json({ error: 'Attendance record not found.' });
-        originalValue = String(studentResult.rows[0].original_value);
+        if (roll === '*') {
+          const countResult = await pool.query(
+            'SELECT COUNT(*)::int AS count FROM attendance WHERE subject_id = $1 AND attendance_date = $2',
+            [subject, date]
+          );
+          if (!countResult.rows[0]?.count) return res.status(404).json({ error: 'No attendance records found for the selected subject and date.' });
+          studentResult = { rows: [{ name: 'All students' }] };
+          originalValue = 'Multiple records';
+        } else {
+          studentResult = await pool.query(
+            `SELECT s.name, a.status AS original_value
+             FROM students s
+             JOIN attendance a ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
+             WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1))
+               AND a.subject_id = $2 AND a.attendance_date = $3
+             LIMIT 1`,
+            [roll, subject, date]
+          );
+          if (!studentResult.rows.length) return res.status(404).json({ error: 'Attendance record not found.' });
+          originalValue = String(studentResult.rows[0].original_value);
+        }
         subjectIdValue = subject;
         attendanceDateValue = date;
       }
@@ -140,7 +150,7 @@ function registerRecordEditRoutes(app, pool) {
           attendanceDateValue, originalValue, 'Edit permission requested', requester, facultyResult.rows[0].name]
       );
 
-      const message = roll === '*' ? `${facultyResult.rows[0].name} requested overall marks edit access for test code ${testCodeValue}.` : `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
+      const message = roll === '*' ? (type === 'marks' ? `${facultyResult.rows[0].name} requested overall marks edit access for test code ${testCodeValue}.` : `${facultyResult.rows[0].name} requested overall attendance edit access for subject ${subjectIdValue} on ${attendanceDateValue}.`) : `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
       await pool.query(
         `INSERT INTO faculty_notifications (faculty_id, module_name, message)
          VALUES ('IG001', 'record-edit-request', $1), ('IG002', 'record-edit-request', $1)`,
@@ -272,7 +282,7 @@ function registerRecordEditRoutes(app, pool) {
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
     try {
       await ensureSchema();
-      const result = await pool.query("UPDATE record_edit_requests SET status = 'Applied', applied_at = CURRENT_TIMESTAMP WHERE id = $1 AND requested_by = $2 AND record_type = 'marks' AND roll_no = '*' AND status = 'Approved' RETURNING id", [req.params.id, facultyId]);
+      const result = await pool.query("UPDATE record_edit_requests SET status = 'Applied', applied_at = CURRENT_TIMESTAMP WHERE id = $1 AND requested_by = $2 AND record_type IN ('marks','attendance') AND roll_no = '*' AND status = 'Approved' RETURNING id", [req.params.id, facultyId]);
       if (!result.rows.length) return res.status(403).json({ error: 'No active overall edit approval found.' });
       res.json({ message: 'Overall edit session completed.' });
     } catch (error) {
@@ -340,6 +350,26 @@ function registerRecordEditRoutes(app, pool) {
           await client.query("UPDATE record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
           await client.query('COMMIT');
           return res.json({ message: 'Approved posted-test edit applied successfully.', test: updated.rows[0] });
+        }
+        if (request.record_type === 'attendance' && request.roll_no === '*') {
+          const targetRoll = String(req.body?.roll_no || '').trim();
+          if (!targetRoll || !['Present', 'Absent'].includes(newValue)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'roll_no and a valid Present/Absent value are required.' });
+          }
+          const updated = await client.query(
+            `UPDATE attendance SET status = $1, edited_by = $2, edited_at = CURRENT_TIMESTAMP
+             WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+               AND subject_id = $4 AND attendance_date = $5
+             RETURNING roll_no`,
+            [newValue, facultyId, targetRoll, request.subject_id, request.attendance_date]
+          );
+          if (!updated.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Attendance record not found for this date and subject.' });
+          }
+          await client.query('COMMIT');
+          return res.json({ message: 'Approved attendance updated successfully.' });
         }
         if (request.record_type === 'marks' && request.roll_no === '*') {
           const targetRoll = String(req.body?.roll_no || '').trim();
