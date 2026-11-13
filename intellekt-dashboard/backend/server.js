@@ -1717,7 +1717,7 @@ app.post('/marks', async (req, res) => {
 			const testCode = String(record.test_code || '').trim().toUpperCase();
 			const cleanMarks = String(record.marks).trim().toUpperCase();
 			if (!rollNo || !testCode) throw Object.assign(new Error('roll_no and test_code are required'), { statusCode: 400 });
-			const parsed = parseRegularTestCode(testCode);
+			const parsed = record.batch === 'Regular Batch' ? parseRegularTestCode(testCode) : null;
 			let subjectId = null;
 			let totalMarks = Number(record.total_marks);
 			let canonicalCode = testCode;
@@ -3399,28 +3399,57 @@ app.get('/regular-test-code/:testCode', async (req, res) => {
 
 app.get('/enter-marks-students', async (req, res) => {
 	const { className, board, testCode, subjectId } = req.query || {};
-	if (!className || !board || !testCode || !subjectId) {
-		return res.status(400).json({ error: 'className, board, testCode and subjectId are required' });
-	}
-	const parsed = parseRegularTestCode(testCode);
-	if (!parsed) return res.status(400).json({ error: 'Invalid Regular Batch test code.' });
-	if (String(className).trim() !== parsed.className ||
-		normalizeTestBatchBoard(board) !== normalizeTestBatchBoard(parsed.board)) {
-		return res.status(400).json({ error: 'Selected class or board does not match the test code.' });
+	if (!className || !board || !testCode) {
+		return res.status(400).json({ error: 'className, board and testCode are required' });
 	}
 	try {
+		// Manual test-code flow is explicitly scoped to Regular Batch.
+		if (subjectId) {
+			const parsed = parseRegularTestCode(testCode);
+			if (!parsed) return res.status(400).json({ error: 'Invalid Regular Batch test code.' });
+			if (String(className).trim() !== parsed.className ||
+				normalizeTestBatchBoard(board) !== normalizeTestBatchBoard(parsed.board)) {
+				return res.status(400).json({ error: 'Selected class or board does not match the test code.' });
+			}
+			const result = await pool.query(
+				`SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+				 FROM students s
+				 JOIN student_subjects ss ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+				 LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
+				   AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($4))
+				 WHERE TRIM(s.class) = TRIM($1)
+				   AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+				   AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
+				   AND ss.subject_id = $3
+				 ORDER BY s.roll_no ASC`,
+				[String(className).trim(), String(board).trim(), Number(subjectId), parsed.canonicalCode]
+			);
+			return res.json(result.rows);
+		}
+
+		// Preserve the existing posted-test path for any other legacy caller.
+		const testResult = await pool.query(
+			'SELECT subject_id, TRIM(class) AS class, TRIM(board) AS board FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))',
+			[testCode]
+		);
+		if (!testResult.rows.length) return res.status(404).json({ error: 'Test not found' });
+		const test = testResult.rows[0];
+		if (String(test.class).trim() !== String(className).trim() ||
+			String(test.board).trim().toUpperCase() !== String(board).trim().toUpperCase()) {
+			return res.status(400).json({ error: 'Selected test does not match selected class/board' });
+		}
 		const result = await pool.query(
-			`SELECT s.roll_no, s.name, m.marks_obtained, m.comments, m.total_marks
+			`SELECT DISTINCT s.roll_no, s.name, m.marks_obtained, m.comments,
+			        COALESCE(m.total_marks, t.total_marks) AS total_marks
 			 FROM students s
-			 JOIN student_subjects ss ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
+			 JOIN student_subjects ss ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(ss.roll_no))
+			 JOIN tests t ON UPPER(TRIM(t.test_code)) = UPPER(TRIM($3))
 			 LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
-			   AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($4))
-			 WHERE TRIM(s.class) = TRIM($1)
-			   AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
-			   AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
-			   AND ss.subject_id = $3
+			   AND UPPER(TRIM(m.test_code)) = UPPER(TRIM(t.test_code))
+			 WHERE TRIM(s.class) = TRIM($1) AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+			   AND ss.subject_id = t.subject_id
 			 ORDER BY s.roll_no ASC`,
-			[String(className).trim(), String(board).trim(), Number(subjectId), parsed.canonicalCode]
+			[className, board, testCode]
 		);
 		return res.json(result.rows);
 	} catch (err) {
