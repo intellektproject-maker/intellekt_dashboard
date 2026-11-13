@@ -2293,12 +2293,16 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                         {visibleMarkStudents.map((student, index) => {
                           const rowEditRequest = getStudentMarkEditRequest(student);
                           const hasSavedMark = String(student.marks_obtained ?? "").trim() !== "";
+                          const persistedStudent = originalStudents.find(
+                            (original) => original.roll_no === student.roll_no
+                          );
+                          const hasPersistedMark = String(persistedStudent?.marks_obtained ?? "").trim() !== "";
                           const rowApproved = rowEditRequest?.status === "Approved";
                           const overallRequest = getOverallMarkEditRequest();
                           const overallSnapshotRolls = new Set(getOverallEditSnapshot(overallRequest).map((row) => String(row.roll_no).trim().toUpperCase()));
                           const overallRowApproved = overallRequest?.status === "Approved" && overallBulkEditing && overallSnapshotRolls.has(String(student.roll_no).trim().toUpperCase());
                           const locked = !isAdminUser ? (
-                            ((hasSavedMark || markTest.marks_entry_status === "Finalized") &&
+                            ((hasPersistedMark || markTest.marks_entry_status === "Finalized") &&
                               !(overallRowApproved || (rowApproved && editingMarkRoll === student.roll_no)))
                           ) : (
                             markTest.marks_entry_status === "Finalized" &&
