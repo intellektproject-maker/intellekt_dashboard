@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -735,6 +736,96 @@ function FacultyProfileInner() {
         </div>
 
         <div className="mb-8">
+          <h3 className="mb-5 text-2xl font-bold text-blue-900">
+            {selectedBatch === 'Test Batch' ? 'Test Batch Features' : 'Regular Batch Features'}
+          </h3>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Link
+              href={
+                selectedBatch === 'Test Batch'
+                  ? `/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&section=attendance&batch=test`
+                  : `/faculty-dashboard/attendance?id=${encodeURIComponent(facultyId)}&batch=regular`
+              }
+              className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+            >
+              <div className="mb-3 text-2xl text-blue-900">▦</div>
+              <h4 className="font-bold text-gray-900">Attendance</h4>
+              <p className="mt-1 text-sm text-gray-500">View and manage batch attendance</p>
+            </Link>
+
+            <Link
+              href={
+                selectedBatch === 'Test Batch'
+                  ? `/faculty-dashboard/test-batch?id=${encodeURIComponent(facultyId)}&batch=test`
+                  : `/faculty-dashboard/test?id=${encodeURIComponent(facultyId)}&batch=regular`
+              }
+              className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+            >
+              <div className="mb-3 text-2xl text-blue-900">▤</div>
+              <h4 className="font-bold text-gray-900">Test</h4>
+              <p className="mt-1 text-sm text-gray-500">Enter and manage test marks</p>
+            </Link>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="mb-3 text-2xl text-blue-900">♙</div>
+              <h4 className="font-bold text-gray-900">Manage Students / Faculty</h4>
+              <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-blue-700">
+                <Link
+                  href={`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                  className="hover:underline"
+                >
+                  Students
+                </Link>
+                <Link
+                  href={`/faculty-dashboard/manage/faculty?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                  className="hover:underline"
+                >
+                  Faculty
+                </Link>
+              </div>
+            </div>
+
+            {canAccessAllTasks && (
+              <Link
+                href={
+                  selectedBatch === 'Test Batch'
+                    ? `/faculty-dashboard/test-batch/student-record?id=${encodeURIComponent(facultyId)}&batch=test`
+                    : `/faculty-dashboard/student-record?id=${encodeURIComponent(facultyId)}&batch=regular`
+                }
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+              >
+                <div className="mb-3 text-2xl text-blue-900">▣</div>
+                <h4 className="font-bold text-gray-900">Student Records</h4>
+                <p className="mt-1 text-sm text-gray-500">View student academic records</p>
+              </Link>
+            )}
+
+            {canAccessAllTasks && (
+              <Link
+                href={`/faculty-dashboard/enquiries?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+              >
+                <div className="mb-3 text-2xl text-blue-900">✉</div>
+                <h4 className="font-bold text-gray-900">Enquiries</h4>
+                <p className="mt-1 text-sm text-gray-500">View and manage enquiries</p>
+              </Link>
+            )}
+
+            {/^IG\\d{3,}$/.test(facultyId.trim()) && (
+              <Link
+                href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+              >
+                <div className="mb-3 text-2xl text-blue-900">☷</div>
+                <h4 className="font-bold text-gray-900">Edit Requests</h4>
+                <p className="mt-1 text-sm text-gray-500">Review faculty requests to edit attendance and marks</p>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div id="task-management" className="mb-8 scroll-mt-6">
           <h3 className="mb-6 text-2xl md:text-3xl font-bold text-blue-700">
             Task Management
           </h3>
