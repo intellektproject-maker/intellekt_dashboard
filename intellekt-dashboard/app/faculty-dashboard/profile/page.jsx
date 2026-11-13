@@ -812,7 +812,7 @@ function FacultyProfileInner() {
               </Link>
             )}
 
-            {/^IG\\d{3,}$/.test(facultyId.trim()) && (
+            {/^IG\d{3,}$/.test(facultyId.trim()) && (
               <Link
                 href={`/faculty-dashboard/edit-requests?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
                 className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
