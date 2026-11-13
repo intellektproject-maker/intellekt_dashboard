@@ -232,6 +232,20 @@ export default function Home() {
       return false;
     }
 
+    const [birthYear, birthMonth, birthDay] = formData.dateOfBirth.split("-").map(Number);
+    const today = new Date();
+    let studentAge = today.getFullYear() - birthYear;
+    if (
+      today.getMonth() + 1 < birthMonth ||
+      (today.getMonth() + 1 === birthMonth && today.getDate() < birthDay)
+    ) {
+      studentAge -= 1;
+    }
+    if (studentAge < 12 || studentAge > 19) {
+      alert("Student must be between 12 and 19 years old.");
+      return false;
+    }
+
     if (!parentName || !/^[A-Za-z\s]+$/.test(parentName)) {
       alert("Parent name should contain only letters and spaces.");
       return false;
