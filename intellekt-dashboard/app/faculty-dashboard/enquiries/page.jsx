@@ -39,7 +39,16 @@ async function generatePDF(filteredData) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-  const tableColumns = [
+  const formatDateOfBirth = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).split("T")[0];
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}-${month}-${date.getUTCFullYear()}`;
+};
+
+const tableColumns = [
     { header: 'EnquiryID', dataKey: 'enq_id' },
     { header: 'Student', dataKey: 'student_name' },
     { header: 'Class', dataKey: 'class_board' },
@@ -62,7 +71,7 @@ async function generatePDF(filteredData) {
     enq_id: item.enq_id || '-',
     student_name: item.student_name || '-',
     class_board: item.class_board || '-',
-    date_of_birth: item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '-',
+    date_of_birth: formatDateOfBirth(item.date_of_birth),
     batch: item.batch || '-',
     mobile_number: item.mobile_number || '-',
     secondary_contact: item.secondary_contact || '-',
@@ -118,7 +127,7 @@ function generateCSV(filteredData) {
     item.enq_id || '',
     item.student_name || '',
     item.class_board || '',
-    item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '',
+    item.date_of_birth ? formatDateOfBirth(item.date_of_birth) : '',
     item.batch || '',
     item.mobile_number || '',
     item.secondary_contact || '',
@@ -873,7 +882,7 @@ function Row({ item, onSave, onAdmit }) {
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.date_of_birth ? String(item.date_of_birth).slice(0, 10) : '-'}
+        {formatDateOfBirth(item.date_of_birth)}
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
