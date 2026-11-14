@@ -117,7 +117,7 @@ export default function Home() {
 
   const sanitizeSchoolName = (value) => {
     return value
-      .replace(/[^A-Za-z0-9\s.,&()'-]/g, "")
+      .replace(/[^A-Za-z\s]/g, "")
       .replace(/\s{2,}/g, " ")
       .replace(/^\s+/, "");
   };
@@ -195,9 +195,9 @@ export default function Home() {
       return false;
     }
 
-    if (!schoolName || !/^[A-Za-z0-9\s.,&()'-]+$/.test(schoolName)) {
+    if (!schoolName || !/^[A-Za-z\s]+$/.test(schoolName)) {
       alert(
-        "School name should not be empty and should contain only valid characters."
+        "School name should contain only letters and spaces."
       );
       return false;
     }
