@@ -438,7 +438,7 @@ export default function EnquiriesPage() {
 const filteredData = useMemo(() => {
   return data
     .filter((item) => {
-      if (item.status === 'Admission In Progress' || item.status === 'Admitted') return false;
+      if (item.admission_in_progress || item.status === 'Admission In Progress' || item.status === 'Admitted') return false;
       const itemClass = getClassValue(item.class_board);
       const itemBoard = getBoardValue(item.class_board);
       const itemStatus = (item.status || 'Pending').trim();
