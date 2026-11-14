@@ -62,6 +62,14 @@ function FacultyLayoutContent({ children }) {
 
         <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 px-6 pb-4">
           <Link
+            href={`/faculty-dashboard/profile?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
+            onClick={() => setMenuOpen(false)}
+            className={linkClass(isActive("/faculty-dashboard/profile"))}
+          >
+            Profile
+          </Link>
+
+          <Link
             href={`/faculty-dashboard/task-management?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch}`}
             onClick={() => setMenuOpen(false)}
             className={linkClass(false)}
