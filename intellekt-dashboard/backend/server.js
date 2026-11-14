@@ -4851,6 +4851,20 @@ app.post('/enquiries', async (req, res) => {
 
 app.get('/enquiries', async (req, res) => {
 	try {
+		// Recover abandoned admission sessions if the browser was closed unexpectedly
+		// and its page-exit cancellation request could not reach the server.
+		await pool.query(`
+			UPDATE enquiries
+			SET status='Pending',
+				admission_token=NULL,
+				admission_started_at=NULL
+			WHERE status='Admission In Progress'
+			  AND (
+				admission_started_at IS NULL
+				OR admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'
+			  )
+		`);
+
 		const result = await pool.query(`
 		SELECT
 			enq_id,
