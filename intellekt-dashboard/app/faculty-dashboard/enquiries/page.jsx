@@ -10,6 +10,13 @@ const FALLBACK_CLASS_OPTIONS = ['10', '11', '12'];
 const FALLBACK_BOARD_OPTIONS = ['CBSE', 'ICSE', 'ISC', 'SB', 'State Board'];
 const ITEMS_PER_PAGE = 5;
 
+function formatRegisteredDateIST(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(date) + ' IST';
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
@@ -67,9 +74,7 @@ async function generatePDF(filteredData) {
     reference: item.reference || '-',
     status: item.status || 'Pending',
     comment: item.comment || item.reason || '-',
-    created_at: item.created_at
-      ? new Date(item.created_at).toLocaleDateString('en-IN')
-      : '-',
+    created_at: formatRegisteredDateIST(item.created_at),
   }));
 
   doc.autoTable({
@@ -125,7 +130,7 @@ function generateCSV(filteredData) {
     item.reference || '',
     item.status || 'Pending',
     item.comment || item.reason || '',
-    item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : '',
+    formatRegisteredDateIST(item.created_at),
   ]);
 
   const csvContent = [headers, ...rows]
@@ -912,7 +917,7 @@ function Row({ item, onSave, onAdmit }) {
       </td>
 
       <td className="px-4 py-3 text-left text-gray-800 align-top">
-        {item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : '-'}
+        {formatRegisteredDateIST(item.created_at)}
       </td>
 
       <td className="px-4 py-3 text-left align-top">
