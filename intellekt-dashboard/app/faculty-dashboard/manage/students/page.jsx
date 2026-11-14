@@ -67,7 +67,10 @@ const [boardFilter, setBoardFilter] = useState("");
     const restorePendingOnExit = () => {
       if (cancellationSent || admissionCompletedRef.current) return;
       cancellationSent = true;
-      fetch(`${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}/admission/cancel`, {
+      const cancelUrl = `${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}/admission/cancel`;
+      const payload = new URLSearchParams({ admission_token: admissionToken });
+      if (navigator.sendBeacon && navigator.sendBeacon(cancelUrl, payload)) return;
+      fetch(cancelUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ admission_token: admissionToken }),
