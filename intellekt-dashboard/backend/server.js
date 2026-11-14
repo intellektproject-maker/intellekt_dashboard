@@ -6706,7 +6706,7 @@ app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, asy
         testValues
       ),
       pool.query(
-        'SELECT s.roll_no,s.name,s.class,s.board,s.subjects,s.test_series_id,ts.name AS test_series_name ' +
+        'SELECT s.roll_no,s.name,s.class,s.board,s.subjects,s.academic_year_from,s.academic_year_to,s.test_series_id,ts.name AS test_series_name ' +
         'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
         studentWhere + ' ORDER BY s.roll_no ASC',
         studentValues
@@ -6715,6 +6715,7 @@ app.get('/test-batch/student-status', requireTestBatchAttendanceMarksAccess, asy
         `SELECT
            t.test_code, t.test_series_id, t.subject_name, ts.name AS test_series_name,
            s.roll_no, s.name, s.class, s.board, s.subjects,
+           s.academic_year_from, s.academic_year_to,
            s.test_series_id AS student_test_series_id,
            r.writing_date AS registered_writing_date,
            r.slot_start AS registered_slot_start,
@@ -6811,6 +6812,8 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAtten
          s.name,
          s.class,
          s.board,
+         s.academic_year_from,
+         s.academic_year_to,
          s.test_series_id,
          r.writing_date AS registered_writing_date,
          r.slot_start AS registered_slot_start,
@@ -6938,6 +6941,8 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
          s.roll_no,
          s.name,
          s.class,
+         s.academic_year_from,
+         s.academic_year_to,
          s.test_series_id,
          r.writing_date AS registered_writing_date,
          r.slot_start AS registered_slot_start,
@@ -7753,6 +7758,8 @@ app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (
       `SELECT
           s.roll_no,
           s.name,
+          s.academic_year_from,
+          s.academic_year_to,
           ts.name AS test_series_name,
           (
             SELECT STRING_AGG(DISTINCT TRIM(tr.test_code), ', ' ORDER BY TRIM(tr.test_code))
