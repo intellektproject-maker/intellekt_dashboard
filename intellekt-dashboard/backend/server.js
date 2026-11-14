@@ -3623,7 +3623,7 @@ app.post('/students', async (req, res) => {
 		if (enquiry_id) {
 			const admissionLock = await client.query(
 				`SELECT id FROM enquiries
-				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 WHERE id=$1 AND status IN ('Pending','Admission In Progress') AND admission_token=$2
 				 FOR UPDATE`,
 				[enquiry_id, String(admission_token || '')]
 			);
@@ -3730,7 +3730,7 @@ app.post('/students', async (req, res) => {
 			const admitted = await client.query(
 				`UPDATE enquiries
 				 SET status='Admitted', admission_token=NULL, admission_started_at=NULL
-				 WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+				 WHERE id=$1 AND status IN ('Pending','Admission In Progress') AND admission_token=$2
 				 RETURNING id`,
 				[enquiry_id, String(admission_token || '')]
 			);
@@ -4584,7 +4584,7 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE enquiries
-       SET status='Admission In Progress', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
+       SET status='Pending', admission_token=$2, admission_started_at=CURRENT_TIMESTAMP
        WHERE id=$1
          AND (
            status IS NULL
@@ -4609,6 +4609,7 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
              )
            )
          )
+         AND (admission_token IS NULL OR admission_token='' OR admission_token=$2)
        RETURNING id,batch,status,admission_started_at`,
       [id, token]
     );
@@ -4629,8 +4630,8 @@ app.post('/enquiries/:id/admission/cancel', async (req, res) => {
     const result = await pool.query(
       `UPDATE enquiries
        SET status='Pending', admission_token=NULL, admission_started_at=NULL
-       WHERE id=$1 AND status='Admission In Progress'
-         AND (admission_token=$2 OR $2='')
+       WHERE id=$1 AND status IN ('Pending','Admission In Progress')
+         AND admission_token=$2
        RETURNING id`,
       [id, token]
     );
@@ -4859,7 +4860,7 @@ app.get('/enquiries', async (req, res) => {
 			SET status='Pending',
 				admission_token=NULL,
 				admission_started_at=NULL
-			WHERE status='Admission In Progress'
+			WHERE (status='Admission In Progress' OR admission_token IS NOT NULL)
 			  AND (
 				admission_started_at IS NULL
 				OR admission_started_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'
@@ -4887,7 +4888,8 @@ app.get('/enquiries', async (req, res) => {
 			reason,
 			area,
 			reference,
-			admission_started_at
+			admission_started_at,
+			(admission_token IS NOT NULL) AS admission_in_progress
 		FROM enquiries
 		ORDER BY created_at DESC
 		`);
@@ -7424,7 +7426,7 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
     if (enquiry_id) {
       const admissionLock = await client.query(
         `SELECT id FROM enquiries
-         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         WHERE id=$1 AND status IN ('Pending','Admission In Progress') AND admission_token=$2
          FOR UPDATE`,
         [enquiry_id, String(admission_token || '')]
       );
@@ -7492,7 +7494,7 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
       const admitted = await client.query(
         `UPDATE enquiries
          SET status='Admitted', admission_token=NULL, admission_started_at=NULL, comment=NULL, reason=NULL
-         WHERE id=$1 AND status='Admission In Progress' AND admission_token=$2
+         WHERE id=$1 AND status IN ('Pending','Admission In Progress') AND admission_token=$2
          RETURNING id`,
         [enquiry_id, String(admission_token || '')]
       );
