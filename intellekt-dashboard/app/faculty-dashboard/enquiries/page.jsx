@@ -371,15 +371,6 @@ export default function EnquiriesPage() {
     }
   }
 
-  async function handleCancelAdmission(item) {
-    if (!window.confirm(`Return enquiry ${item.enq_id || item.id} to Pending?`)) return;
-    try {
-      const res = await fetch(`${API_BASE}/enquiries/${item.id}/admission/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admission_token: '' }) });
-      const result = await res.json();
-      if (!res.ok) { alert(result.error || 'Could not cancel this admission'); return; }
-      await loadData();
-    } catch (err) { console.error('Cancel admission error:', err); alert('Unable to cancel admission. Please try again.'); }
-  }
 
   async function handleUpdate(id, status, comment) {
     if (status === 'Admitted') {
@@ -439,8 +430,6 @@ export default function EnquiriesPage() {
       setPhoneFilterError('');
     }
   }
-const admissionInProgress = useMemo(() => data.filter((item) => item.status === 'Admission In Progress'), [data]);
-
 const filteredData = useMemo(() => {
   return data
     .filter((item) => {
@@ -621,25 +610,6 @@ const filteredData = useMemo(() => {
         </div>
       </div>
 
-      {admissionInProgress.length > 0 && (
-        <div className="mb-6 rounded-xl bg-amber-50 p-4 shadow-sm border border-amber-200">
-          <h3 className="text-lg font-semibold text-amber-900">Admissions in progress</h3>
-          <p className="mt-1 text-sm text-amber-800">These enquiries are hidden from the active list while admission is in progress. You can resume or return an enquiry to Pending at any time.</p>
-          <div className="mt-3 overflow-x-auto"><table className="min-w-full text-sm">
-            <thead className="bg-amber-100 text-amber-900"><tr><th className="px-3 py-2 text-left">Enquiry</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Batch</th><th className="px-3 py-2 text-left">Started</th><th className="px-3 py-2 text-left">Actions</th></tr></thead>
-            <tbody>{admissionInProgress.map((item) => {
-              const ageMinutes = item.admission_started_at ? (Date.now() - new Date(item.admission_started_at).getTime()) / 60000 : 31;
-              const canRecover = true;
-              return <tr key={item.id} className="border-b border-amber-200">
-                <td className="px-3 py-2">{item.enq_id || item.id}</td><td className="px-3 py-2">{item.student_name || '-'}</td><td className="px-3 py-2">{item.batch || 'Regular Batch'}</td><td className="px-3 py-2">{item.admission_started_at ? new Date(item.admission_started_at).toLocaleString('en-IN') : '-'}</td>
-                <td className="px-3 py-2"><div className="flex flex-wrap gap-2">
-                  <button type="button" disabled={!canRecover} onClick={() => handleAdmit(item)} className="rounded-md bg-blue-700 px-3 py-2 text-white disabled:opacity-50">Resume</button>
-                  <button type="button" disabled={!canRecover} onClick={() => handleCancelAdmission(item)} className="rounded-md border border-amber-400 bg-white px-3 py-2 text-amber-900 disabled:opacity-50">Return to Pending</button>
-                </div></td>
-              </tr>;
-            })}</tbody></table></div>
-        </div>
-      )}
 
       <div className="rounded-xl bg-white p-4 md:p-6 shadow-md border border-gray-200">
         <div className="overflow-x-auto">
