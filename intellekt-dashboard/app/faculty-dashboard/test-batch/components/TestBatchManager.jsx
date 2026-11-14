@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import TestBatchStudentTests from "../../../test-batch/student/TestBatchStudentTests";
 
@@ -60,6 +60,7 @@ function StudentsSection({ adminId }) {
   const router = useRouter();
   const admissionEnquiryId = params.get("admitEnquiryId") || "";
   const admissionToken = params.get("admissionToken") || "";
+  const admissionCompletedRef = useRef(false);
   const [prefillLoadedId, setPrefillLoadedId] = useState("");
   const [series, setSeries] = useState([]);
   const [students, setStudents] = useState([]);
@@ -75,6 +76,28 @@ function StudentsSection({ adminId }) {
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [nextRoll, setNextRoll] = useState("IAT001");
+  useEffect(() => {
+    if (!admissionEnquiryId || !admissionToken) return;
+
+    let cancellationSent = false;
+    const restorePendingOnExit = () => {
+      if (cancellationSent || admissionCompletedRef.current) return;
+      cancellationSent = true;
+      fetch(API_BASE + "/enquiries/" + encodeURIComponent(admissionEnquiryId) + "/admission/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admission_token: admissionToken }),
+        keepalive: true
+      }).catch((err) => console.error("Could not restore Test Batch enquiry to Pending on exit:", err));
+    };
+
+    window.addEventListener("pagehide", restorePendingOnExit);
+    return () => {
+      window.removeEventListener("pagehide", restorePendingOnExit);
+      restorePendingOnExit();
+    };
+  }, [admissionEnquiryId, admissionToken]);
+
   const [form, setForm] = useState({
     roll_no: "",
     name: "",
@@ -296,6 +319,7 @@ function StudentsSection({ adminId }) {
         setNextRoll(result.roll_no || "IAT001");
       }
 
+      if (admissionEnquiryId) admissionCompletedRef.current = true;
       resetForm();
       if (admissionEnquiryId) router.replace("/faculty-dashboard/manage-test-batch-students?id=" + encodeURIComponent(adminId) + "&batch=test");
       await Promise.all([loadStudents(), loadNextRoll()]);
