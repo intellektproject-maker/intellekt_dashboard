@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import TestBatchManager from "../../test-batch/components/TestBatchManager";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -13,6 +13,7 @@ function ManageStudentsPageInner() {
   const facultyId = searchParams.get("id");
   const admissionEnquiryId = searchParams.get("admitEnquiryId") || "";
   const admissionToken = searchParams.get("admissionToken") || "";
+  const admissionCompletedRef = useRef(false);
 
   const [students, setStudents] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -58,6 +59,28 @@ const [boardFilter, setBoardFilter] = useState("");
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    if (!admissionEnquiryId || !admissionToken) return;
+
+    let cancellationSent = false;
+    const restorePendingOnExit = () => {
+      if (cancellationSent || admissionCompletedRef.current) return;
+      cancellationSent = true;
+      fetch(`${API_BASE}/enquiries/${encodeURIComponent(admissionEnquiryId)}/admission/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admission_token: admissionToken }),
+        keepalive: true,
+      }).catch((err) => console.error("Could not restore enquiry to Pending on exit:", err));
+    };
+
+    window.addEventListener("pagehide", restorePendingOnExit);
+    return () => {
+      window.removeEventListener("pagehide", restorePendingOnExit);
+      restorePendingOnExit();
+    };
+  }, [admissionEnquiryId, admissionToken]);
 
   useEffect(() => {
     if (!admissionEnquiryId || !admissionToken || !subjects.length || prefillLoadedId === admissionEnquiryId) return;
@@ -523,6 +546,7 @@ return searchMatch && classMatch && boardMatch;
           : "Student added successfully"
       );
 
+      if (admissionEnquiryId) admissionCompletedRef.current = true;
       resetForm();
       setShowStudentPopup(false);
       if (admissionEnquiryId) router.replace(`/faculty-dashboard/manage/students?id=${encodeURIComponent(facultyId || "")}`);
