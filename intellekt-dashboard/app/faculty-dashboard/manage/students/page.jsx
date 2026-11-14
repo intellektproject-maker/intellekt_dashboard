@@ -1172,7 +1172,16 @@ setBoardFilter("");
                   className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 ${rollNoCheck.exists ? "border-red-500" : ""}`}
                 />
                 {(() => {
-                  const lastStudent = students.length ? students[students.length - 1] : null;
+                  const lastStudent = students.length
+                    ? [...students].sort((a, b) => {
+                        const aDate = new Date(a.created_at || a.createdAt || 0).getTime();
+                        const bDate = new Date(b.created_at || b.createdAt || 0).getTime();
+                        if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) {
+                          return aDate - bDate;
+                        }
+                        return String(a.roll_no || "").localeCompare(String(b.roll_no || ""), undefined, { numeric: true });
+                      }).at(-1)
+                    : null;
                   return lastStudent ? (
                     <p className="mt-1 text-xs text-gray-500">
                       Last listed student: <span className="font-semibold">{lastStudent.roll_no}</span>
