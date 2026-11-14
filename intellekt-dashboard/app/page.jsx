@@ -650,7 +650,8 @@ export default function Home() {
       <option value="">Select board</option>
       <option value="CBSE">CBSE</option>
       <option value="Stateboard">Stateboard</option>
-      <option value="Isc">Isc</option>
+      <option value="ICSE">ICSE</option>
+       <option value="Isc">Isc</option>
     </select>
   </div>
 
