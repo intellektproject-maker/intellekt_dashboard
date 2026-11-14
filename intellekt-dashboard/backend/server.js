@@ -4853,8 +4853,15 @@ app.post('/enquiries', async (req, res) => {
 
 app.get('/enquiries', async (req, res) => {
 	try {
-		// Recover abandoned admission sessions if the browser was closed unexpectedly
-		// and its page-exit cancellation request could not reach the server.
+		// Migrate legacy in-progress rows created before admission sessions used a
+		// separate token lock. New admission sessions keep status='Pending'.
+		await pool.query(`
+			UPDATE enquiries
+			SET status='Pending', admission_token=NULL, admission_started_at=NULL
+			WHERE status='Admission In Progress'
+		`);
+
+		// Release abandoned token locks if the browser exit request could not reach the server.
 		await pool.query(`
 			UPDATE enquiries
 			SET status='Pending',
