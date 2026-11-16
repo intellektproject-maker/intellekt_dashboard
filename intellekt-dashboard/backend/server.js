@@ -4433,7 +4433,68 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 	try {
 		let result;
 
-		if (faculty_id && faculty_name) {
+		if (req.body.action === 'edit') {
+			const {
+				loginFacultyId,
+				faculty_name: editedFacultyName,
+				faculty_id: editedFacultyId,
+				class_name,
+				subject_name,
+				test_code,
+				total_test_note,
+				other_tasks,
+				due_date,
+				priority,
+				task_type
+			} = req.body;
+
+			if (!['IG001', 'IG002'].includes(String(loginFacultyId || '').trim().toUpperCase())) {
+				return res.status(403).json({ error: 'Only admins can edit assigned tasks' });
+			}
+			if (!editedFacultyId || !editedFacultyName || !class_name ||
+				!['Maths', 'Physics', 'Other'].includes(String(subject_name || '').trim())) {
+				return res.status(400).json({ error: 'Faculty, class and a valid subject are required' });
+			}
+			if (task_type !== 'Daily' && !due_date) {
+				return res.status(400).json({ error: 'Due date is required for weekly tasks' });
+			}
+
+			const client = await pool.connect();
+			try {
+				await client.query('BEGIN');
+				const current = await client.query(
+					'SELECT id, task_type, parent_daily_task_id FROM faculty_tasks WHERE id=$1 FOR UPDATE',
+					[id]
+				);
+				if (!current.rows.length) {
+					await client.query('ROLLBACK');
+					return res.status(404).json({ error: 'Task not found' });
+				}
+				const task = current.rows[0];
+				const targetId = task.parent_daily_task_id || task.id;
+				const values = [
+					editedFacultyId.trim().toUpperCase(), editedFacultyName, class_name,
+					subject_name, test_code || '', total_test_note || '', other_tasks || '',
+					task_type === 'Daily' ? null : due_date,
+					task_type === 'Daily' ? 'High' : (priority || 'Medium'), targetId
+				];
+				await client.query(
+					`UPDATE faculty_tasks
+						 SET faculty_id=$1, faculty_name=$2, class_name=$3, subject_name=$4,
+						     test_code=$5, total_test_note=$6, other_tasks=$7, due_date=$8,
+						     priority=$9
+						 WHERE id=$10 OR parent_daily_task_id=$10`,
+					values
+				);
+				await client.query('COMMIT');
+				result = await pool.query('SELECT * FROM faculty_tasks WHERE id=$1', [id]);
+			} catch (editError) {
+				await client.query('ROLLBACK');
+				throw editError;
+			} finally {
+				client.release();
+			}
+		} else if (faculty_id && faculty_name) {
 			result = await pool.query(
 				`
 					UPDATE faculty_tasks
