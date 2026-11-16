@@ -28,7 +28,6 @@ function FacultyProfileInner() {
   const [allTaskFilter, setAllTaskFilter] = useState('All');
   const [dailyTaskFilter, setDailyTaskFilter] = useState('All');
   const [classOptions, setClassOptions] = useState([]);
-  const [testCodes, setTestCodes] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
   const [activeSection, setActiveSection] = useState('');
   const [manageModalOpen, setManageModalOpen] = useState(false);
@@ -62,6 +61,7 @@ function FacultyProfileInner() {
     faculty_name: '',
     class_name: '',
     subject_name: '',
+    test_code: '',
     total_test_note: '',
     other_tasks: '',
     due_date: '',
@@ -266,20 +266,6 @@ function FacultyProfileInner() {
   }, []);
 
   useEffect(() => {
-    async function fetchTestCodes() {
-      try {
-        const data = await safeFetchJson(`${API_BASE}/tests`);
-        setTestCodes(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error(err);
-        setTestCodes([]);
-      }
-    }
-
-    fetchTestCodes();
-  }, []);
-
-  useEffect(() => {
     async function fetchMyTasks() {
       try {
         setTaskLoading(true);
@@ -428,8 +414,8 @@ function FacultyProfileInner() {
       return;
     }
 
-    if (!form.subject_name && !form.other_tasks.trim()) {
-      alert('Please select Test Code or enter Other Tasks');
+    if (!form.subject_name) {
+      alert('Please select a Subject');
       return;
     }
 
@@ -461,6 +447,7 @@ function FacultyProfileInner() {
           faculty_name: form.faculty_name,
           class_name: form.class_name,
           subject_name: form.subject_name,
+          test_code: form.test_code.trim(),
           total_test_note: form.total_test_note,
           other_tasks: form.other_tasks,
           due_date: form.task_type === 'Daily' ? null : form.due_date,
@@ -475,6 +462,7 @@ function FacultyProfileInner() {
         ...prev,
         class_name: '',
         subject_name: '',
+        test_code: '',
         total_test_note: '',
         other_tasks: '',
         due_date: '',
@@ -643,7 +631,11 @@ function FacultyProfileInner() {
         </p>
 
         <p>
-          <b>Test Code:</b> {task.subject_name || '-'}
+          <b>Test Code:</b> {task.test_code || '-'}
+        </p>
+
+        <p>
+          <b>Subject:</b> {task.subject_name || '-'}
         </p>
 
         <p>
@@ -903,22 +895,33 @@ function FacultyProfileInner() {
 
               <div>
                 <label className="mb-2 block font-medium text-gray-700">
-                  4. Test Code
+                  4. Test Code (Optional)
                 </label>
+                <input
+                  type="text"
+                  name="test_code"
+                  value={form.test_code}
+                  onChange={handleInputChange}
+                  placeholder="Enter test code (optional)"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
+                />
+              </div>
 
+              <div>
+                <label className="mb-2 block font-medium text-gray-700">
+                  5. Subject *
+                </label>
                 <select
                   name="subject_name"
                   value={form.subject_name}
                   onChange={handleInputChange}
+                  required
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 text-gray-700"
                 >
-                  <option value="">Select Test Code</option>
-
-                  {testCodes.map((test) => (
-                    <option key={test.test_code} value={test.test_code}>
-                      {test.test_code}
-                    </option>
-                  ))}
+                  <option value="">Select Subject</option>
+                  <option value="Maths">Maths</option>
+                  <option value="Physics">Physics</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
 
