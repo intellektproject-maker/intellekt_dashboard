@@ -4023,49 +4023,39 @@ app.get('/student-class-board-options', async (req, res) => {
 	========================================================= */
 
 async function ensureDailyTasksForToday() {
-	const today = new Date().toISOString().slice(0, 10);
-
-	const templates = await pool.query(`
+	const client = await pool.connect();
+	const createdTasks = [];
+	try {
+		// Serialize this worker with API-triggered calls so only one daily
+		// instance (and one notification) is created for each template/date.
+		await client.query('SELECT pg_advisory_lock($1)', [73190421]);
+		const todayResult = await client.query(
+			"SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date::text AS today"
+		);
+		const today = todayResult.rows[0].today;
+		const templates = await client.query(`
 			SELECT *
 			FROM faculty_tasks
 			WHERE task_type = 'Daily'
-			AND parent_daily_task_id IS NULL
+			  AND parent_daily_task_id IS NULL
+			ORDER BY id
 		`);
 
-	for (const template of templates.rows) {
-		const existing = await pool.query(
-			`
-				SELECT id
-				FROM faculty_tasks
-				WHERE parent_daily_task_id = $1
-				AND task_date = $2
-				LIMIT 1
-				`,
-			[ template.id, today ]
-		);
-
-		if (existing.rows.length === 0) {
-			await pool.query(
+		for (const template of templates.rows) {
+			const inserted = await client.query(
 				`
 					INSERT INTO faculty_tasks (
-						faculty_id,
-						faculty_name,
-						class_name,
-						subject_name,
-						test_code,
-						total_test_note,
-						other_tasks,
-						due_date,
-						priority,
-						assigned_by,
-						task_type,
-						parent_daily_task_id,
-						task_date,
-						is_completed,
-						completed_at
+						faculty_id, faculty_name, class_name, subject_name, test_code,
+						total_test_note, other_tasks, due_date, priority, assigned_by,
+						task_type, parent_daily_task_id, task_date, is_completed, completed_at
 					)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Daily',$11,$12,FALSE,NULL)
-					`,
+					SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Daily',$11,$12,FALSE,NULL
+					WHERE NOT EXISTS (
+						SELECT 1 FROM faculty_tasks
+						WHERE parent_daily_task_id = $11 AND task_date = $12
+					)
+					RETURNING id, faculty_id, faculty_name, task_date
+				`,
 				[
 					template.faculty_id,
 					template.faculty_name,
@@ -4075,13 +4065,105 @@ async function ensureDailyTasksForToday() {
 					template.total_test_note || '',
 					template.other_tasks || '',
 					today,
-					template.priority || 'Medium',
+					template.priority || 'High',
 					template.assigned_by,
 					template.id,
 					today
 				]
 			);
+			if (inserted.rowCount > 0) createdTasks.push(inserted.rows[0]);
 		}
+	} finally {
+		try { await client.query('SELECT pg_advisory_unlock($1)', [73190421]); }
+		catch (unlockError) { console.error('[Faculty Tasks] Failed to release daily-task lock:', unlockError.message); }
+		client.release();
+	}
+
+	// Notify only after a new daily instance has actually been inserted.
+	for (const task of createdTasks) {
+		try {
+			await createFacultyNotification(pool, {
+				facultyId: task.faculty_id,
+				moduleName: 'tasks',
+				title: 'Daily task reminder',
+				message: 'Your daily task is ready for today',
+				data: { task_id: task.id, task_type: 'Daily' }
+			});
+		} catch (notificationError) {
+			console.error('[Faculty Tasks] Daily task notification failed:', {
+				taskId: task.id, facultyId: task.faculty_id,
+				message: notificationError.message
+			});
+		}
+	}
+	return createdTasks.length;
+}
+
+// Send one overdue alert per task to each admin. The unique key in the
+// notification ledger prevents duplicate alerts across scheduler restarts.
+async function notifyAdminsAboutOverdueTasks() {
+	const overdue = await pool.query(`
+		SELECT id, faculty_id, faculty_name, class_name, subject_name, due_date
+		FROM faculty_tasks
+		WHERE COALESCE(is_completed, FALSE) = FALSE
+		  AND due_date IS NOT NULL
+		  AND due_date < (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+		  AND (task_type = 'Weekly' OR task_type = 'Daily' OR task_type IS NULL)
+		ORDER BY due_date ASC, id ASC
+		LIMIT 500
+	`);
+
+	let notificationsCreated = 0;
+	for (const task of overdue.rows) {
+		for (const adminId of ['IG001', 'IG002']) {
+			const claimed = await pool.query(`
+				INSERT INTO faculty_task_overdue_notifications (task_id, admin_id)
+				VALUES ($1, $2)
+				ON CONFLICT (task_id, admin_id) DO NOTHING
+				RETURNING task_id
+			`, [task.id, adminId]);
+			if (!claimed.rowCount) continue;
+
+			try {
+				await createFacultyNotification(pool, {
+					facultyId: adminId,
+					moduleName: 'tasks',
+					title: 'Overdue faculty task',
+					message: `${task.faculty_name} has not completed the task due on ${String(task.due_date).slice(0, 10)}`,
+					data: {
+						task_id: task.id,
+						faculty_id: task.faculty_id,
+						task_type: 'overdue'
+					}
+				});
+				notificationsCreated++;
+			} catch (notificationError) {
+				// Allow a later scheduler pass to retry if the notification failed.
+				await pool.query(
+					'DELETE FROM faculty_task_overdue_notifications WHERE task_id=$1 AND admin_id=$2',
+					[task.id, adminId]
+				);
+				console.error('[Faculty Tasks] Overdue notification failed:', {
+					taskId: task.id, adminId, message: notificationError.message
+				});
+			}
+		}
+	}
+	return notificationsCreated;
+}
+
+async function runFacultyTaskNotificationJobs() {
+	try {
+		const dailyCreated = await ensureDailyTasksForToday();
+		if (dailyCreated) console.log(`[Faculty Tasks] Created ${dailyCreated} daily task instance(s)`);
+	} catch (error) {
+		console.error('[Faculty Tasks] Daily task generation failed:', error);
+	}
+	try {
+		const overdueSent = await notifyAdminsAboutOverdueTasks();
+		if (overdueSent) console.log(`[Faculty Tasks] Sent ${overdueSent} overdue admin notification(s)`);
+	} catch (error) {
+		console.error('[Faculty Tasks] Overdue notification check failed:', error);
 	}
 }
 
@@ -8447,7 +8529,22 @@ app.post('/device-token', async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    await ensureStudentDeviceTokensTable();
+    // Idempotency ledger: one overdue alert per task for each admin.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.faculty_task_overdue_notifications (
+      task_id BIGINT NOT NULL REFERENCES public.faculty_tasks(id) ON DELETE CASCADE,
+      admin_id VARCHAR(30) NOT NULL,
+      notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (task_id, admin_id)
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_faculty_tasks_overdue_pending
+      ON public.faculty_tasks (due_date, id)
+      WHERE is_completed = FALSE AND due_date IS NOT NULL
+  `);
+
+  await ensureStudentDeviceTokensTable();
 
     await pool.query(
       `INSERT INTO student_device_tokens
@@ -8617,6 +8714,11 @@ async function startServer() {
     createFacultyNotification: facultyNotificationService.createFacultyNotification,
   });
   testBatchPushWorker.start();
+
+  // Run at startup, then once per minute. The daily-task advisory lock and
+  // overdue notification ledger make repeated scheduler/API runs safe.
+  runFacultyTaskNotificationJobs();
+  setInterval(runFacultyTaskNotificationJobs, 60 * 1000).unref();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
