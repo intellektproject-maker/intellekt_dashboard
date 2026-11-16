@@ -4563,7 +4563,12 @@ app.put('/faculty-tasks/:id', async (req, res) => {
 				await client.query(
 					`UPDATE faculty_tasks
 						 SET faculty_id=$1, faculty_name=$2, class_name=$3, subject_name=$4,
-						     test_code=$5, total_test_note=$6, other_tasks=$7, due_date=$8,
+						     test_code=$5, total_test_note=$6, other_tasks=$7,
+						     due_date=CASE
+						       WHEN task_type='Daily' AND parent_daily_task_id IS NOT NULL
+						         THEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+						       ELSE $8
+						     END,
 						     priority=$9
 						 WHERE id=$10 OR parent_daily_task_id=$10`,
 					values
@@ -8532,7 +8537,7 @@ app.post('/device-token', async (req, res) => {
     // Idempotency ledger: one overdue alert per task for each admin.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.faculty_task_overdue_notifications (
-      task_id BIGINT NOT NULL REFERENCES public.faculty_tasks(id) ON DELETE CASCADE,
+      task_id INTEGER NOT NULL REFERENCES public.faculty_tasks(id) ON DELETE CASCADE,
       admin_id VARCHAR(30) NOT NULL,
       notified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (task_id, admin_id)
