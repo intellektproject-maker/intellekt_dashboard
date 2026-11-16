@@ -7569,6 +7569,7 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
         await client.query('ROLLBACK');
         return res.status(409).json({ error:'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
       }
+      await client.query('DELETE FROM enquiry_admission_drafts WHERE enquiry_id=$1', [enquiry_id]);
     }
 
     await client.query('COMMIT');
