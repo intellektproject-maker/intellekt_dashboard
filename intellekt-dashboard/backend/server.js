@@ -8463,6 +8463,34 @@ async function startServer() {
     ALTER TABLE public.faculty_tasks
       ADD COLUMN IF NOT EXISTS test_code TEXT
   `);
+  // Preserve previously assigned test codes, which the old form stored
+  // in subject_name, while normalizing the new subject field.
+  await pool.query(`
+    UPDATE public.faculty_tasks
+    SET test_code = CASE
+          WHEN NULLIF(TRIM(test_code), '') IS NULL
+           AND NULLIF(TRIM(subject_name), '') IS NOT NULL
+           AND LOWER(TRIM(subject_name)) NOT IN ('maths', 'physics', 'other')
+          THEN TRIM(subject_name)
+          ELSE test_code
+        END,
+        subject_name = CASE
+          WHEN UPPER(TRIM(COALESCE(subject_name, ''))) ~ '^[SCI](7|8|9|10|11|12)M'
+            THEN 'Maths'
+          WHEN UPPER(TRIM(COALESCE(subject_name, ''))) ~ '^[SCI](7|8|9|10|11|12)P'
+            THEN 'Physics'
+          WHEN LOWER(TRIM(COALESCE(subject_name, ''))) IN ('maths', 'physics', 'other')
+            THEN CASE LOWER(TRIM(subject_name))
+              WHEN 'maths' THEN 'Maths'
+              WHEN 'physics' THEN 'Physics'
+              ELSE 'Other'
+            END
+          WHEN NULLIF(TRIM(subject_name), '') IS NOT NULL
+            THEN 'Other'
+          ELSE subject_name
+        END
+    WHERE NULLIF(TRIM(subject_name), '') IS NOT NULL
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.enquiry_admission_drafts (
       enquiry_id BIGINT PRIMARY KEY,
