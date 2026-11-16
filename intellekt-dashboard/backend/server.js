@@ -3738,6 +3738,7 @@ app.post('/students', async (req, res) => {
 				await client.query('ROLLBACK');
 				return res.status(409).json({ error: 'Admission session changed before the student could be saved. No student was created; please reopen the enquiry.' });
 			}
+			await client.query('DELETE FROM enquiry_admission_drafts WHERE enquiry_id=$1', [enquiry_id]);
 		}
 
 		await client.query('COMMIT');
@@ -4577,6 +4578,61 @@ app.get('/enquiries/:id', async (req, res) => {
   }
 });
 
+// Persistent admission drafts are independent of the short-lived admission session token.
+app.get('/enquiries/:id/admission/draft', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT draft_data, updated_at FROM enquiry_admission_drafts WHERE enquiry_id=$1',
+      [req.params.id]
+    );
+    res.json(result.rows[0] || { draft_data: null, updated_at: null });
+  } catch (err) {
+    console.error('GET admission draft error:', err);
+    res.status(500).json({ error: 'Failed to load admission draft' });
+  }
+});
+
+app.put('/enquiries/:id/admission/draft', async (req, res) => {
+  const draft = req.body?.draft_data;
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+    return res.status(400).json({ error: 'A valid admission draft is required' });
+  }
+  try {
+    const enquiry = await pool.query('SELECT id, status FROM enquiries WHERE id=$1', [req.params.id]);
+    if (!enquiry.rows.length) return res.status(404).json({ error: 'Enquiry not found' });
+    if (enquiry.rows[0].status === 'Admitted') {
+      return res.status(409).json({ error: 'This enquiry is already admitted; its draft can no longer be changed.' });
+    }
+    const safeDraft = { ...draft };
+    if (safeDraft.fields && typeof safeDraft.fields === 'object') {
+      safeDraft.fields = { ...safeDraft.fields };
+      delete safeDraft.fields.password;
+    }
+    const result = await pool.query(
+      `INSERT INTO enquiry_admission_drafts (enquiry_id, draft_data, updated_at)
+       VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP)
+       ON CONFLICT (enquiry_id) DO UPDATE
+       SET draft_data=EXCLUDED.draft_data, updated_at=CURRENT_TIMESTAMP
+       RETURNING updated_at`,
+      [req.params.id, JSON.stringify(safeDraft)]
+    );
+    res.json({ success: true, updated_at: result.rows[0].updated_at });
+  } catch (err) {
+    console.error('PUT admission draft error:', err);
+    res.status(500).json({ error: 'Failed to save admission draft' });
+  }
+});
+
+app.delete('/enquiries/:id/admission/draft', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM enquiry_admission_drafts WHERE enquiry_id=$1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE admission draft error:', err);
+    res.status(500).json({ error: 'Failed to clear admission draft' });
+  }
+});
+
 app.post('/enquiries/:id/admission/start', async (req, res) => {
   const id = req.params.id;
   const token = String(req.body?.admission_token || '').trim();
@@ -4609,7 +4665,6 @@ app.post('/enquiries/:id/admission/start', async (req, res) => {
              )
            )
          )
-         AND (admission_token IS NULL OR admission_token='' OR admission_token=$2)
        RETURNING id,batch,status,admission_started_at`,
       [id, token]
     );
@@ -8391,6 +8446,13 @@ registerRecordEditRoutes(app, pool);
 registerTestBatchEditRequestRoutes(app, pool);
 
 async function startServer() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.enquiry_admission_drafts (
+      enquiry_id BIGINT PRIMARY KEY,
+      draft_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
   // Keep public enquiry submissions compatible with databases created before
   // the latest enquiry form fields were introduced.
   await pool.query(`
