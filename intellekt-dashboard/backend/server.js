@@ -4052,6 +4052,7 @@ async function ensureDailyTasksForToday() {
 						faculty_name,
 						class_name,
 						subject_name,
+						test_code,
 						total_test_note,
 						other_tasks,
 						due_date,
@@ -4063,13 +4064,14 @@ async function ensureDailyTasksForToday() {
 						is_completed,
 						completed_at
 					)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Daily',$11,$12,FALSE,NULL)
 					`,
 				[
 					template.faculty_id,
 					template.faculty_name,
 					template.class_name,
 					template.subject_name || '',
+					template.test_code || '',
 					template.total_test_note || '',
 					template.other_tasks || '',
 					today,
@@ -4098,6 +4100,7 @@ app.get('/faculty-tasks/:facultyId', async (req, res) => {
 					faculty_name,
 					class_name,
 					subject_name,
+					test_code,
 					total_test_note,
 					other_tasks,
 					due_date,
@@ -4154,6 +4157,7 @@ app.get('/faculty-tasks-all', async (req, res) => {
 					faculty_name,
 					class_name,
 					subject_name,
+					test_code,
 					total_test_note,
 					other_tasks,
 					due_date,
@@ -4203,6 +4207,7 @@ app.get('/faculty-daily-tasks-all', async (req, res) => {
 					faculty_name,
 					class_name,
 					subject_name,
+					test_code,
 					total_test_note,
 					other_tasks,
 					due_date,
@@ -4240,6 +4245,7 @@ app.post('/faculty-tasks', async (req, res) => {
 		faculty_name,
 		class_name,
 		subject_name,
+		test_code,
 		total_test_note,
 		other_tasks,
 		due_date,
@@ -4254,9 +4260,9 @@ app.post('/faculty-tasks', async (req, res) => {
 			});
 		}
 
-		if (!subject_name && !other_tasks) {
+		if (!subject_name || !['Maths', 'Physics', 'Other'].includes(String(subject_name).trim())) {
 			return res.status(400).json({
-				error: 'Please select Test Code or enter Other Tasks'
+				error: 'Please select a valid subject (Maths, Physics or Other)'
 			});
 		}
 
@@ -4281,6 +4287,7 @@ app.post('/faculty-tasks', async (req, res) => {
 						faculty_name,
 						class_name,
 						subject_name,
+						test_code,
 						total_test_note,
 						other_tasks,
 						due_date,
@@ -4290,14 +4297,15 @@ app.post('/faculty-tasks', async (req, res) => {
 						parent_daily_task_id,
 						task_date
 					)
-					VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,'Daily',NULL,NULL)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,'Daily',NULL,NULL)
 					RETURNING *
 				`,
 				[
 					faculty_id,
 					faculty_name,
 					class_name,
-					subject_name || '',
+					subject_name,
+					test_code || '',
 					total_test_note || '',
 					other_tasks || '',
 					priority || 'Medium',
@@ -4314,6 +4322,7 @@ app.post('/faculty-tasks', async (req, res) => {
 						faculty_name,
 						class_name,
 						subject_name,
+						test_code,
 						total_test_note,
 						other_tasks,
 						due_date,
@@ -4325,14 +4334,15 @@ app.post('/faculty-tasks', async (req, res) => {
 						is_completed,
 						completed_at
 					)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Daily',$10,$11,FALSE,NULL)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Daily',$11,$12,FALSE,NULL)
 					RETURNING *
 				`,
 				[
 					faculty_id,
 					faculty_name,
 					class_name,
-					subject_name || '',
+					subject_name,
+					test_code || '',
 					total_test_note || '',
 					other_tasks || '',
 					today,
@@ -4367,6 +4377,7 @@ app.post('/faculty-tasks', async (req, res) => {
 					faculty_name,
 					class_name,
 					subject_name,
+					test_code,
 					total_test_note,
 					other_tasks,
 					due_date,
@@ -4376,14 +4387,15 @@ app.post('/faculty-tasks', async (req, res) => {
 					parent_daily_task_id,
 					task_date
 				)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Weekly',NULL,NULL)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Weekly',NULL,NULL)
 				RETURNING *
 			`,
 			[
 				faculty_id,
 				faculty_name,
 				class_name,
-				subject_name || '',
+				subject_name,
+				test_code || '',
 				total_test_note || '',
 				other_tasks || '',
 				due_date || null,
@@ -8447,6 +8459,10 @@ registerRecordEditRoutes(app, pool);
 registerTestBatchEditRequestRoutes(app, pool);
 
 async function startServer() {
+  await pool.query(`
+    ALTER TABLE public.faculty_tasks
+      ADD COLUMN IF NOT EXISTS test_code TEXT
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.enquiry_admission_drafts (
       enquiry_id BIGINT PRIMARY KEY,
