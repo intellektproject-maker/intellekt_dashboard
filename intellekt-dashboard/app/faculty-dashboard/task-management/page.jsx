@@ -63,7 +63,7 @@ function TaskManagementContent() {
           {options.map((option) => (
             <Link
               key={option.section}
-              href={`/faculty-dashboard/profile?id=${encodeURIComponent(facultyId)}&batch=${batch}&taskSection=${option.section}#task-management`}
+              href={`/faculty-dashboard/task-management/${option.section}?id=${encodeURIComponent(facultyId)}&batch=${batch}&taskSection=${option.section}`}
               className="group min-h-48 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-md"
             >
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-2xl font-bold text-blue-900">
