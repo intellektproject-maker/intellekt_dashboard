@@ -29,7 +29,7 @@ function FacultyProfileInner() {
   const [dailyTaskFilter, setDailyTaskFilter] = useState('All');
   const [classOptions, setClassOptions] = useState([]);
   const [facultyNotifications, setFacultyNotifications] = useState([]);
-  const [activeSection, setActiveSection] = useState('');
+  const [activeSection, setActiveSection] = useState(searchParams.get('taskSection') || '');
   const [manageModalOpen, setManageModalOpen] = useState(false);
   const selectedBatch = searchParams.get('batch') === 'test' ? 'Test Batch' : 'Regular Batch';
 
@@ -686,6 +686,25 @@ function FacultyProfileInner() {
   return (
     <div className="min-h-[80vh] bg-gray-50 px-6 py-10">
       <div className="mx-auto w-full max-w-6xl">
+        {activeSection ? (
+          <div className="mb-8">
+            <Link
+              href={`/faculty-dashboard/task-management?id=${encodeURIComponent(facultyId)}&batch=${selectedBatch === 'Test Batch' ? 'test' : 'regular'}`}
+              className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"
+            >
+              ← Back to Task Management
+            </Link>
+            <h2 className="text-2xl font-bold text-blue-700 md:text-3xl">
+              {activeSection === 'allTasks' ? 'All Faculty Assigned Tasks'
+                : activeSection === 'dailyTasks' ? 'All Faculty Daily Task'
+                : activeSection === 'myTasks' ? 'Task Assignment'
+                : 'My Task Checklist'}
+            </h2>
+          </div>
+        ) : null}
+
+        {!activeSection && (
+          <>
         <h2 className="mb-6 text-center text-3xl font-bold text-blue-700 md:text-4xl">
           {profileTitle}
         </h2>
@@ -823,6 +842,9 @@ function FacultyProfileInner() {
             )}
           </div>
         </div>
+
+          </>
+        )}
 
         <div id="task-management" className="mb-8 scroll-mt-6" />
 
