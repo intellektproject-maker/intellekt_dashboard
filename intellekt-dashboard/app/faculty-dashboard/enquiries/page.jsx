@@ -10,6 +10,15 @@ const FALLBACK_CLASS_OPTIONS = ['10', '11', '12'];
 const FALLBACK_BOARD_OPTIONS = ['CBSE', 'ICSE', 'ISC', 'SB', 'State Board'];
 const ITEMS_PER_PAGE = 5;
 
+function formatDateOfBirth(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).split("T")[0];
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}-${month}-${date.getUTCFullYear()}`;
+}
+
 function formatRegisteredDateIST(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -38,15 +47,6 @@ async function generatePDF(filteredData) {
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-  const formatDateOfBirth = (value) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).split("T")[0];
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${day}-${month}-${date.getUTCFullYear()}`;
-};
 
 const tableColumns = [
     { header: 'EnquiryID', dataKey: 'enq_id' },
