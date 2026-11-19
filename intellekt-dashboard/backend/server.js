@@ -1769,8 +1769,8 @@ app.post('/marks', async (req, res) => {
 			if (record.batch === 'Regular Batch' && parsed) {
 				await client.query(
 					`INSERT INTO tests (test_code, test_date, subject_id, total_marks, portion, class, board)
-						 SELECT $1, $2, $3, $4, $5, $6, $7
-						 WHERE NOT EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)))`,
+						 SELECT $1::text, $2, $3, $4, $5, $6, $7
+						 WHERE NOT EXISTS (SELECT 1 FROM tests WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1::text)))`,
 						[canonicalCode, record.test_date || null, subjectId, totalMarks, record.portion || null, student.class, student.board]
 				);
 			}
