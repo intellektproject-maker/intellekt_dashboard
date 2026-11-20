@@ -24,7 +24,7 @@ function normalizeTestBatchBoard(value) {
 	const board = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
 	if (board === 's' || board === 'state' || board === 'stateboard') return 'stateboard';
 	if (board === 'c' || board === 'cbse') return 'cbse';
-	if (board === 'i' || board === 'isc') return 'isc';
+	if (board === 'i' || board === 'isc' || board === 'icse') return 'isc';
 	return board;
 }
 
@@ -3446,7 +3446,8 @@ app.get('/enter-marks-students', async (req, res) => {
 				 LEFT JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
 				   AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($4))
 				 WHERE TRIM(s.class) = TRIM($1)
-				   AND UPPER(TRIM(s.board)) = UPPER(TRIM($2))
+				   AND (CASE WHEN UPPER(TRIM(s.board)) IN ('ISC', 'ICSE') THEN 'ISC' ELSE UPPER(TRIM(s.board)) END) =
+				     (CASE WHEN UPPER(TRIM($2)) IN ('ISC', 'ICSE') THEN 'ISC' ELSE UPPER(TRIM($2)) END)
 				   AND (s.batch IS NULL OR LOWER(TRIM(s.batch)) = 'regular batch')
 				   AND ss.subject_id = $3
 				 ORDER BY s.roll_no ASC`,
