@@ -324,30 +324,112 @@ app.post('/login', async (req, res) => {
 ========================================================= */
 /* Student-only login for the Test Batch mobile APK.
    * This endpoint does not alter the dashboard's Regular Student login. */
+// Sync eligible Regular Batch students into the Test Batch workflow while
+// preserving their original roll numbers. Existing Test Batch rows are left
+// unchanged so their series and profile settings remain intact.
+async function syncRegularStudentsToTestBatch() {
+  const regularResult = await pool.query(
+    "SELECT * FROM students WHERE UPPER(TRIM(roll_no)) ~ '^(?:[0-9]{2,4})?IA[0-9]{3,}$'"
+  );
+  const seriesResult = await pool.query(
+    "SELECT id FROM test_series WHERE name = 'Test Series 10' ORDER BY id LIMIT 1"
+  );
+  if (!seriesResult.rows.length) {
+    throw new Error("Test Series 10 is missing; cannot assign converted students");
+  }
+  const defaultSeriesId = seriesResult.rows[0].id;
+  let inserted = 0;
+
+  for (const student of regularResult.rows) {
+    const rollNo = String(student.roll_no || '').trim().toUpperCase();
+    const password = student.password;
+    if (!rollNo || password == null || String(password).length === 0) continue;
+
+    const subjectText = String(student.subjects ?? student.subject ?? student.subject_name ?? '').toLowerCase();
+    const hasMath = /math|mathemat/.test(subjectText);
+    const hasPhysics = /phys/.test(subjectText);
+    const subjects = hasMath && !hasPhysics
+      ? 'Mathematics'
+      : hasPhysics && !hasMath
+        ? 'Physics'
+        : 'Both';
+
+    const result = await pool.query(
+      `INSERT INTO test_batch_students
+        (roll_no,name,class,board,mode_of_education,subjects,password,must_reset_password,test_series_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (roll_no) DO NOTHING
+       RETURNING roll_no`,
+      [
+        rollNo,
+        String(student.name || student.full_name || rollNo),
+        student.class ?? student.class_name ?? student.standard ?? null,
+        student.board ?? student.board_name ?? null,
+        student.mode_of_education ?? null,
+        subjects,
+        String(password),
+        student.must_reset_password === true,
+        defaultSeriesId
+      ]
+    );
+    inserted += result.rowCount || 0;
+  }
+  return { scanned: regularResult.rows.length, inserted };
+}
+
+/* Student login for the Test Batch APK.
+   First authenticate existing Test Batch records; if absent, authenticate
+   against Regular Batch students and convert the eligible IA roll number into
+   the Test Batch workflow without changing that roll number. */
 app.post('/mobile/login', async (req, res) => {
   const { id, password } = req.body || {};
   const rollNo = String(id || '').trim().toUpperCase();
   if (!rollNo || !password) return res.status(400).json({ error: 'Student ID and password are required' });
+  if (!/^(?:\\d{2,4})?IA\\d{3,}$/i.test(rollNo)) {
+    return res.status(400).json({ error: 'Use your existing IA student roll number' });
+  }
+
   try {
-    const result = await pool.query(
+    const testBatchResult = await pool.query(
       'SELECT roll_no, name, password, must_reset_password FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
       [rollNo]
     );
-    if (!result.rows.length || String(result.rows[0].password) !== String(password)) {
+    if (testBatchResult.rows.length) {
+      const student = testBatchResult.rows[0];
+      if (String(student.password) !== String(password)) {
+        return res.status(401).json({ error: 'Invalid student ID or password' });
+      }
+      return res.json({
+        success: true,
+        role: 'test-batch-student',
+        studentType: 'test_batch',
+        id: student.roll_no,
+        name: student.name || '',
+        mustResetPassword: student.must_reset_password === true
+      });
+    }
+
+    const regularResult = await pool.query(
+      'SELECT * FROM students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!regularResult.rows.length || String(regularResult.rows[0].password) !== String(password)) {
       return res.status(401).json({ error: 'Invalid student ID or password' });
     }
-    const student = result.rows[0];
+
+    await syncRegularStudentsToTestBatch();
+    const student = regularResult.rows[0];
     return res.json({
       success: true,
       role: 'test-batch-student',
       studentType: 'test_batch',
-      id: student.roll_no,
-      name: student.name || '',
+      id: String(student.roll_no).trim().toUpperCase(),
+      name: student.name || student.full_name || '',
       mustResetPassword: student.must_reset_password === true
     });
   } catch (err) {
     console.error('POST /mobile/login error:', err);
-    return res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -7749,6 +7831,7 @@ app.get('/test-batch/students/next-roll', requireTestBatchAttendanceMarksAccess,
 
 app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
+    await syncRegularStudentsToTestBatch();
     const { search, seriesId, class: className } = req.query;
     const values = [];
     let where = 'WHERE 1=1';
