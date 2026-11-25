@@ -6949,6 +6949,437 @@ app.get('/test-batch/tests/:testCode/registered-students', requireTestBatchAtten
   }
 });
 
+
+function normalizeMarkEntrySubject(value) {
+  const subject = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (subject === 'mathematics' || subject === 'maths' || subject === 'math') return 'mathematics';
+  if (subject === 'physics' || subject === 'phy') return 'physics';
+  return subject;
+}
+
+async function requireMarksEntryFaculty(req, res, next) {
+  try {
+    const candidate = String(
+      req.get('x-faculty-id') ||
+      req.get('x-admin-id') ||
+      req.query.facultyId ||
+      req.query.adminId ||
+      (req.body && (req.body.facultyId || req.body.adminId)) ||
+      ''
+    ).toUpperCase().trim();
+    if (!/^IG\d{3,}$/.test(candidate)) {
+      return res.status(403).json({ error: 'Faculty access is required to enter marks' });
+    }
+    const result = await pool.query(
+      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id))=$1 LIMIT 1',
+      [candidate]
+    );
+    if (!result.rows.length) {
+      return res.status(403).json({ error: 'Faculty account is not authorized' });
+    }
+    req.marksEntryFacultyId = candidate;
+    next();
+  } catch (error) {
+    console.error('Marks-entry faculty authorization failed:', error);
+    res.status(500).json({ error: 'Could not verify faculty access' });
+  }
+}
+
+function validateMarkEntryTestCode(code) {
+  const parsed = parseRegularTestCode(code);
+  if (!parsed) return null;
+  const chapterNumber = Number(parsed.chapter);
+  if (!/^\d{1,2}$/.test(String(parsed.chapter)) || !Number.isInteger(chapterNumber) ||
+      chapterNumber < 1 || chapterNumber > 99 ||
+      !Number.isInteger(parsed.totalMarks) || parsed.totalMarks < 1 || parsed.totalMarks > 999) {
+    return null;
+  }
+  return parsed;
+}
+
+async function regularMarkEntryStudents(db, parsed, subjectId) {
+  const result = await db.query(
+    "SELECT DISTINCT s.roll_no, s.name, TRIM(s.class) AS class, TRIM(s.board) AS board " +
+    "FROM students s JOIN student_subjects ss ON UPPER(TRIM(ss.roll_no))=UPPER(TRIM(s.roll_no)) " +
+    "WHERE TRIM(s.class)=$1 " +
+    "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')), '[^a-z]', '', 'g')=$2 " +
+    "AND ss.subject_id=$3 " +
+    "AND (s.batch IS NULL OR LOWER(TRIM(s.batch))='regular batch') " +
+    "ORDER BY s.roll_no ASC",
+    [parsed.className, normalizeTestBatchBoard(parsed.board), Number(subjectId)]
+  );
+  return result.rows;
+}
+
+async function regularMarkEntrySubjectId(db, parsed) {
+  const aliases = parsed.subjectCode === 'M'
+    ? ['mathematics', 'maths', 'math']
+    : ['physics', 'phy'];
+  const result = await db.query(
+    'SELECT subject_id FROM subjects WHERE LOWER(TRIM(subject_name))=ANY($1::text[]) LIMIT 1',
+    [aliases]
+  );
+  return result.rows.length ? Number(result.rows[0].subject_id) : null;
+}
+
+app.get('/regular-mark-entry/:testCode', requireMarksEntryFaculty, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const parsed = validateMarkEntryTestCode(code);
+    if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
+
+    const duplicate = await pool.query(
+      "SELECT 1 FROM tests WHERE UPPER(TRIM(test_code))=$1 " +
+      "UNION ALL SELECT 1 FROM marks WHERE UPPER(TRIM(test_code))=$1 LIMIT 1",
+      [parsed.canonicalCode]
+    );
+    if (duplicate.rows.length) {
+      return res.status(409).json({ error: 'This test code is already taken. Please enter a different test code.' });
+    }
+
+    const subjectId = await regularMarkEntrySubjectId(pool, parsed);
+    if (!subjectId) return res.status(400).json({ error: 'The subject is not configured in the database' });
+
+    const students = await regularMarkEntryStudents(pool, parsed, subjectId);
+    if (!students.length) {
+      return res.status(404).json({ error: 'No eligible students found for this test code' });
+    }
+
+    res.json({
+      test: {
+        test_code: parsed.canonicalCode,
+        board: parsed.board,
+        class: parsed.className,
+        subject: parsed.subjectName,
+        subject_id: subjectId,
+        total_marks: parsed.totalMarks,
+        chapter: parsed.chapter
+      },
+      students
+    });
+  } catch (error) {
+    console.error('GET /regular-mark-entry/:testCode failed:', error);
+    res.status(500).json({ error: 'Could not load students for marks entry' });
+  }
+});
+
+app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const code = String((req.body && req.body.testCode) || '').trim().toUpperCase();
+    const parsed = validateMarkEntryTestCode(code);
+    const records = req.body && req.body.records;
+    if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: 'Marks are required for every student' });
+    }
+
+    const subjectId = await regularMarkEntrySubjectId(client, parsed);
+    if (!subjectId) return res.status(400).json({ error: 'The subject is not configured in the database' });
+
+    await client.query('BEGIN');
+    const duplicate = await client.query(
+      "SELECT 1 FROM tests WHERE UPPER(TRIM(test_code))=$1 " +
+      "UNION ALL SELECT 1 FROM marks WHERE UPPER(TRIM(test_code))=$1 LIMIT 1",
+      [parsed.canonicalCode]
+    );
+    if (duplicate.rows.length) {
+      throw Object.assign(new Error('This test code is already taken. Please enter a different test code.'), { statusCode: 409 });
+    }
+
+    const students = await regularMarkEntryStudents(client, parsed, subjectId);
+    if (!students.length) {
+      throw Object.assign(new Error('No eligible students found for this test code'), { statusCode: 404 });
+    }
+
+    const eligibleByRoll = new Map(students.map((student) => [String(student.roll_no).trim().toUpperCase(), student]));
+    const recordByRoll = new Map();
+    for (const record of records) {
+      const roll = String((record && record.roll_no) || '').trim().toUpperCase();
+      if (!roll || recordByRoll.has(roll)) {
+        throw Object.assign(new Error('Marks contain a missing or repeated student'), { statusCode: 400 });
+      }
+      if (!eligibleByRoll.has(roll)) {
+        throw Object.assign(new Error('Marks include a student who is not eligible for this test'), { statusCode: 400 });
+      }
+      recordByRoll.set(roll, String(record.marks == null ? '' : record.marks).trim().toUpperCase());
+    }
+    if (recordByRoll.size !== eligibleByRoll.size ||
+        Array.from(eligibleByRoll.keys()).some((roll) => !recordByRoll.has(roll))) {
+      throw Object.assign(new Error('Marks must be entered for every eligible student'), { statusCode: 400 });
+    }
+
+    const className = students[0].class;
+    const board = students[0].board;
+    await client.query(
+      'INSERT INTO tests (test_code,test_date,subject_id,total_marks,portion,chapter,class,board) ' +
+      'VALUES ($1,COALESCE($2::date,CURRENT_DATE),$3,$4,$5,$6,$7,$8)',
+      [
+        parsed.canonicalCode,
+        req.body.testDate || null,
+        subjectId,
+        parsed.totalMarks,
+        'Chapter ' + parsed.chapter,
+        parsed.chapter,
+        className,
+        board
+      ]
+    );
+
+    const queuedGroups = new Map();
+    for (const student of students) {
+      const marks = recordByRoll.get(String(student.roll_no).trim().toUpperCase());
+      if (marks !== 'A') {
+        const number = Number(marks);
+        if (!/^\d+$/.test(marks) || !Number.isInteger(number) || number < 0 ||
+            number > 100000 || number > parsed.totalMarks) {
+          throw Object.assign(new Error('One or more marks are outside the allowed range'), { statusCode: 400 });
+        }
+      }
+      await client.query(
+        'INSERT INTO marks (roll_no,student_name,test_code,marks_obtained,comments,total_marks) ' +
+        'VALUES ($1,$2,$3,$4,$5,$6)',
+        [student.roll_no,student.name,parsed.canonicalCode,marks,marks === 'A' ? 'Absent' : null,parsed.totalMarks]
+      );
+      await client.query(
+        "DELETE FROM student_notifications WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND module_name='marks'",
+        [student.roll_no]
+      );
+      await client.query(
+        "INSERT INTO student_notifications (roll_no,module_name,message,is_read) VALUES ($1,'marks','New marks have been uploaded',FALSE)",
+        [student.roll_no]
+      );
+      const eventKey = makeEventKey('marks', parsed.canonicalCode, student.class, student.board);
+      queuedGroups.set(eventKey, {
+        eventKey,
+        moduleName: 'marks',
+        className: student.class,
+        board: student.board,
+        subjectId: subjectId,
+        title: 'Marks posted',
+        message: 'Marks for ' + parsed.canonicalCode + ' have been posted',
+        payload: { test_code: parsed.canonicalCode, total_marks: parsed.totalMarks }
+      });
+    }
+
+    for (const event of queuedGroups.values()) {
+      await queueNotificationEvent(client, event);
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Marks saved successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('POST /regular-mark-entry/submit failed:', error);
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Could not save marks. Please try again.'
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/test-batch/mark-entry/subjects', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT TRIM(subject_name) AS subject_name FROM test_batch_tests " +
+      "WHERE status NOT IN ('Draft','Cancelled') AND manual_mark_entry_enabled=TRUE " +
+      "AND marks_entry_status <> 'Finalized' ORDER BY TRIM(subject_name) ASC"
+    );
+    res.json({ subjects: result.rows });
+  } catch (error) {
+    console.error('GET Test Batch mark-entry subjects failed:', error);
+    res.status(500).json({ error: 'Could not load available subjects' });
+  }
+});
+
+app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const subject = String(req.query.subject || '').trim();
+    if (!subject) return res.status(400).json({ error: 'Choose a subject first' });
+    const result = await pool.query(
+      "SELECT t.test_code,t.subject_name,t.test_series_id,ts.name AS test_series_name,t.total_marks," +
+      "t.status,t.marks_entry_status,t.manual_mark_entry_enabled " +
+      "FROM test_batch_tests t JOIN test_series ts ON ts.id=t.test_series_id " +
+      "WHERE LOWER(TRIM(t.subject_name))=LOWER(TRIM($1)) " +
+      "AND t.status NOT IN ('Draft','Cancelled') AND t.manual_mark_entry_enabled=TRUE " +
+      "AND t.marks_entry_status <> 'Finalized' " +
+      "AND EXISTS (SELECT 1 FROM test_batch_registrations r WHERE r.test_code=t.test_code AND r.status='Registered') " +
+      "ORDER BY t.test_code ASC",
+      [subject]
+    );
+    const tests = result.rows.map((test) => {
+      const parsed = parseTestBatchCode(test.test_code);
+      return parsed ? Object.assign({}, test, { class: parsed.className, board: parsed.board }) : null;
+    }).filter(Boolean).filter((test) =>
+      normalizeMarkEntrySubject(test.subject_name) === normalizeMarkEntrySubject(parseTestBatchCode(test.test_code).subject)
+    );
+    res.json({ tests });
+  } catch (error) {
+    console.error('GET Test Batch mark-entry tests failed:', error);
+    res.status(500).json({ error: 'Could not load tests for the selected subject' });
+  }
+});
+
+app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const testResult = await pool.query(
+      "SELECT t.*,ts.name AS test_series_name FROM test_batch_tests t " +
+      "JOIN test_series ts ON ts.id=t.test_series_id WHERE UPPER(TRIM(t.test_code))=$1 LIMIT 1",
+      [code]
+    );
+    if (!testResult.rows.length) return res.status(404).json({ error: 'Test not found' });
+    const test = testResult.rows[0];
+    const parsed = parseTestBatchCode(test.test_code);
+    if (!parsed || normalizeMarkEntrySubject(parsed.subject) !== normalizeMarkEntrySubject(test.subject_name) ||
+        Number(parsed.totalMarks) !== Number(test.total_marks)) {
+      return res.status(400).json({ error: 'Test code details do not match the posted test' });
+    }
+    if (test.marks_entry_status === 'Finalized' || !test.manual_mark_entry_enabled ||
+        ['Draft','Cancelled'].includes(test.status)) {
+      return res.status(409).json({ error: 'Marks are not available for entry for this test' });
+    }
+    const aliases = normalizeMarkEntrySubject(test.subject_name) === 'mathematics'
+      ? ['mathematics','maths','math']
+      : ['physics','phy'];
+    const studentsResult = await pool.query(
+      "SELECT DISTINCT s.roll_no,s.name,TRIM(s.class) AS class,TRIM(s.board) AS board " +
+      "FROM test_batch_registrations r JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) " +
+      "JOIN test_batch_tests t ON t.test_code=r.test_code " +
+      "WHERE UPPER(TRIM(r.test_code))=$1 AND r.status='Registered' " +
+      "AND s.test_series_id=t.test_series_id " +
+      "AND LOWER(TRIM(COALESCE(s.subjects,'')))=ANY($2::text[]) " +
+      "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$3 " +
+      "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')),'[^a-z]','','g')=$4 " +
+      "ORDER BY s.roll_no ASC",
+      [code, aliases, parsed.className, normalizeTestBatchBoard(parsed.board)]
+    );
+    if (!studentsResult.rows.length) return res.status(404).json({ error: 'No registered students found for this test' });
+    res.json({
+      test: {
+        test_code: test.test_code,
+        test_series_id: test.test_series_id,
+        test_series_name: test.test_series_name,
+        subject_name: test.subject_name,
+        total_marks: Number(test.total_marks),
+        class: parsed.className,
+        board: parsed.board,
+        marks_entry_status: test.marks_entry_status
+      },
+      students: studentsResult.rows
+    });
+  } catch (error) {
+    console.error('GET Test Batch mark-entry students failed:', error);
+    res.status(500).json({ error: 'Could not load registered students for marks entry' });
+  }
+});
+
+app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceMarksAccess, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const code = String(req.params.testCode || '').trim().toUpperCase();
+    const records = req.body && req.body.records;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: 'Marks are required for every registered student' });
+    }
+
+    await client.query('BEGIN');
+    const testResult = await client.query(
+      'SELECT t.*,ts.name AS test_series_name FROM test_batch_tests t ' +
+      'JOIN test_series ts ON ts.id=t.test_series_id WHERE UPPER(TRIM(t.test_code))=$1 FOR UPDATE',
+      [code]
+    );
+    if (!testResult.rows.length) {
+      throw Object.assign(new Error('Test not found'), { statusCode: 404 });
+    }
+    const test = testResult.rows[0];
+    const parsed = parseTestBatchCode(test.test_code);
+    if (!parsed || normalizeMarkEntrySubject(parsed.subject) !== normalizeMarkEntrySubject(test.subject_name) ||
+        Number(parsed.totalMarks) !== Number(test.total_marks)) {
+      throw Object.assign(new Error('Test code details do not match the posted test'), { statusCode: 400 });
+    }
+    if (test.marks_entry_status === 'Finalized' || !test.manual_mark_entry_enabled ||
+        ['Draft','Cancelled'].includes(test.status)) {
+      throw Object.assign(new Error('Marks have already been submitted or are not available'), { statusCode: 409 });
+    }
+
+    const existing = await client.query(
+      'SELECT 1 FROM test_batch_marks WHERE UPPER(TRIM(test_code))=$1 AND LOWER(TRIM(subject_name))=LOWER(TRIM($2)) LIMIT 1',
+      [code,test.subject_name]
+    );
+    if (existing.rows.length) {
+      throw Object.assign(new Error('Marks have already been submitted for this test'), { statusCode: 409 });
+    }
+
+    const aliases = normalizeMarkEntrySubject(test.subject_name) === 'mathematics'
+      ? ['mathematics','maths','math']
+      : ['physics','phy'];
+    const studentsResult = await client.query(
+      "SELECT DISTINCT s.roll_no,s.name,TRIM(s.class) AS class,TRIM(s.board) AS board " +
+      "FROM test_batch_registrations r JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) " +
+      "WHERE UPPER(TRIM(r.test_code))=$1 AND r.status='Registered' " +
+      "AND s.test_series_id=$2 " +
+      "AND LOWER(TRIM(COALESCE(s.subjects,'')))=ANY($3::text[]) " +
+      "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$4 " +
+      "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')),'[^a-z]','','g')=$5 " +
+      "ORDER BY s.roll_no ASC",
+      [code,Number(test.test_series_id),aliases,parsed.className,normalizeTestBatchBoard(parsed.board)]
+    );
+    const students = studentsResult.rows;
+    if (!students.length) {
+      throw Object.assign(new Error('No registered students found for this test'), { statusCode: 404 });
+    }
+
+    const eligible = new Map(students.map((student) => [String(student.roll_no).trim().toUpperCase(),student]));
+    const entered = new Map();
+    for (const record of records) {
+      const roll = String((record && record.roll_no) || '').trim().toUpperCase();
+      if (!roll || entered.has(roll)) {
+        throw Object.assign(new Error('Marks contain a missing or repeated student'), { statusCode: 400 });
+      }
+      if (!eligible.has(roll)) {
+        throw Object.assign(new Error('Marks include a student who is not registered for this test'), { statusCode: 400 });
+      }
+      entered.set(roll,String(record.marks == null ? '' : record.marks).trim().toUpperCase());
+    }
+    if (entered.size !== eligible.size || Array.from(eligible.keys()).some((roll) => !entered.has(roll))) {
+      throw Object.assign(new Error('Marks must be entered for every registered student'), { statusCode: 400 });
+    }
+
+    for (const student of students) {
+      const marks = entered.get(String(student.roll_no).trim().toUpperCase());
+      let cleanMarks = marks;
+      if (marks !== 'A') {
+        const number = Number(marks);
+        if (!/^\\d+$/.test(marks) || !Number.isInteger(number) || number < 0 ||
+            number > 100000 || number > Number(test.total_marks)) {
+          throw Object.assign(new Error('One or more marks are outside the allowed range'), { statusCode: 400 });
+        }
+      }
+      await client.query(
+        'INSERT INTO test_batch_marks (roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
+        'VALUES ($1,$2,$3,$4,$5,$6)',
+        [student.roll_no,code,test.subject_name,Number(test.total_marks),cleanMarks,cleanMarks === 'A' ? 'Absent' : null]
+      );
+    }
+
+    await client.query(
+      "UPDATE test_batch_tests SET marks_entry_status='Finalized',marks_finalized_at=CURRENT_TIMESTAMP,marks_finalized_by=$1,updated_at=CURRENT_TIMESTAMP WHERE id=$2",
+      [req.testBatchFacultyId,Number(test.id)]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Test Batch marks saved successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('POST Test Batch marks submission failed:', error);
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Could not save Test Batch marks'
+    });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/test-batch/series', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name FROM test_series ORDER BY id ASC');
