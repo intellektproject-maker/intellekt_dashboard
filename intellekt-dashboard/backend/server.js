@@ -429,6 +429,8 @@ app.get('/marks/:roll', async (req, res) => {
         m.test_code,
         m.marks_obtained,
         m.comments,
+        m.entered_by, m.entered_by_name, m.entered_at,
+        m.updated_by, m.updated_by_name, m.updated_at,
         COALESCE(m.total_marks, t.total_marks) AS total_marks,
         t.test_date,
         t.subject_id,
@@ -1840,8 +1842,10 @@ app.get('/marks', async (req, res) => {
 				TRIM(s.board) AS board,
 				m.test_code,
 				m.marks_obtained,
-				m.comments,
-				COALESCE(m.total_marks, t.total_marks) AS total_marks
+        m.comments,
+        m.entered_by, m.entered_by_name, m.entered_at,
+        m.updated_by, m.updated_by_name, m.updated_at,
+        COALESCE(m.total_marks, t.total_marks) AS total_marks
 			FROM marks m
 			JOIN students s
 				ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -2205,10 +2209,10 @@ app.get('/attendance', async (req, res) => {
 						a.attendance_date,
 						a.attendance_time,
 						a.status,
-						a.updated_by,
-						a.marked_at,
-						a.edited_by,
-						a.edited_at
+                        a.updated_by, a.updated_by_name,
+                        a.marked_at,
+                        a.edited_by, a.edited_by_name,
+                        a.edited_at
 					FROM attendance a
 					JOIN students s
 					ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -2247,10 +2251,10 @@ app.get('/attendance', async (req, res) => {
 						a.attendance_date,
 						a.attendance_time,
 						a.status,
-						a.updated_by,
-						a.marked_at,
-						a.edited_by,
-						a.edited_at
+                        a.updated_by, a.updated_by_name,
+                        a.marked_at,
+                        a.edited_by, a.edited_by_name,
+                        a.edited_at
 					FROM attendance a
 					JOIN students s
 					ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no))
@@ -2308,10 +2312,10 @@ app.get('/attendance/:rollNo', async (req, res) => {
 					attendance_date,
 					attendance_time,
 					status,
-					updated_by,
-					marked_at,
-					edited_by,
-					edited_at
+                    updated_by, updated_by_name,
+                    marked_at,
+                    edited_by, edited_by_name,
+                    edited_at
 				FROM attendance
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				ORDER BY attendance_date DESC, attendance_time DESC
@@ -6158,7 +6162,8 @@ async function requireRecordAuditActor(req, res, next) {
     await ensureRecordAuditSchema();
     const candidate = String(
       req.get('x-admin-id') || req.get('x-faculty-id') ||
-      (req.body && (req.body.adminId || req.body.facultyId)) || ''
+      (req.body && (req.body.adminId || req.body.facultyId)) ||
+      req.query.adminId || req.query.facultyId || ''
     ).trim().toUpperCase();
     if (!/^IG\d{3,}$/.test(candidate)) {
       return res.status(403).json({ error: 'Authorized faculty or admin access required' });
@@ -7939,7 +7944,7 @@ app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,r
 
     const result = await pool.query(
       'SELECT m.id,m.roll_no,s.name,ts.name AS test_series_name,m.test_code,m.subject_name,' +
-      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at ' +
+      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name ' +
       'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
       'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
       ' ORDER BY m.created_at DESC,m.id DESC',
@@ -8058,9 +8063,9 @@ app.get('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async (
           a.id,
           a.attendance_date,
           a.status,
-          a.marked_by,
+          a.marked_by, a.marked_by_name,
           a.marked_at,
-          a.edited_by,
+          a.edited_by, a.edited_by_name,
           a.edited_at
         FROM test_batch_students s
         JOIN test_series ts
@@ -8315,9 +8320,9 @@ app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, 
           ts.name AS test_series_name,
           a.attendance_date,
           a.status,
-          a.marked_by,
+          a.marked_by, a.marked_by_name,
           a.marked_at,
-          a.edited_by,
+          a.edited_by, a.edited_by_name,
           a.edited_at
         FROM test_batch_attendance a
         JOIN test_batch_students s
@@ -8430,7 +8435,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
     if(studentResult.rows.length===0) return res.status(404).json({error:'Test Batch student not found'});
 
     const marksResult=await pool.query(
-      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name,m.updated_at,t.portion ' +
       'FROM test_batch_marks m ' +
       'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
       'WHERE m.roll_no=$1 ORDER BY m.created_at DESC,m.id DESC',
@@ -8541,7 +8546,7 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
       'SELECT a.id, ' +
       '       a.attendance_date, ' +
       '       a.status, ' +
-      '       a.marked_by, a.marked_at, a.edited_by, a.edited_at, ' +
+      '       a.marked_by, a.marked_by_name, a.marked_at, a.edited_by, a.edited_by_name, a.edited_at, ' +
       '       COALESCE((' +
       '         SELECT tr.test_code FROM test_batch_registrations tr ' +
       '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
@@ -8584,6 +8589,41 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
   } catch (err) {
     console.error('GET /test-batch/attendance/:rollNo error:',err);
     return res.status(500).json({ error:'Failed to load Test Batch attendance' });
+  }
+});
+
+
+app.get('/record-audit-history', requireRecordAuditActor, async (req,res) => {
+  try {
+    const recordType = String(req.query.recordType || '').trim();
+    const allowed = new Set(['marks','attendance','test_batch_marks','test_batch_attendance']);
+    if (!allowed.has(recordType)) return res.status(400).json({ error:'Valid recordType is required' });
+    const rollNo = String(req.query.rollNo || '').trim().toUpperCase();
+    if (!rollNo) return res.status(400).json({ error:'rollNo is required' });
+    const values = [recordType,rollNo];
+    let where = "WHERE record_type=$1 AND UPPER(TRIM(record_key->>'roll_no'))=$2";
+    if (req.query.testCode) {
+      values.push(String(req.query.testCode).trim().toUpperCase());
+      where += " AND UPPER(TRIM(record_key->>'test_code'))=$" + values.length;
+    }
+    if (req.query.attendanceDate) {
+      values.push(String(req.query.attendanceDate).trim());
+      where += " AND record_key->>'attendance_date'=$" + values.length;
+    }
+    if (req.query.subjectId) {
+      values.push(String(req.query.subjectId).trim());
+      where += " AND record_key->>'subject_id'=$" + values.length;
+    }
+    const result = await pool.query(
+      'SELECT id,record_type,record_key,action,old_value,new_value,actor_id,actor_name,changed_at ' +
+      'FROM record_audit_history ' + where +
+      ' ORDER BY changed_at DESC,id DESC LIMIT 100',
+      values
+    );
+    res.json({ history:result.rows });
+  } catch (err) {
+    console.error('GET /record-audit-history error:',err);
+    res.status(500).json({ error:'Failed to load record audit history' });
   }
 });
 
