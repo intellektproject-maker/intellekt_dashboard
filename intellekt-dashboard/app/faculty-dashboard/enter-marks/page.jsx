@@ -20,6 +20,7 @@ function MarksPageContent() {
   const [comments, setComments] = useState({});
   const [errors, setErrors] = useState({});
   const [savedMarks, setSavedMarks] = useState({});
+  const [auditInfo, setAuditInfo] = useState({});
   const [editRequests, setEditRequests] = useState([]);
   const [editingRoll, setEditingRoll] = useState("");
   const [editDraft, setEditDraft] = useState("");
@@ -85,6 +86,7 @@ function MarksPageContent() {
     setComments({});
     setErrors({});
     setSavedMarks({});
+    setAuditInfo({});
     setEditRequests([]);
     setEditingRoll("");
     setEditDraft("");
@@ -152,16 +154,22 @@ function MarksPageContent() {
       const marksMap = {};
       const commentsMap = {};
       const savedMap = {};
+      const auditMap = {};
       existing.forEach((item) => {
         const roll = String(item.roll_no).trim();
         marksMap[roll] = item.marks_obtained == null ? "" : String(item.marks_obtained);
         commentsMap[roll] = item.comments || "";
         savedMap[roll] = true;
+        auditMap[roll] = {
+          name: item.updated_by_name || item.entered_by_name || '',
+          at: item.updated_at || item.entered_at || '',
+        };
       });
       setStudents(studentList);
       setMarks(marksMap);
       setComments(commentsMap);
       setSavedMarks(savedMap);
+      setAuditInfo(auditMap);
       setErrors({});
       setEditingRoll("");
       setEditDraft("");
@@ -605,6 +613,7 @@ function MarksPageContent() {
                     <th className="p-3 text-left">Marks</th>
                     <th className="p-3 text-left">Comment</th>
                     <th className="p-3 text-left">Status</th>
+                    <th className="p-3 text-left">Entered/Updated By</th>
                     <th className="p-3 text-left">Action</th>
                     <th className="p-3 text-left">Error</th>
                   </tr>
@@ -613,6 +622,8 @@ function MarksPageContent() {
                   {students.map((student) => {
                     const roll = String(student.roll_no).trim();
                     const isSaved = Boolean(savedMarks[roll]);
+                    const audit = auditInfo[roll] || {};
+                    const changedAt = audit.at ? new Date(audit.at).toLocaleString() : '-';
                     const request = requestForStudent(roll);
                     const canEdit = overallApproved || request?.status === "Approved";
                     const isEditing = editingRoll === roll;
@@ -635,6 +646,7 @@ function MarksPageContent() {
                             ? <span className="font-semibold text-green-700">Saved · Locked</span>
                             : <span className="font-semibold text-blue-700">New</span>}
                         </td>
+                        <td className="p-3 text-xs text-gray-600">{isSaved ? <>{audit.name || '-'}<br />{changedAt}</> : '-'}</td>
                         <td className="p-3">
                           {isSaved && isEditing ? (
                             <div className="flex flex-wrap gap-2">
