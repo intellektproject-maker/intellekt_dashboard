@@ -6986,8 +6986,10 @@ async function requireMarksEntryFaculty(req, res, next) {
 }
 
 function validateMarkEntryTestCode(code) {
-  const parsed = parseRegularTestCode(code);
-  if (!parsed) return null;
+  const rawCode = String(code || '').trim().toUpperCase();
+  if (!rawCode || /\\s/.test(rawCode)) return null;
+  const parsed = parseRegularTestCode(rawCode);
+  if (!parsed || parsed.attempt !== null) return null;
   const chapterNumber = Number(parsed.chapter);
   if (!/^\d{1,2}$/.test(String(parsed.chapter)) || !Number.isInteger(chapterNumber) ||
       chapterNumber < 1 || chapterNumber > 99 ||
