@@ -1703,7 +1703,7 @@ app.get('/faculty/:id', async (req, res) => {
 /* =========================================================
 	MARKS SAVE / MANAGE / UPDATE
 	========================================================= */
-app.post('/marks', async (req, res) => {
+app.post('/marks', requireRecordAuditActor, async (req, res) => {
 	const { records } = req.body || {};
 	if (!Array.isArray(records) || records.length === 0) {
 		return res.status(400).json({ error: 'records are required' });
@@ -1781,10 +1781,10 @@ app.post('/marks', async (req, res) => {
 				}
 			}
 			await client.query(
-				`INSERT INTO marks (roll_no, student_name, test_code, marks_obtained, comments, total_marks)
-				 VALUES ($1, $2, $3, $4, $5, $6)
-				 ON CONFLICT (roll_no, test_code) DO NOTHING`,
-				[student.roll_no, student.name, canonicalCode, cleanMarks, cleanMarks === 'A' ? 'Absent' : (record.comments || null), totalMarks]
+				`INSERT INTO marks (roll_no, student_name, test_code, marks_obtained, comments, total_marks, entered_by, entered_by_name, entered_at, updated_by, updated_by_name, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP,$7,$8,CURRENT_TIMESTAMP)
+         ON CONFLICT (roll_no, test_code) DO NOTHING`,
+				[student.roll_no, student.name, canonicalCode, cleanMarks, cleanMarks === 'A' ? 'Absent' : (record.comments || null), totalMarks, req.recordAuditActor.id, req.recordAuditActor.name]
 			);
 			await client.query(
 				"DELETE FROM student_notifications WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND module_name = 'marks'",
@@ -1884,7 +1884,7 @@ app.get('/marks', async (req, res) => {
 		});
 	}
 });
-app.put('/marks/:roll_no/:test_code', async (req, res) => {
+app.put('/marks/:roll_no/:test_code', requireRecordAuditActor, async (req, res) => {
   const editorId = String(req.get('x-admin-id') || req.body?.adminId || '').trim().toUpperCase();
   if (!['IG001', 'IG002'].includes(editorId)) {
     return res.status(403).json({ error: 'Faculty must obtain admin approval before editing marks.' });
@@ -1940,15 +1940,20 @@ const newComment = (() => {
 			`
 			UPDATE marks
 			SET marks_obtained = $1,
-				comments = $2
-			WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
-			AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))
+        comments = $2,
+        updated_by = $5,
+        updated_by_name = $6,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+      AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))
 			`,
 			[
 				cleanMarks,
-				newComment,
-				roll_no,
-				test_code
+        newComment,
+        roll_no,
+        test_code,
+        req.recordAuditActor.id,
+        req.recordAuditActor.name
 			]
 		);
 
@@ -1958,7 +1963,7 @@ const newComment = (() => {
 		res.status(500).json({ error: 'Failed to update marks' });
 	}
 });
-app.put('/update-marks', async (req, res) => {
+app.put('/update-marks', requireRecordAuditActor, async (req, res) => {
 	const { name, test_code, marks_obtained } = req.body;
 
 	try {
@@ -1990,13 +1995,16 @@ app.put('/update-marks', async (req, res) => {
 		await pool.query(
 			`
 			UPDATE marks
-			SET marks_obtained = $1
-			FROM students
+			SET marks_obtained = $1,
+        updated_by = $4,
+        updated_by_name = $5,
+        updated_at = CURRENT_TIMESTAMP
+      FROM students
 			WHERE marks.roll_no = students.roll_no
 			AND students.name = $2
 			AND UPPER(TRIM(marks.test_code)) = UPPER(TRIM($3))
 			`,
-			[ obtainedMarks, name, test_code ]
+			[ obtainedMarks, name, test_code, req.recordAuditActor.id, req.recordAuditActor.name ]
 		);
 
 		res.json({ message: 'Marks updated' });
@@ -2318,7 +2326,7 @@ app.get('/attendance/:rollNo', async (req, res) => {
 	}
 });
 
-app.post('/attendance', async (req, res) => {
+app.post('/attendance', requireRecordAuditActor, async (req, res) => {
 	const { records, subject, facultyId, overwrite = false } = req.body;
 	const selectedDate = req.body.date || req.body.attendanceDate;
 
@@ -2394,26 +2402,28 @@ if (!subject && !isSundayMode) {
 						`
 						UPDATE attendance
 						SET status = $1,
-							updated_by = $2,
-							attendance_time = CURRENT_TIME,
-							marked_at = COALESCE(marked_at, CURRENT_TIMESTAMP),
-							edited_by = $2,
-							edited_at = CURRENT_TIMESTAMP
-						WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
-						AND subject_id = $4
-						AND attendance_date = $5
+              updated_by = $2,
+              updated_by_name = $3,
+              attendance_time = CURRENT_TIME,
+              marked_at = COALESCE(marked_at, CURRENT_TIMESTAMP),
+              edited_by = $2,
+              edited_by_name = $3,
+              edited_at = CURRENT_TIMESTAMP
+            WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($4))
+            AND subject_id = $5
+            AND attendance_date = $6
 						`,
-						[record.status, facultyId, record.roll_no, subject, selectedDate]
+						[record.status, req.recordAuditActor.id, req.recordAuditActor.name, record.roll_no, actualSubject, selectedDate]
 					);
 				}
 			} else {
 				await client.query(
 					`
 					INSERT INTO attendance
-						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, marked_at)
-					VALUES ($1, $2, $3, CURRENT_TIME, $4, $5, CURRENT_TIMESTAMP)
+						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, updated_by_name, marked_at)
+          VALUES ($1,$2,$3,CURRENT_TIME,$4,$5,$6,CURRENT_TIMESTAMP)
 					`,
-					[record.roll_no, subject, selectedDate, record.status, facultyId]
+					[record.roll_no, actualSubject, selectedDate, record.status, req.recordAuditActor.id, req.recordAuditActor.name]
 				);
 			}
 		}
@@ -2482,7 +2492,7 @@ if (!subject && !isSundayMode) {
 		client.release();
 	}
 });
-app.put('/attendance', async (req, res) => {
+app.put('/attendance', requireRecordAuditActor, async (req, res) => {
   const editorId = String(req.get('x-admin-id') || req.body?.adminId || '').trim().toUpperCase();
   if (!['IG001', 'IG002'].includes(editorId)) {
     return res.status(403).json({ error: 'Faculty must obtain admin approval before editing attendance.' });
@@ -6150,7 +6160,7 @@ async function requireRecordAuditActor(req, res, next) {
       req.get('x-admin-id') || req.get('x-faculty-id') ||
       (req.body && (req.body.adminId || req.body.facultyId)) || ''
     ).trim().toUpperCase();
-    if (!/^IG\\d{3,}$/.test(candidate)) {
+    if (!/^IG\d{3,}$/.test(candidate)) {
       return res.status(403).json({ error: 'Authorized faculty or admin access required' });
     }
     const result = await pool.query(
