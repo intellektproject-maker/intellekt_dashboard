@@ -6029,6 +6029,148 @@ app.delete('/faculty/device-token', async (req, res) => {
    Completely separate from Regular Student tables.
 ========================================================= */
 
+
+let recordAuditSchemaPromise = null;
+
+async function ensureRecordAuditSchema() {
+  if (!recordAuditSchemaPromise) {
+    recordAuditSchemaPromise = (async () => {
+      await pool.query(`
+        ALTER TABLE marks
+          ADD COLUMN IF NOT EXISTS entered_by VARCHAR(30),
+          ADD COLUMN IF NOT EXISTS entered_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS entered_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS updated_by VARCHAR(30),
+          ADD COLUMN IF NOT EXISTS updated_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+      `);
+      await pool.query(`
+        ALTER TABLE attendance
+          ADD COLUMN IF NOT EXISTS updated_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS edited_by_name VARCHAR(150)
+      `);
+      await pool.query(`
+        ALTER TABLE test_batch_marks
+          ADD COLUMN IF NOT EXISTS entered_by VARCHAR(30),
+          ADD COLUMN IF NOT EXISTS entered_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS entered_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS updated_by VARCHAR(30),
+          ADD COLUMN IF NOT EXISTS updated_by_name VARCHAR(150)
+      `);
+      await pool.query(`
+        ALTER TABLE test_batch_attendance
+          ADD COLUMN IF NOT EXISTS marked_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS edited_by_name VARCHAR(150)
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS record_audit_history (
+          id BIGSERIAL PRIMARY KEY,
+          record_type VARCHAR(40) NOT NULL,
+          record_key JSONB NOT NULL,
+          action VARCHAR(10) NOT NULL,
+          old_value JSONB,
+          new_value JSONB NOT NULL,
+          actor_id VARCHAR(30),
+          actor_name VARCHAR(150),
+          changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_record_audit_history_key_time
+        ON record_audit_history(record_type, record_key, changed_at DESC)
+      `);
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION audit_student_record_change()
+        RETURNS TRIGGER AS $audit$
+        DECLARE
+          old_json JSONB;
+          new_json JSONB;
+          actor_id_value TEXT;
+          actor_name_value TEXT;
+          key_json JSONB;
+        BEGIN
+          old_json := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
+          new_json := to_jsonb(NEW);
+          actor_id_value := COALESCE(
+            new_json->>'updated_by', new_json->>'edited_by',
+            new_json->>'entered_by', new_json->>'marked_by',
+            old_json->>'updated_by', old_json->>'edited_by',
+            old_json->>'entered_by', old_json->>'marked_by'
+          );
+          actor_name_value := COALESCE(
+            new_json->>'updated_by_name', new_json->>'edited_by_name',
+            new_json->>'entered_by_name', new_json->>'marked_by_name',
+            old_json->>'updated_by_name', old_json->>'edited_by_name',
+            old_json->>'entered_by_name', old_json->>'marked_by_name'
+          );
+          IF actor_name_value IS NULL AND actor_id_value IS NOT NULL THEN
+            SELECT name INTO actor_name_value
+            FROM faculty
+            WHERE UPPER(TRIM(faculty_id)) = UPPER(TRIM(actor_id_value))
+            LIMIT 1;
+          END IF;
+          IF TG_TABLE_NAME = 'marks' THEN
+            key_json := jsonb_build_object('roll_no',new_json->>'roll_no','test_code',new_json->>'test_code');
+          ELSIF TG_TABLE_NAME = 'test_batch_marks' THEN
+            key_json := jsonb_build_object('roll_no',new_json->>'roll_no','test_code',new_json->>'test_code','subject_name',new_json->>'subject_name');
+          ELSIF TG_TABLE_NAME = 'attendance' THEN
+            key_json := jsonb_build_object('roll_no',new_json->>'roll_no','subject_id',new_json->>'subject_id','attendance_date',new_json->>'attendance_date');
+          ELSE
+            key_json := jsonb_build_object('roll_no',new_json->>'roll_no','attendance_date',new_json->>'attendance_date');
+          END IF;
+          INSERT INTO record_audit_history
+            (record_type,record_key,action,old_value,new_value,actor_id,actor_name,changed_at)
+          VALUES
+            (TG_TABLE_NAME,key_json,TG_OP,old_json,new_json,actor_id_value,actor_name_value,CURRENT_TIMESTAMP);
+          RETURN NEW;
+        END;
+        $audit$ LANGUAGE plpgsql
+      `);
+      for (const tableName of ['marks','attendance','test_batch_marks','test_batch_attendance']) {
+        const triggerName = 'trg_audit_' + tableName;
+        await pool.query('DROP TRIGGER IF EXISTS ' + triggerName + ' ON ' + tableName);
+        await pool.query(
+          'CREATE TRIGGER ' + triggerName +
+          ' AFTER INSERT OR UPDATE ON ' + tableName +
+          ' FOR EACH ROW EXECUTE FUNCTION audit_student_record_change()'
+        );
+      }
+    })().catch((error) => {
+      recordAuditSchemaPromise = null;
+      throw error;
+    });
+  }
+  return recordAuditSchemaPromise;
+}
+
+async function requireRecordAuditActor(req, res, next) {
+  try {
+    await ensureRecordAuditSchema();
+    const candidate = String(
+      req.get('x-admin-id') || req.get('x-faculty-id') ||
+      (req.body && (req.body.adminId || req.body.facultyId)) || ''
+    ).trim().toUpperCase();
+    if (!/^IG\\d{3,}$/.test(candidate)) {
+      return res.status(403).json({ error: 'Authorized faculty or admin access required' });
+    }
+    const result = await pool.query(
+      'SELECT faculty_id, name FROM faculty WHERE UPPER(TRIM(faculty_id))=$1 LIMIT 1',
+      [candidate]
+    );
+    if (!result.rows.length) {
+      return res.status(403).json({ error: 'Faculty/admin account not found or not authorized' });
+    }
+    req.recordAuditActor = {
+      id: String(result.rows[0].faculty_id).trim().toUpperCase(),
+      name: String(result.rows[0].name || '').trim()
+    };
+    return next();
+  } catch (error) {
+    console.error('Record audit authorization/schema error:', error);
+    return res.status(500).json({ error: 'Unable to verify record entry permissions' });
+  }
+}
+
 const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
 
 // Verify an existing IG faculty account for Test Batch operational access.
