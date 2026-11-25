@@ -7145,6 +7145,7 @@ function normalizeMarkEntrySubject(value) {
 
 async function requireMarksEntryFaculty(req, res, next) {
   try {
+    await ensureRecordAuditSchema();
     const candidate = String(
       req.get('x-faculty-id') ||
       req.get('x-admin-id') ||
@@ -7157,13 +7158,14 @@ async function requireMarksEntryFaculty(req, res, next) {
       return res.status(403).json({ error: 'Faculty access is required to enter marks' });
     }
     const result = await pool.query(
-      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id))=$1 LIMIT 1',
+      'SELECT faculty_id, name FROM faculty WHERE UPPER(TRIM(faculty_id))=$1 LIMIT 1',
       [candidate]
     );
     if (!result.rows.length) {
       return res.status(403).json({ error: 'Faculty account is not authorized' });
     }
     req.marksEntryFacultyId = candidate;
+    req.recordAuditActor = { id: String(result.rows[0].faculty_id).trim().toUpperCase(), name: String(result.rows[0].name || '').trim() };
     next();
   } catch (error) {
     console.error('Marks-entry faculty authorization failed:', error);
@@ -7350,15 +7352,15 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
         }
       }
       const updatedMark = await client.query(
-        'UPDATE marks SET student_name=$1,marks_obtained=$2,comments=$3,total_marks=$4 ' +
+        'UPDATE marks SET student_name=$1,marks_obtained=$2,comments=$3,total_marks=$4,updated_by=$7,updated_by_name=$8,updated_at=CURRENT_TIMESTAMP ' +
         'WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($5)) AND UPPER(TRIM(test_code))=UPPER(TRIM($6))',
-        [student.name,marks,marks === 'A' ? 'Absent' : null,parsed.totalMarks,student.roll_no,parsed.canonicalCode]
+        [student.name,marks,marks === 'A' ? 'Absent' : null,parsed.totalMarks,student.roll_no,parsed.canonicalCode,req.recordAuditActor.id,req.recordAuditActor.name]
       );
       if (!updatedMark.rowCount) {
         await client.query(
-          'INSERT INTO marks (roll_no,student_name,test_code,marks_obtained,comments,total_marks) ' +
-          'VALUES ($1,$2,$3,$4,$5,$6)',
-          [student.roll_no,student.name,parsed.canonicalCode,marks,marks === 'A' ? 'Absent' : null,parsed.totalMarks]
+          'INSERT INTO marks (roll_no,student_name,test_code,marks_obtained,comments,total_marks,entered_by,entered_by_name,entered_at,updated_by,updated_by_name,updated_at) ' +
+          'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP,$7,$8,CURRENT_TIMESTAMP)',
+          [student.roll_no,student.name,parsed.canonicalCode,marks,marks === 'A' ? 'Absent' : null,parsed.totalMarks,req.recordAuditActor.id,req.recordAuditActor.name]
         );
       }
       await client.query(
@@ -7594,16 +7596,16 @@ app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceM
         }
       }
       const updatedMark = await client.query(
-        'UPDATE test_batch_marks SET total_marks=$1,marks_obtained=$2,comments=$3,updated_at=CURRENT_TIMESTAMP ' +
+        'UPDATE test_batch_marks SET total_marks=$1,marks_obtained=$2,comments=$3,updated_by=$7,updated_by_name=$8,updated_at=CURRENT_TIMESTAMP ' +
         'WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($4)) AND UPPER(TRIM(test_code))=UPPER(TRIM($5)) ' +
         'AND LOWER(TRIM(subject_name))=LOWER(TRIM($6))',
-        [Number(test.total_marks),cleanMarks,cleanMarks === 'A' ? 'Absent' : null,student.roll_no,code,test.subject_name]
+        [Number(test.total_marks),cleanMarks,cleanMarks === 'A' ? 'Absent' : null,student.roll_no,code,test.subject_name,req.recordAuditActor.id,req.recordAuditActor.name]
       );
       if (!updatedMark.rowCount) {
         await client.query(
-          'INSERT INTO test_batch_marks (roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
-          'VALUES ($1,$2,$3,$4,$5,$6)',
-          [student.roll_no,code,test.subject_name,Number(test.total_marks),cleanMarks,cleanMarks === 'A' ? 'Absent' : null]
+          'INSERT INTO test_batch_marks (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,entered_by,entered_by_name,entered_at,updated_by,updated_by_name) ' +
+          'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP,$7,$8)',
+          [student.roll_no,code,test.subject_name,Number(test.total_marks),cleanMarks,cleanMarks === 'A' ? 'Absent' : null,req.recordAuditActor.id,req.recordAuditActor.name]
         );
       }
     }
