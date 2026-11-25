@@ -2397,7 +2397,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                     >
                       {saving
                         ? "Saving..."
-                        : "Save / Finalize Marks"}
+                        : "Submit Entered Marks"}
                     </button>
 
                     {markTest.marks_entry_status === "Finalized" && (
