@@ -144,6 +144,8 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
   const [markSubjectFilter, setMarkSubjectFilter] = useState("");
   const [markBoardFilter, setMarkBoardFilter] = useState("");
   const [markClassFilter, setMarkClassFilter] = useState("");
+  const [markBoardOptions, setMarkBoardOptions] = useState([]);
+  const [markClassOptions, setMarkClassOptions] = useState([]);
   const [markTest, setMarkTest] = useState(null);
   const [students, setStudents] = useState([]);
   const [originalStudents, setOriginalStudents] = useState([]);
@@ -303,6 +305,18 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     } catch (err) {
       setAdmissionStudents([]);
       setError(err.message);
+    }
+  }
+
+  async function loadMarkEntryOptions() {
+    try {
+      const data = await api("/test-batch/mark-entry/options?adminId=" + encodeURIComponent(adminId));
+      setMarkBoardOptions(Array.isArray(data.boards) ? data.boards : []);
+      setMarkClassOptions(Array.isArray(data.classes) ? data.classes : []);
+    } catch (err) {
+      setMarkBoardOptions([]);
+      setMarkClassOptions([]);
+      setError(err.message || "Could not load class and board options from the database.");
     }
   }
 
@@ -828,6 +842,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     loadEligibleTests();
     loadTestSeries();
     loadAdmissionStudents();
+    loadMarkEntryOptions();
   }, [adminId, authorized, search]);
 
   useEffect(() => {
@@ -1254,12 +1269,20 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     if (!markTest || markTest.marks_entry_status === "Finalized") return;
 
     if (!selectedWritingDate) { setError("Select a writing date before saving marks."); return; }
-    const recordsToSave = visibleMarkStudents.filter(
-      (student) => String(student.marks_obtained || "").trim()
-    );
+    const originalByRoll = new Map(originalStudents.map((student) => [String(student.roll_no).trim().toUpperCase(), student]));
+    const recordsToSave = visibleMarkStudents.filter((student) => {
+      const currentMarks = String(student.marks_obtained ?? "").trim().toUpperCase();
+      if (!currentMarks) return false;
+      const original = originalByRoll.get(String(student.roll_no).trim().toUpperCase());
+      if (!original) return true;
+      const previousMarks = String(original.marks_obtained ?? "").trim().toUpperCase();
+      const currentRemarks = String(student.remarks ?? "").trim();
+      const previousRemarks = String(original.remarks ?? "").trim();
+      return currentMarks !== previousMarks || currentRemarks !== previousRemarks;
+    });
 
     if (recordsToSave.length === 0) {
-      setError("Enter marks for at least one student who has completed the test on this date.");
+      setError("Enter or change marks for at least one student before submitting.");
       return;
     }
 
@@ -1289,7 +1312,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       await loadMarkEntry(markTest.test_code);
       await loadTests();
       await loadEligibleTests();
-      setMessage("Saved marks for " + recordsToSave.length + " student(s) on " + selectedWritingDate + ". You can enter the remaining marks later.");
+      setMessage("Submitted marks for " + recordsToSave.length + " student(s) on " + selectedWritingDate + ". You can submit the remaining students later.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1516,27 +1539,9 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     );
   }, [eligibleTests, markSeriesFilter]);
 
-  const markClassOptions = useMemo(() => {
-    // Classes come from the Test Batch admission records, not from a
-    // hard-coded list. Filter those admission records by the selected board.
-    const selectedBoardName =
-      boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
-
-    const classes = admissionStudents
-      .filter((student) => {
-        if (!selectedBoardName) return true;
-        return String(student.board || "").trim().toLowerCase() ===
-          selectedBoardName.trim().toLowerCase();
-      })
-      .map((student) => String(student.class || "").trim())
-      .filter(Boolean);
-
-    return [...new Set(classes)].sort((a, b) => Number(a) - Number(b));
-  }, [admissionStudents, markBoardFilter]);
-
   const filteredMarkTests = useMemo(() => {
     const selectedBoardName =
-      boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
+      markBoardOptions.find((b) => b.code === markBoardFilter)?.name || "";
 
     return markTestsBySeries.filter((test) => {
       const parsed = getCodeDetails(test);
@@ -1556,6 +1561,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
     });
   }, [
     markTestsBySeries,
+    markBoardOptions,
     markBoardFilter,
     markClassFilter,
     markSubjectFilter,
@@ -2002,7 +2008,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                   }}
                 >
                   <option value="">All Boards</option>
-                  {boardOptions.map((board) => (
+                  {markBoardOptions.map((board) => (
                     <option key={board.code} value={board.code}>{board.name}</option>
                   ))}
                 </select>
@@ -2097,7 +2103,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
                       );
 
                       const selectedBoardName =
-                        boardOptions.find((b) => b.code === markBoardFilter)?.name || "";
+                        markBoardOptions.find((b) => b.code === markBoardFilter)?.name || "";
 
                       const filteredStudents = (data.students || []).filter((student) => {
                         const boardMatches =
