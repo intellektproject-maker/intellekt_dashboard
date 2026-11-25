@@ -6189,6 +6189,7 @@ const TEST_BATCH_ADMIN_IDS = new Set(['IG001', 'IG002']);
 // protected by requireTestBatchAdmin where applicable.
 async function requireTestBatchAttendanceMarksAccess(req, res, next) {
   try {
+    await ensureRecordAuditSchema();
     const candidate = String(
       req.get('x-admin-id') ||
       req.get('x-faculty-id') ||
@@ -6205,13 +6206,14 @@ async function requireTestBatchAttendanceMarksAccess(req, res, next) {
     }
 
     const result = await pool.query(
-      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      'SELECT faculty_id, name FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
       [candidate]
     );
     if (result.rows.length === 0) {
       return res.status(403).json({ error: 'Faculty account not found or not authorized' });
     }
 
+    req.recordAuditActor = { id: String(result.rows[0].faculty_id).trim().toUpperCase(), name: String(result.rows[0].name || '').trim() };
     // Any existing IG faculty may record attendance/marks. Test Batch
     // administration/configuration routes remain protected by requireTestBatchAdmin.
     req.testBatchFacultyId = candidate;
@@ -6225,6 +6227,7 @@ async function requireTestBatchAttendanceMarksAccess(req, res, next) {
 
 async function requireTestBatchAdmin(req, res, next) {
   try {
+    await ensureRecordAuditSchema();
     const candidate = String(
       req.get('x-admin-id') ||
       req.query.adminId ||
@@ -6237,7 +6240,7 @@ async function requireTestBatchAdmin(req, res, next) {
     }
 
     const result = await pool.query(
-      'SELECT faculty_id FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+      'SELECT faculty_id, name FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
       [candidate]
     );
 
@@ -6246,6 +6249,7 @@ async function requireTestBatchAdmin(req, res, next) {
     }
 
     req.testBatchAdminId = candidate;
+    req.recordAuditActor = { id: String(result.rows[0].faculty_id).trim().toUpperCase(), name: String(result.rows[0].name || '').trim() };
     next();
   } catch (err) {
     console.error('Test Batch admin authorization error:', err);
@@ -7964,15 +7968,17 @@ app.post('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,
     if (!validation.ok) return res.status(400).json({ error:validation.error });
 
     const result = await pool.query(
-      'INSERT INTO test_batch_marks(roll_no,test_code,subject_name,total_marks,marks_obtained,comments) ' +
-      'VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      'INSERT INTO test_batch_marks(roll_no,test_code,subject_name,total_marks,marks_obtained,comments,entered_by,entered_by_name,entered_at,updated_by,updated_by_name) ' +
+      'VALUES($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP,$7,$8) RETURNING *',
       [
         String(roll_no).trim().toUpperCase(),
         String(test_code).trim(),
         String(subject_name).trim(),
         Number(total_marks),
         validation.obtained,
-        comments ? String(comments).trim() : null
+        comments ? String(comments).trim() : null,
+        req.recordAuditActor.id,
+        req.recordAuditActor.name
       ]
     );
 
@@ -7992,8 +7998,8 @@ app.put('/test-batch/marks/:id', requireTestBatchAdmin, async (req,res) => {
 
     const result = await pool.query(
       'UPDATE test_batch_marks SET test_code=$1,subject_name=$2,total_marks=$3,marks_obtained=$4,' +
-      'comments=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$6 RETURNING *',
-      [String(test_code).trim(),String(subject_name).trim(),Number(total_marks),validation.obtained,comments ? String(comments).trim() : null,Number(req.params.id)]
+      'comments=$5,updated_by=$6,updated_by_name=$7,updated_at=CURRENT_TIMESTAMP WHERE id=$8 RETURNING *',
+      [String(test_code).trim(),String(subject_name).trim(),Number(total_marks),validation.obtained,comments ? String(comments).trim() : null,req.recordAuditActor.id,req.recordAuditActor.name,Number(req.params.id)]
     );
 
     if (result.rows.length===0) return res.status(404).json({ error:'Test Batch mark not found' });
@@ -8137,13 +8143,14 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
       // Update unchanged saved values safely, or create a new attendance record.
       await client.query(
         `INSERT INTO test_batch_attendance
-          (roll_no,attendance_date,status,marked_by,marked_at,edited_by,edited_at)
-         VALUES($1,$2::date,$3,$4,CURRENT_TIMESTAMP,NULL,NULL)
+          (roll_no,attendance_date,status,marked_by,marked_by_name,marked_at,edited_by,edited_by_name,edited_at)
+         VALUES($1,$2::date,$3,$4,$5,CURRENT_TIMESTAMP,NULL,NULL,NULL)
          ON CONFLICT(roll_no,attendance_date) DO UPDATE SET
            status=EXCLUDED.status,
            edited_by=EXCLUDED.marked_by,
+           edited_by_name=EXCLUDED.marked_by_name,
            edited_at=CURRENT_TIMESTAMP`,
-        [roll,attendanceDate,status,req.testBatchFacultyId || req.testBatchAdminId]
+        [roll,attendanceDate,status,req.recordAuditActor.id,req.recordAuditActor.name]
       );
 
       if (status === 'Absent') {
@@ -8214,6 +8221,7 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
       `UPDATE test_batch_attendance a
        SET status=$1,
            edited_by=$2,
+           edited_by_name=$3,
            edited_at=CURRENT_TIMESTAMP
        WHERE a.id=$3
          AND EXISTS (
@@ -8224,7 +8232,7 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
              AND tr.status='Registered'
          )
        RETURNING a.*`,
-      [status,req.testBatchAdminId,Number(req.params.id)]
+      [status,req.recordAuditActor.id,req.recordAuditActor.name,Number(req.params.id)]
     );
 
     if (result.rows.length===0) {
