@@ -7121,8 +7121,8 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     const className = students[0].class;
     const board = students[0].board;
     await client.query(
-      'INSERT INTO tests (test_code,test_date,subject_id,total_marks,portion,chapter,class,board) ' +
-      'VALUES ($1,COALESCE($2::date,CURRENT_DATE),$3,$4,$5,$6,$7,$8)',
+      'INSERT INTO tests (test_code,test_date,subject_id,total_marks,portion,chapter,class,board,created_by) ' +
+      'VALUES ($1,COALESCE($2::date,CURRENT_DATE),$3,$4,$5,$6,$7,$8,$9)',
       [
         parsed.canonicalCode,
         req.body.testDate || null,
@@ -7131,7 +7131,8 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
         'Chapter ' + parsed.chapter,
         parsed.chapter,
         className,
-        board
+        board,
+        req.marksEntryFacultyId
       ]
     );
 
