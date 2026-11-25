@@ -2420,7 +2420,7 @@ if (!subject && !isSundayMode) {
             AND subject_id = $5
             AND attendance_date = $6
 						`,
-						[record.status, req.recordAuditActor.id, req.recordAuditActor.name, record.roll_no, actualSubject, selectedDate]
+						[record.status, req.recordAuditActor.id, req.recordAuditActor.name, record.roll_no, subject, selectedDate]
 					);
 				}
 			} else {
