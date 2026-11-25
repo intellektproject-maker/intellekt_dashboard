@@ -5528,7 +5528,10 @@ app.get('/attendance-students', async (req, res) => {
         s.reference,
         a.status AS attendance_status,
         a.updated_by AS attendance_marked_by,
-        a.marked_at AS attendance_marked_at
+        a.updated_by_name AS attendance_updated_by_name,
+        a.edited_by_name AS attendance_edited_by_name,
+        a.marked_at AS attendance_marked_at,
+        a.edited_at AS attendance_edited_at
       FROM students s
       INNER JOIN student_subjects ss
         ON UPPER(TRIM(ss.roll_no)) = UPPER(TRIM(s.roll_no))
