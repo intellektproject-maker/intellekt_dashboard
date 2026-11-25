@@ -6134,15 +6134,15 @@ async function ensureRecordAuditSchema() {
           old_json := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
           new_json := to_jsonb(NEW);
           actor_id_value := COALESCE(
-            new_json->>'updated_by', new_json->>'edited_by',
+            new_json->>'edited_by', new_json->>'updated_by',
             new_json->>'entered_by', new_json->>'marked_by',
-            old_json->>'updated_by', old_json->>'edited_by',
+            old_json->>'edited_by', old_json->>'updated_by',
             old_json->>'entered_by', old_json->>'marked_by'
           );
           actor_name_value := COALESCE(
-            new_json->>'updated_by_name', new_json->>'edited_by_name',
+            new_json->>'edited_by_name', new_json->>'updated_by_name',
             new_json->>'entered_by_name', new_json->>'marked_by_name',
-            old_json->>'updated_by_name', old_json->>'edited_by_name',
+            old_json->>'edited_by_name', old_json->>'updated_by_name',
             old_json->>'entered_by_name', old_json->>'marked_by_name'
           );
           IF actor_name_value IS NULL AND actor_id_value IS NOT NULL THEN
