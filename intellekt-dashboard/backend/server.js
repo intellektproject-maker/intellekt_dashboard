@@ -7240,8 +7240,8 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
       return res.status(409).json({ error: 'Marks are not available for entry for this test' });
     }
     const aliases = normalizeMarkEntrySubject(test.subject_name) === 'mathematics'
-      ? ['mathematics','maths','math']
-      : ['physics','phy'];
+      ? ['mathematics','maths','math','both']
+      : ['physics','phy','both'];
     const studentsResult = await pool.query(
       "SELECT DISTINCT s.roll_no,s.name,TRIM(s.class) AS class,TRIM(s.board) AS board " +
       "FROM test_batch_registrations r JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) " +
