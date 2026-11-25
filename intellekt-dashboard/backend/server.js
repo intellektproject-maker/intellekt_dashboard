@@ -7219,9 +7219,7 @@ function validateMarkEntryTestCode(code) {
   if (!rawCode || /\\s/.test(rawCode)) return null;
   const parsed = parseRegularTestCode(rawCode);
   if (!parsed || parsed.attempt !== null) return null;
-  const chapterNumber = Number(parsed.chapter);
-  if (!/^\d{1,2}$/.test(String(parsed.chapter)) || !Number.isInteger(chapterNumber) ||
-      chapterNumber < 1 || chapterNumber > 99 ||
+  if (!String(parsed.chapter || '').trim() ||
       !Number.isInteger(parsed.totalMarks) || parsed.totalMarks < 1 || parsed.totalMarks > 999) {
     return null;
   }
@@ -7293,6 +7291,7 @@ app.get('/regular-mark-entry/:testCode', requireMarksEntryFaculty, async (req, r
         subject_id: subjectId,
         total_marks: Number(savedTest.total_marks || parsed.totalMarks),
         chapter: savedTest.chapter || parsed.chapter,
+        portion: savedTest.portion || '',
         test_date: savedTest.test_date || null
       },
       students,
@@ -7310,7 +7309,17 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     const code = String((req.body && req.body.testCode) || '').trim().toUpperCase();
     const parsed = validateMarkEntryTestCode(code);
     const records = req.body && req.body.records;
+    const chapterValue = String((req.body && req.body.chapter) || (parsed && parsed.chapter) || '').trim();
+    const portionValue = String((req.body && req.body.portion) || '').trim();
+    const chapterIsCombined = chapterValue.toLowerCase() === 'combined';
+    const chapterIsNumber = /^\\d+$/.test(chapterValue) && Number(chapterValue) > 0;
     if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
+    if (!chapterIsCombined && !chapterIsNumber) {
+      return res.status(400).json({ error: 'Chapter must be a number or combined' });
+    }
+    if (!portionValue) {
+      return res.status(400).json({ error: 'Portions are required' });
+    }
     if (!Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ error: 'Marks are required for every student' });
     }
@@ -7360,9 +7369,9 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     if (existingTestResult.rows.length) {
       await client.query(
         "UPDATE tests SET test_date=COALESCE($1::date,test_date),subject_id=$2,total_marks=$3," +
-        "portion=COALESCE(portion,$4),chapter=COALESCE(chapter,$5),class=COALESCE(class,$6),board=COALESCE(board,$7) " +
+        "portion=$4,chapter=$5,class=COALESCE(class,$6),board=COALESCE(board,$7) " +
         "WHERE UPPER(TRIM(test_code))=$8",
-        [req.body.testDate || null,subjectId,parsed.totalMarks,'Chapter ' + parsed.chapter,parsed.chapter,className,board,parsed.canonicalCode]
+        [req.body.testDate || null,subjectId,parsed.totalMarks,portionValue,chapterIsCombined ? 'combined' : chapterValue,className,board,parsed.canonicalCode]
       );
     } else {
       await client.query(
@@ -7373,8 +7382,8 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
           req.body.testDate || null,
           subjectId,
           parsed.totalMarks,
-          'Chapter ' + parsed.chapter,
-          parsed.chapter,
+          portionValue,
+          chapterIsCombined ? 'combined' : chapterValue,
           className,
           board,
           req.marksEntryFacultyId
