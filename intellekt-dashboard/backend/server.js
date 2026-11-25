@@ -424,6 +424,7 @@ app.get('/marks/:roll', async (req, res) => {
   const { roll } = req.params;
 
   try {
+    await ensureRecordAuditSchema();
     const result = await pool.query(
       `
       SELECT 
@@ -1827,6 +1828,7 @@ app.get('/marks', async (req, res) => {
 	let { name, className, board, testCode } = req.query;
 
 	try {
+        await ensureRecordAuditSchema();
 		if (className && String(className).includes('-') && !board) {
 			const value = String(className).trim();
 			const lastDash = value.lastIndexOf('-');
