@@ -5423,7 +5423,10 @@ app.get('/attendance-students', async (req, res) => {
           tr.test_code,
           a.status AS attendance_status,
           a.updated_by AS attendance_marked_by,
-          a.marked_at AS attendance_marked_at
+          a.updated_by_name AS attendance_updated_by_name,
+          a.edited_by_name AS attendance_edited_by_name,
+          a.marked_at AS attendance_marked_at,
+          a.edited_at AS attendance_edited_at
         FROM test_registrations tr
         LEFT JOIN attendance a
           ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
@@ -5478,7 +5481,10 @@ app.get('/attendance-students', async (req, res) => {
           tr.test_code,
           a.status AS attendance_status,
           a.updated_by AS attendance_marked_by,
-          a.marked_at AS attendance_marked_at
+          a.updated_by_name AS attendance_updated_by_name,
+          a.edited_by_name AS attendance_edited_by_name,
+          a.marked_at AS attendance_marked_at,
+          a.edited_at AS attendance_edited_at
         FROM test_registrations tr
         LEFT JOIN attendance a
           ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(tr.roll_no))
@@ -6077,7 +6083,20 @@ async function ensureRecordAuditSchema() {
       await pool.query(`
         ALTER TABLE test_batch_attendance
           ADD COLUMN IF NOT EXISTS marked_by_name VARCHAR(150),
-          ADD COLUMN IF NOT EXISTS edited_by_name VARCHAR(150)
+          ADD COLUMN IF NOT EXISTS edited_by_name VARCHAR(150),
+          ADD COLUMN IF NOT EXISTS updated_by_name VARCHAR(150)
+      `);
+      await pool.query(`
+        UPDATE attendance a SET updated_by_name=f.name FROM faculty f WHERE a.updated_by_name IS NULL AND UPPER(TRIM(a.updated_by))=UPPER(TRIM(f.faculty_id))
+      `);
+      await pool.query(`
+        UPDATE attendance a SET edited_by_name=f.name FROM faculty f WHERE a.edited_by_name IS NULL AND UPPER(TRIM(a.edited_by))=UPPER(TRIM(f.faculty_id))
+      `);
+      await pool.query(`
+        UPDATE test_batch_attendance a SET marked_by_name=f.name FROM faculty f WHERE a.marked_by_name IS NULL AND UPPER(TRIM(a.marked_by))=UPPER(TRIM(f.faculty_id))
+      `);
+      await pool.query(`
+        UPDATE test_batch_attendance a SET edited_by_name=f.name FROM faculty f WHERE a.edited_by_name IS NULL AND UPPER(TRIM(a.edited_by))=UPPER(TRIM(f.faculty_id))
       `);
       await pool.query(`
         CREATE TABLE IF NOT EXISTS record_audit_history (
