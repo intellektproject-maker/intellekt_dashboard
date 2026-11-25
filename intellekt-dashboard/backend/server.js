@@ -7216,7 +7216,7 @@ async function requireMarksEntryFaculty(req, res, next) {
 
 function validateMarkEntryTestCode(code) {
   const rawCode = String(code || '').trim().toUpperCase();
-  if (!rawCode || /\\s/.test(rawCode)) return null;
+  if (!rawCode || /\s/.test(rawCode)) return null;
   const parsed = parseRegularTestCode(rawCode);
   if (!parsed || parsed.attempt !== null) return null;
   if (!String(parsed.chapter || '').trim() ||
@@ -7312,7 +7312,7 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     const chapterValue = String((req.body && req.body.chapter) || (parsed && parsed.chapter) || '').trim();
     const portionValue = String((req.body && req.body.portion) || '').trim();
     const chapterIsCombined = chapterValue.toLowerCase() === 'combined';
-    const chapterIsNumber = /^\\d+$/.test(chapterValue) && Number(chapterValue) > 0;
+    const chapterIsNumber = /^\d+$/.test(chapterValue) && Number(chapterValue) > 0;
     if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
     if (!chapterIsCombined && !chapterIsNumber) {
       return res.status(400).json({ error: 'Chapter must be a number or combined' });
