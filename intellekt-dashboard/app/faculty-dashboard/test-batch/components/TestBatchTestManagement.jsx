@@ -1294,7 +1294,7 @@ export default function TestBatchTestManagement({ initialSection = "", standalon
       await api(
         "/test-batch/tests/" +
           encodeURIComponent(markTest.test_code) +
-          "/marks",
+          "/marks/submit",
         {
           method: "POST",
           body: JSON.stringify({
