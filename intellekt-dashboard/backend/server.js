@@ -400,6 +400,7 @@ app.get('/attendance/:rollNo', async (req, res) => {
 	const { rollNo } = req.params;
 
 	try {
+        await ensureRecordAuditSchema();
 		const result = await pool.query(
 			`
 				SELECT roll_no, subject_id, attendance_date, status, updated_by, updated_by_name, marked_at, edited_by, edited_by_name, edited_at
@@ -2189,6 +2190,7 @@ app.get('/attendance', async (req, res) => {
 	}
 
 	try {
+        await ensureRecordAuditSchema();
 		if (mode === 'report') {
 			if (!classBoard || !from || !to) {
 				return res.status(400).json({
@@ -5409,6 +5411,7 @@ app.get('/attendance-students', async (req, res) => {
   }
 
   try {
+    await ensureRecordAuditSchema();
     const dayOfWeek = new Date(date).getDay();
 
     // ==========================
@@ -8455,6 +8458,7 @@ app.get('/test-batch/dashboard', requireTestBatchAttendanceMarksAccess, async (r
 
 app.get('/test-batch/student/:roll_no', async (req,res) => {
   try {
+    await ensureRecordAuditSchema();
     const roll=String(req.params.roll_no).toUpperCase().trim();
     if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
 
@@ -8532,6 +8536,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
 ========================================================= */
 app.get('/test-batch/marks/:rollNo', async (req,res) => {
   try {
+    await ensureRecordAuditSchema();
     const roll = String(req.params.rollNo || '').toUpperCase().trim();
     if (!/^IAT[0-9]{3,}$/.test(roll)) {
       return res.status(400).json({ error:'Invalid Test Batch roll number' });
@@ -8563,6 +8568,7 @@ app.get('/test-batch/marks/:rollNo', async (req,res) => {
 
 app.get('/test-batch/attendance/:rollNo', async (req,res) => {
   try {
+    await ensureRecordAuditSchema();
     const roll = String(req.params.rollNo || '').toUpperCase().trim();
     if (!/^IAT[0-9]{3,}$/.test(roll)) {
       return res.status(400).json({ error:'Invalid Test Batch roll number' });
