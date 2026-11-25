@@ -321,6 +321,35 @@ app.post('/login', async (req, res) => {
 /* =========================================================
    RESET PASSWORD
 ========================================================= */
+/* Student-only login for the Test Batch mobile APK.
+   * This endpoint does not alter the dashboard's Regular Student login. */
+app.post('/mobile/login', async (req, res) => {
+  const { id, password } = req.body || {};
+  const rollNo = String(id || '').trim().toUpperCase();
+  if (!rollNo || !password) return res.status(400).json({ error: 'Student ID and password are required' });
+  try {
+    const result = await pool.query(
+      'SELECT roll_no, name, password, must_reset_password FROM test_batch_students WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) LIMIT 1',
+      [rollNo]
+    );
+    if (!result.rows.length || String(result.rows[0].password) !== String(password)) {
+      return res.status(401).json({ error: 'Invalid student ID or password' });
+    }
+    const student = result.rows[0];
+    return res.json({
+      success: true,
+      role: 'test-batch-student',
+      studentType: 'test_batch',
+      id: student.roll_no,
+      name: student.name || '',
+      mustResetPassword: student.must_reset_password === true
+    });
+  } catch (err) {
+    console.error('POST /mobile/login error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.put('/reset-password', async (req, res) => {
 	const { id, role, newPassword } = req.body;
 
@@ -7744,7 +7773,7 @@ app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (r
 
     const cleanRollNo = String(roll_no || '').trim().toUpperCase();
     if (!cleanRollNo) return res.status(400).json({ error:'Roll number is required; enter it manually.' });
-    if (!/^IAT[0-9]{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Test Batch roll number must use the IAT format, for example IAT014.' });
+    if (!/^(?:IAT|(?:\d{2,4})?IA)\d{3,}$/.test(cleanRollNo)) return res.status(400).json({ error:'Use a valid Test Batch student ID such as IA001, 27IA001 or IAT014.' });
     if (!name || !className || !test_series_id || !subjects) {
       return res.status(400).json({ error:'Roll number, student name, class, subjects and test series are required' });
     }
@@ -8462,7 +8491,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
   try {
     await ensureRecordAuditSchema();
     const roll=String(req.params.roll_no).toUpperCase().trim();
-    if(!/^IAT[0-9]{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
+    if(!/^(?:IAT|(?:\d{2,4})?IA)\d{3,}$/.test(roll)) return res.status(400).json({error:'Invalid Test Batch roll number'});
 
     const studentResult=await pool.query(
       'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
@@ -8540,7 +8569,7 @@ app.get('/test-batch/marks/:rollNo', async (req,res) => {
   try {
     await ensureRecordAuditSchema();
     const roll = String(req.params.rollNo || '').toUpperCase().trim();
-    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+    if (!/^(?:IAT|(?:\d{2,4})?IA)\d{3,}$/.test(roll)) {
       return res.status(400).json({ error:'Invalid Test Batch roll number' });
     }
 
@@ -8572,7 +8601,7 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
   try {
     await ensureRecordAuditSchema();
     const roll = String(req.params.rollNo || '').toUpperCase().trim();
-    if (!/^IAT[0-9]{3,}$/.test(roll)) {
+    if (!/^(?:IAT|(?:\d{2,4})?IA)\d{3,}$/.test(roll)) {
       return res.status(400).json({ error:'Invalid Test Batch roll number' });
     }
 
