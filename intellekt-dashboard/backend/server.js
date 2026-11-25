@@ -402,7 +402,7 @@ app.get('/attendance/:rollNo', async (req, res) => {
 	try {
 		const result = await pool.query(
 			`
-				SELECT roll_no, subject_id, attendance_date, status, updated_by
+				SELECT roll_no, subject_id, attendance_date, status, updated_by, updated_by_name, marked_at, edited_by, edited_by_name, edited_at
 				FROM attendance
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
 				ORDER BY attendance_date DESC
@@ -2427,7 +2427,7 @@ if (!subject && !isSundayMode) {
 						(roll_no, subject_id, attendance_date, attendance_time, status, updated_by, updated_by_name, marked_at)
           VALUES ($1,$2,$3,CURRENT_TIME,$4,$5,$6,CURRENT_TIMESTAMP)
 					`,
-					[record.roll_no, actualSubject, selectedDate, record.status, req.recordAuditActor.id, req.recordAuditActor.name]
+					[record.roll_no, subject, selectedDate, record.status, req.recordAuditActor.id, req.recordAuditActor.name]
 				);
 			}
 		}
@@ -2543,14 +2543,17 @@ app.put('/attendance', requireRecordAuditActor, async (req, res) => {
 				`
 				UPDATE attendance
 				SET status = $1,
-					edited_by = $2,
-					edited_at = CURRENT_TIMESTAMP
+          updated_by = $2,
+          updated_by_name = $3,
+          edited_by = $2,
+          edited_by_name = $3,
+          edited_at = CURRENT_TIMESTAMP
 				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
 				AND subject_id = $4
 				AND attendance_date = $5
 				RETURNING *
 				`,
-				[record.status, facultyId, record.roll_no, subject, selectedDate]
+				[record.status, req.recordAuditActor.id, req.recordAuditActor.name, record.roll_no, subject, selectedDate]
 			);
 
 			if (result.rows.length === 0) {
@@ -7944,7 +7947,7 @@ app.get('/test-batch/marks', requireTestBatchAttendanceMarksAccess, async (req,r
 
     const result = await pool.query(
       'SELECT m.id,m.roll_no,s.name,ts.name AS test_series_name,m.test_code,m.subject_name,' +
-      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name ' +
+      'm.total_marks,m.marks_obtained,m.comments,m.created_at,m.updated_at,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name,m.updated_at ' +
       'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no ' +
       'JOIN test_series ts ON ts.id=s.test_series_id ' + where +
       ' ORDER BY m.created_at DESC,m.id DESC',
@@ -8443,7 +8446,7 @@ app.get('/test-batch/student/:roll_no', async (req,res) => {
     );
 
     const attendanceResult=await pool.query(
-      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_at,a.edited_by,a.edited_at, ' +
+      'SELECT a.id,a.attendance_date,a.status,a.marked_by,a.marked_by_name,a.marked_at,a.edited_by,a.edited_by_name,a.edited_at, ' +
       'COALESCE((' +
       '  SELECT tr.test_code FROM test_batch_registrations tr ' +
       '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
