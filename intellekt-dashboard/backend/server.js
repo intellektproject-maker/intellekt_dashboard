@@ -7312,8 +7312,8 @@ app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceM
     }
 
     const aliases = normalizeMarkEntrySubject(test.subject_name) === 'mathematics'
-      ? ['mathematics','maths','math']
-      : ['physics','phy'];
+      ? ['mathematics','maths','math','both']
+      : ['physics','phy','both'];
     const studentsResult = await client.query(
       "SELECT DISTINCT s.roll_no,s.name,TRIM(s.class) AS class,TRIM(s.board) AS board " +
       "FROM test_batch_registrations r JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) " +
@@ -7351,7 +7351,7 @@ app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceM
       let cleanMarks = marks;
       if (marks !== 'A') {
         const number = Number(marks);
-        if (!/^\\d+$/.test(marks) || !Number.isInteger(number) || number < 0 ||
+        if (!/^\d+$/.test(marks) || !Number.isInteger(number) || number < 0 ||
             number > 100000 || number > Number(test.total_marks)) {
           throw Object.assign(new Error('One or more marks are outside the allowed range'), { statusCode: 400 });
         }
