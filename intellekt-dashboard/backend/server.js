@@ -7239,7 +7239,8 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, a
       "WHERE LOWER(TRIM(t.subject_name))=LOWER(TRIM($1)) " +
       "AND t.status NOT IN ('Draft','Cancelled') AND " +
       "(t.manual_mark_entry_enabled=TRUE OR EXISTS (SELECT 1 FROM test_batch_marks m WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code)))) " +
-      "AND EXISTS (SELECT 1 FROM test_batch_registrations r WHERE r.test_code=t.test_code AND r.status='Registered') " +
+      "AND (EXISTS (SELECT 1 FROM test_batch_registrations r WHERE r.test_code=t.test_code AND r.status='Registered') " +
+      "OR EXISTS (SELECT 1 FROM test_batch_marks m WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code)))) " +
       "ORDER BY t.test_code ASC",
       [subject]
     );
@@ -7287,7 +7288,10 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
       "SELECT DISTINCT s.roll_no,s.name,TRIM(s.class) AS class,TRIM(s.board) AS board " +
       "FROM test_batch_registrations r JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(r.roll_no)) " +
       "JOIN test_batch_tests t ON t.test_code=r.test_code " +
-      "WHERE UPPER(TRIM(r.test_code))=$1 AND r.status='Registered' " +
+      "WHERE UPPER(TRIM(r.test_code))=$1 " +
+      "AND (r.status='Registered' OR EXISTS (SELECT 1 FROM test_batch_marks m " +
+      "WHERE UPPER(TRIM(m.test_code))=$1 AND UPPER(TRIM(m.roll_no))=UPPER(TRIM(s.roll_no)) " +
+      "AND LOWER(TRIM(m.subject_name))=LOWER(TRIM(t.subject_name)))) " +
       "AND s.test_series_id=t.test_series_id " +
       "AND LOWER(TRIM(COALESCE(s.subjects,'')))=ANY($2::text[]) " +
       "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$3 " +
