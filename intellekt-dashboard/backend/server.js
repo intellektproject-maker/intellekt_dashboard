@@ -6997,12 +6997,19 @@ function validateMarkEntryTestCode(code) {
   return parsed;
 }
 
+function markEntryBoardSql(column) {
+  const raw = "REGEXP_REPLACE(LOWER(COALESCE(" + column + ",'')), '[^a-z]', '', 'g')";
+  return "(CASE WHEN " + raw + " IN ('s','state','stateboard') THEN 'stateboard' " +
+    "WHEN " + raw + " IN ('c','cbse') THEN 'cbse' " +
+    "WHEN " + raw + " IN ('i','isc','icse') THEN 'isc' ELSE " + raw + " END)";
+}
+
 async function regularMarkEntryStudents(db, parsed, subjectId) {
   const result = await db.query(
     "SELECT DISTINCT s.roll_no, s.name, TRIM(s.class) AS class, TRIM(s.board) AS board " +
     "FROM students s JOIN student_subjects ss ON UPPER(TRIM(ss.roll_no))=UPPER(TRIM(s.roll_no)) " +
-    "WHERE TRIM(s.class)=$1 " +
-    "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')), '[^a-z]', '', 'g')=$2 " +
+    "WHERE REGEXP_REPLACE(COALESCE(s.class,''), '[^0-9]', '', 'g')=$1 " +
+    "AND " + markEntryBoardSql('s.board') + "=$2 " +
     "AND ss.subject_id=$3 " +
     "AND (s.batch IS NULL OR LOWER(TRIM(s.batch))='regular batch') " +
     "ORDER BY s.roll_no ASC",
@@ -7250,7 +7257,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
       "AND s.test_series_id=t.test_series_id " +
       "AND LOWER(TRIM(COALESCE(s.subjects,'')))=ANY($2::text[]) " +
       "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$3 " +
-      "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')),'[^a-z]','','g')=$4 " +
+      "AND " + markEntryBoardSql('s.board') + "=$4 " +
       "ORDER BY s.roll_no ASC",
       [code, aliases, parsed.className, normalizeTestBatchBoard(parsed.board)]
     );
@@ -7321,7 +7328,7 @@ app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceM
       "AND s.test_series_id=$2 " +
       "AND LOWER(TRIM(COALESCE(s.subjects,'')))=ANY($3::text[]) " +
       "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$4 " +
-      "AND REGEXP_REPLACE(LOWER(COALESCE(s.board,'')),'[^a-z]','','g')=$5 " +
+      "AND " + markEntryBoardSql('s.board') + "=$5 " +
       "ORDER BY s.roll_no ASC",
       [code,Number(test.test_series_id),aliases,parsed.className,normalizeTestBatchBoard(parsed.board)]
     );
