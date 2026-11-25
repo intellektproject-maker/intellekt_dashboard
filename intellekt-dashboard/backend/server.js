@@ -385,7 +385,7 @@ app.post('/mobile/login', async (req, res) => {
   const { id, password } = req.body || {};
   const rollNo = String(id || '').trim().toUpperCase();
   if (!rollNo || !password) return res.status(400).json({ error: 'Student ID and password are required' });
-  if (!/^(?:\\d{2,4})?IA\\d{3,}$/i.test(rollNo)) {
+  if (!/^(?:[0-9]{2,4})?IA[0-9]{3,}$/i.test(rollNo)) {
     return res.status(400).json({ error: 'Use your existing IA student roll number' });
   }
 
