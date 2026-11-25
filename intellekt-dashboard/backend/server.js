@@ -33,7 +33,8 @@ function parseRegularTestCode(testCode) {
 	const attemptMatch = raw.match(/\s+TEST\s*(\d+)$/i);
 	const attempt = attemptMatch ? Number(attemptMatch[1]) : null;
 	const base = attemptMatch ? raw.slice(0, attemptMatch.index).trim() : raw;
-	const match = base.match(/^([SCI])(7|8|9|10|11|12)(M|P)(\d{1,3})C(.+)$/i);
+	// Accept chapter suffixes both with the explicit C marker and in existing codes such as C10M50VOLUME1.
+	const match = base.match(/^([SCI])(7|8|9|10|11|12)(M|P)(\d{1,3})C?(.+)$/i);
 	if (!match) return null;
 	const [, boardCode, classCode, subjectCodeRaw, marksCode, chapterRaw] = match;
 	const subjectCode = subjectCodeRaw.toUpperCase();
