@@ -6912,7 +6912,7 @@ app.get('/test-batch/tests/:testCode/results', requireTestBatchAttendanceMarksAc
 
     const config = testResult.rows[0];
     const result=await pool.query(
-      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments '+
+      'SELECT m.id,m.roll_no,s.name,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name,m.updated_at '+
       'FROM test_batch_marks m JOIN test_batch_students s ON s.roll_no=m.roll_no '+
       'WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM($1)) ORDER BY m.roll_no ASC',
       [req.params.testCode]);
