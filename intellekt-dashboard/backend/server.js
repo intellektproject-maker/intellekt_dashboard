@@ -2548,10 +2548,10 @@ app.put('/attendance', requireRecordAuditActor, async (req, res) => {
           edited_by = $2,
           edited_by_name = $3,
           edited_at = CURRENT_TIMESTAMP
-				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
-				AND subject_id = $4
-				AND attendance_date = $5
-				RETURNING *
+				WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($4))
+        AND subject_id = $5
+        AND attendance_date = $6
+        RETURNING *
 				`,
 				[record.status, req.recordAuditActor.id, req.recordAuditActor.name, record.roll_no, subject, selectedDate]
 			);
@@ -8537,7 +8537,7 @@ app.get('/test-batch/marks/:rollNo', async (req,res) => {
     }
 
     const result = await pool.query(
-      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,t.portion ' +
+      'SELECT m.id,m.test_code,m.subject_name,m.total_marks,m.marks_obtained,m.comments,m.created_at,m.entered_by,m.entered_by_name,m.entered_at,m.updated_by,m.updated_by_name,m.updated_at,t.portion ' +
       'FROM test_batch_marks m ' +
       'LEFT JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(m.test_code)) ' +
       'WHERE UPPER(TRIM(m.roll_no))=UPPER(TRIM($1)) ' +
