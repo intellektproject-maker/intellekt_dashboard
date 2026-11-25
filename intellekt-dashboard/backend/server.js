@@ -8182,13 +8182,15 @@ app.post('/test-batch/attendance', requireTestBatchAttendanceMarksAccess, async 
           }
           await client.query(
             `INSERT INTO test_batch_marks
-              (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
-             VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+              (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at,entered_by,entered_by_name,entered_at,updated_by,updated_by_name)
+             VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,$5,$6,CURRENT_TIMESTAMP,$5,$6)
              ON CONFLICT(roll_no,test_code,subject_name) DO UPDATE SET
                total_marks=EXCLUDED.total_marks,
                marks_obtained='A',
+               updated_by=$5,
+               updated_by_name=$6,
                updated_at=CURRENT_TIMESTAMP`,
-            [roll,test.test_code,test.subject_name,Number(test.total_marks)]
+            [roll,test.test_code,test.subject_name,Number(test.total_marks),req.recordAuditActor.id,req.recordAuditActor.name]
           );
         }
       }
@@ -8220,10 +8222,12 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
     const result = await client.query(
       `UPDATE test_batch_attendance a
        SET status=$1,
+           updated_by=$2,
+           updated_by_name=$3,
            edited_by=$2,
            edited_by_name=$3,
            edited_at=CURRENT_TIMESTAMP
-       WHERE a.id=$3
+       WHERE a.id=$4
          AND EXISTS (
            SELECT 1
            FROM test_batch_registrations tr
@@ -8256,13 +8260,15 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
       for (const test of registeredTests.rows) {
         await client.query(
           `INSERT INTO test_batch_marks
-            (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at)
-           VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at,entered_by,entered_by_name,entered_at,updated_by,updated_by_name)
+           VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,$5,$6,CURRENT_TIMESTAMP,$5,$6)
            ON CONFLICT(roll_no,test_code,subject_name) DO UPDATE SET
              total_marks=EXCLUDED.total_marks,
              marks_obtained='A',
+             updated_by=$5,
+             updated_by_name=$6,
              updated_at=CURRENT_TIMESTAMP`,
-          [attendance.roll_no,test.test_code,test.subject_name,Number(test.total_marks)]
+          [attendance.roll_no,test.test_code,test.subject_name,Number(test.total_marks),req.recordAuditActor.id,req.recordAuditActor.name]
         );
       }
     }
