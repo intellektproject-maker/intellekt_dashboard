@@ -1968,6 +1968,9 @@ const newComment = (() => {
 	}
 });
 app.put('/update-marks', requireRecordAuditActor, async (req, res) => {
+  if (!['IG001','IG002'].includes(req.recordAuditActor.id)) {
+    return res.status(403).json({ error: 'Faculty must obtain admin approval before editing marks.' });
+  }
 	const { name, test_code, marks_obtained } = req.body;
 
 	try {
@@ -6186,9 +6189,11 @@ async function requireRecordAuditActor(req, res, next) {
   try {
     await ensureRecordAuditSchema();
     const candidate = String(
-      req.get('x-admin-id') || req.get('x-faculty-id') ||
-      (req.body && (req.body.adminId || req.body.facultyId)) ||
-      req.query.adminId || req.query.facultyId || ''
+      req.get('x-admin-id') ||
+      (req.body && req.body.adminId) ||
+      req.query.adminId ||
+      req.get('x-faculty-id') ||
+      (req.body && req.body.facultyId) || req.query.facultyId || ''
     ).trim().toUpperCase();
     if (!/^IG\d{3,}$/.test(candidate)) {
       return res.status(403).json({ error: 'Authorized faculty or admin access required' });
@@ -6222,10 +6227,11 @@ async function requireTestBatchAttendanceMarksAccess(req, res, next) {
     await ensureRecordAuditSchema();
     const candidate = String(
       req.get('x-admin-id') ||
-      req.get('x-faculty-id') ||
+      (req.body && req.body.adminId) ||
       req.query.adminId ||
+      req.get('x-faculty-id') ||
+      (req.body && req.body.facultyId) ||
       req.query.facultyId ||
-      (req.body && (req.body.adminId || req.body.facultyId)) ||
       ''
     ).toUpperCase().trim();
 
@@ -7147,11 +7153,12 @@ async function requireMarksEntryFaculty(req, res, next) {
   try {
     await ensureRecordAuditSchema();
     const candidate = String(
-      req.get('x-faculty-id') ||
       req.get('x-admin-id') ||
-      req.query.facultyId ||
+      (req.body && req.body.adminId) ||
       req.query.adminId ||
-      (req.body && (req.body.facultyId || req.body.adminId)) ||
+      req.get('x-faculty-id') ||
+      (req.body && req.body.facultyId) ||
+      req.query.facultyId ||
       ''
     ).toUpperCase().trim();
     if (!/^IG\d{3,}$/.test(candidate)) {
