@@ -7834,7 +7834,7 @@ app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (re
     await syncRegularStudentsToTestBatch();
     const { search, seriesId, class: className } = req.query;
     const values = [];
-    let where = "WHERE UPPER(TRIM(s.roll_no)) ~ '^(?:[0-9]{2,4})?IA[0-9]{3,}
+    let where = `WHERE UPPER(TRIM(s.roll_no)) ~ '^(?:[0-9]{2,4})?IA[0-9]{3,}$'`;
 
     if (seriesId) {
       values.push(Number(seriesId));
