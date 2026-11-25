@@ -7216,7 +7216,9 @@ app.get('/test-batch/mark-entry/subjects', requireTestBatchAttendanceMarksAccess
   try {
     const result = await pool.query(
       "SELECT DISTINCT TRIM(subject_name) AS subject_name FROM test_batch_tests " +
-      "WHERE status NOT IN ('Draft','Cancelled') AND manual_mark_entry_enabled=TRUE " +
+      "WHERE status NOT IN ('Draft','Cancelled') AND " +
+      "(manual_mark_entry_enabled=TRUE OR EXISTS (SELECT 1 FROM test_batch_marks m " +
+      "WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM(test_batch_tests.test_code)))) " +
       "ORDER BY TRIM(subject_name) ASC"
     );
     res.json({ subjects: result.rows });
@@ -7235,7 +7237,8 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, a
       "t.status,t.marks_entry_status,t.manual_mark_entry_enabled " +
       "FROM test_batch_tests t JOIN test_series ts ON ts.id=t.test_series_id " +
       "WHERE LOWER(TRIM(t.subject_name))=LOWER(TRIM($1)) " +
-      "AND t.status NOT IN ('Draft','Cancelled') AND t.manual_mark_entry_enabled=TRUE " +
+      "AND t.status NOT IN ('Draft','Cancelled') AND " +
+      "(t.manual_mark_entry_enabled=TRUE OR EXISTS (SELECT 1 FROM test_batch_marks m WHERE UPPER(TRIM(m.test_code))=UPPER(TRIM(t.test_code)))) " +
       "AND EXISTS (SELECT 1 FROM test_batch_registrations r WHERE r.test_code=t.test_code AND r.status='Registered') " +
       "ORDER BY t.test_code ASC",
       [subject]
