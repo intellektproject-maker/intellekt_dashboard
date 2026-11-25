@@ -482,6 +482,7 @@ function EnterAttendancePageInner() {
                     </>
                   )}
                   <th className="p-3 text-left">Status</th>
+                  <th className="p-3 text-left">Entered/Updated By</th>
                   {attendanceFrozen && <th className="p-3 text-left">Request Edit</th>}
                 </tr>
               </thead>
@@ -514,6 +515,9 @@ function EnterAttendancePageInner() {
                           <option value="Present">Present</option>
                           <option value="Absent">Absent</option>
                         </select>
+                      </td>
+                      <td className="p-3 text-xs text-gray-600">
+                        {student.attendance_status ? <>{student.attendance_edited_by_name || student.attendance_updated_by_name || '-'}<br />{student.attendance_edited_at || student.attendance_marked_at ? new Date(student.attendance_edited_at || student.attendance_marked_at).toLocaleString() : '-'}</> : '-'}
                       </td>
                       {attendanceFrozen && (
                         <td className="p-3">
