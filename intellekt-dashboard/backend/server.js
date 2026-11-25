@@ -6333,7 +6333,10 @@ app.get('/test-batch/student-tests/:rollNo', async (req,res) => {
 });
 
 app.post('/test-batch/tests/:testCode/register', async (req,res) => {
+  let client;
+  let transactionStarted = false;
   try {
+    client = await pool.connect();
     const testCode = String(req.params.testCode || '').trim().toUpperCase();
     const rollNo = String(req.body?.roll_no || '').trim().toUpperCase();
     if (!rollNo) return res.status(400).json({error:'Roll number is required'});
@@ -6448,7 +6451,38 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
       });
     }
 
-    const registered = await pool.query(
+    // Serialize registrations for this student and writing date across all
+    // API instances. The slot-conflict check and upsert run in the same
+    // transaction, so concurrent Physics/Mathematics requests cannot both win.
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [rollNo + '|' + selectedWritingDate]
+    );
+
+    const conflictingRegistration = await client.query(
+      `SELECT id
+       FROM test_batch_registrations
+       WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1))
+         AND writing_date = $2::date
+         AND status = 'Registered'
+         AND slot_start IS NOT NULL
+         AND slot_end IS NOT NULL
+         AND slot_start < $4::time
+         AND slot_end > $3::time
+         AND UPPER(TRIM(test_code)) <> UPPER(TRIM($5))
+       LIMIT 1`,
+      [rollNo, selectedWritingDate, selectedSlotStart, selectedSlotEnd, testCode]
+    );
+
+    if (conflictingRegistration.rows.length > 0) {
+      return res.status(409).json({
+        error: 'You have already registered for a test in this slot.'
+      });
+    }
+
+    const registered = await client.query(
       `INSERT INTO test_batch_registrations
        (test_code,roll_no,writing_date,slot_start,slot_end,status,updated_at)
        VALUES($1,$2,$3,$4,$5,'Registered',CURRENT_TIMESTAMP)
@@ -6462,6 +6496,9 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
        RETURNING *, (xmax = 0) AS is_new_registration`,
       [testCode,rollNo,selectedWritingDate,selectedSlotStart,selectedSlotEnd]
     );
+
+    await client.query('COMMIT');
+    transactionStarted = false;
 
     const registration = registered.rows[0];
 
@@ -6507,6 +6544,15 @@ app.post('/test-batch/tests/:testCode/register', async (req,res) => {
   } catch(err) {
     console.error('POST /test-batch/tests/:testCode/register error:',err);
     res.status(500).json({error:'Failed to register for Test Batch test',details:err.message});
+  } finally {
+    if (client) {
+      if (transactionStarted) {
+        try { await client.query('ROLLBACK'); } catch (rollbackError) {
+          console.error('Test Batch registration rollback failed:', rollbackError);
+        }
+      }
+      client.release();
+    }
   }
 });
 
