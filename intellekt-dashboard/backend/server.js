@@ -7219,7 +7219,7 @@ app.get('/test-batch/mark-entry/tests', requireTestBatchAttendanceMarksAccess, a
     );
     const tests = result.rows.map((test) => {
       const parsed = parseTestBatchCode(test.test_code);
-      return parsed ? Object.assign({}, test, { class: parsed.className, board: parsed.board }) : null;
+      return parsed ? Object.assign({}, test, { class: String(Number(parsed.className)), board: parsed.board }) : null;
     }).filter(Boolean).filter((test) =>
       normalizeMarkEntrySubject(test.subject_name) === normalizeMarkEntrySubject(parseTestBatchCode(test.test_code).subject)
     );
@@ -7262,7 +7262,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
       "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$3 " +
       "AND " + markEntryBoardSql('s.board') + "=$4 " +
       "ORDER BY s.roll_no ASC",
-      [code, aliases, parsed.className, normalizeTestBatchBoard(parsed.board)]
+      [code, aliases, String(Number(parsed.className)), normalizeTestBatchBoard(parsed.board)]
     );
     if (!studentsResult.rows.length) return res.status(404).json({ error: 'No registered students found for this test' });
     res.json({
@@ -7272,7 +7272,7 @@ app.get('/test-batch/tests/:testCode/mark-entry', requireTestBatchAttendanceMark
         test_series_name: test.test_series_name,
         subject_name: test.subject_name,
         total_marks: Number(test.total_marks),
-        class: parsed.className,
+        class: String(Number(parsed.className)),
         board: parsed.board,
         marks_entry_status: test.marks_entry_status
       },
@@ -7333,7 +7333,7 @@ app.post('/test-batch/tests/:testCode/marks/submit', requireTestBatchAttendanceM
       "AND REGEXP_REPLACE(COALESCE(s.class,''),'[^0-9]','','g')=$4 " +
       "AND " + markEntryBoardSql('s.board') + "=$5 " +
       "ORDER BY s.roll_no ASC",
-      [code,Number(test.test_series_id),aliases,parsed.className,normalizeTestBatchBoard(parsed.board)]
+      [code,Number(test.test_series_id),aliases,String(Number(parsed.className)),normalizeTestBatchBoard(parsed.board)]
     );
     const students = studentsResult.rows;
     if (!students.length) {
