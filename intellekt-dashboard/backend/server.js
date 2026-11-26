@@ -7352,7 +7352,7 @@ app.get('/regular-mark-entry/:testCode', requireMarksEntryFaculty, async (req, r
       [parsed.canonicalCode]
     );
     const existingMarksResult = await pool.query(
-      "SELECT roll_no,marks_obtained,comments,total_marks FROM marks WHERE UPPER(TRIM(test_code))=$1 ORDER BY roll_no ASC",
+      "SELECT roll_no,marks_obtained,comments,total_marks,entered_by_name,entered_at,updated_by_name,updated_at FROM marks WHERE UPPER(TRIM(test_code))=$1 ORDER BY roll_no ASC",
       [parsed.canonicalCode]
     );
 
