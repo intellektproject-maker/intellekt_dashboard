@@ -97,7 +97,7 @@ function registerRecordEditRoutes(app, pool) {
           originalValue = String(studentResult.rows[0].original_value);
           const totalResult = await pool.query('SELECT total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))', [roll, test_code]);
           const total = Number(totalResult.rows[0]?.total_marks);
-          if (requested.toUpperCase() !== 'A') {
+          if (!['A', 'EDIT_PERMISSION'].includes(requested.toUpperCase())) {
             const n = Number(requested);
             if (!Number.isFinite(n) || n < 0 || (Number.isFinite(total) && n > total)) return res.status(400).json({ error: 'Requested marks must be between 0 and the total marks, or A for absent.' });
           }
