@@ -429,10 +429,6 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         }
         const snapshotByRoll = new Map(snapshot.map((row) => [String(row.roll_no).trim().toUpperCase(), row]));
         const submittedRolls = new Set();
-        if (submittedRolls.size !== snapshotByRoll.size) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'Overall edit must include every saved student in the approved snapshot.' });
-        }
         for (const row of records) {
           const roll = String(row.roll_no || '').trim().toUpperCase();
           const original = snapshotByRoll.get(roll);
@@ -450,10 +446,14 @@ function registerTestBatchEditRequestRoutes(app, pool) {
             "SELECT marks_obtained,total_marks FROM test_batch_marks WHERE UPPER(TRIM(roll_no))=$1 AND UPPER(TRIM(test_code))=UPPER(TRIM($2)) AND LOWER(TRIM(subject_name))=LOWER(TRIM($3)) FOR UPDATE",
             [roll, request.test_code, original.subject_name]
           );
-          if (!current.rows.length || String(current.rows[0].marks_obtained).trim().toUpperCase() !== String(original.marks_obtained).trim().toUpperCase()) {
+          if (!current.rows.length || String(current.rows[0].marks_obtained).trim().toUpperCase() !== String(original.marks_obtained).trim().toUpperCase() || Number(current.rows[0].total_marks) !== Number(original.total_marks)) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: 'Marks for ' + roll + ' changed after approval was requested. Submit a new overall request.' });
           }
+        }
+        if (submittedRolls.size !== snapshotByRoll.size) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Overall edit must include every saved student in the approved snapshot.' });
         }
         for (const row of records) {
           const roll = String(row.roll_no).trim().toUpperCase();
