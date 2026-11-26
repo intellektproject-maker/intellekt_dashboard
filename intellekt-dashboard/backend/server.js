@@ -7893,65 +7893,6 @@ app.get('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (re
   }
 });
 
-";
-
-    if (seriesId) {
-      values.push(Number(seriesId));
-      where += ' AND s.test_series_id = $' + values.length;
-    }
-
-    if (className) {
-      values.push(String(className).trim());
-      where += ' AND s.class = $' + values.length;
-    }
-
-    if (search) {
-      values.push('%' + String(search).trim() + '%');
-      where += ' AND (s.roll_no ILIKE $' + values.length + ' OR s.name ILIKE $' + values.length + ')';
-    }
-
-    const result = await pool.query(
-      'SELECT s.roll_no,s.name,s.class,s.board,s.mode_of_education,s.phone,s.email,s.school_name,s.subjects,' +
-      's.date_of_birth,s.academic_year_from,s.academic_year_to,s.parent_name,s.secondary_contact,s.reference,' +
-      's.created_at,s.updated_at,s.test_series_id,ts.name AS test_series_name ' +
-      'FROM test_batch_students s JOIN test_series ts ON ts.id=s.test_series_id ' +
-      where + ' ORDER BY s.roll_no ASC',
-      values
-    );
-
-    const classValues = [];
-    let classWhere = 'WHERE 1=1';
-
-    if (seriesId) {
-      classValues.push(Number(seriesId));
-      classWhere += ' AND s.test_series_id = $' + classValues.length;
-    }
-
-    if (search) {
-      classValues.push('%' + String(search).trim() + '%');
-      classWhere += ' AND (s.roll_no ILIKE $' + classValues.length + ' OR s.name ILIKE $' + classValues.length + ')';
-    }
-
-    const classResult = await pool.query(
-      'SELECT DISTINCT TRIM(s.class) AS class FROM test_batch_students s ' +
-      classWhere +
-      " AND s.class IS NOT NULL AND TRIM(s.class) <> '' " +
-      'ORDER BY TRIM(s.class) ASC',
-      classValues
-    );
-
-    res.json({
-      students: result.rows,
-      available_classes: classResult.rows
-        .map((row) => String(row.class).trim())
-        .filter(Boolean)
-    });
-  } catch (err) {
-    console.error('GET /test-batch/students error:', err);
-    res.status(500).json({ error: 'Failed to fetch Test Batch students' });
-  }
-});
-
 app.post('/test-batch/students', requireTestBatchAttendanceMarksAccess, async (req, res) => {
   const client = await pool.connect();
 
