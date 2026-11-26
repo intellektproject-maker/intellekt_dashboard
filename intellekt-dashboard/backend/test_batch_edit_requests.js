@@ -74,7 +74,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           }
         }
       } else {
-        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !['Present', 'Absent'].includes(requested)) {
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested))) {
           return res.status(400).json({ error: 'A valid attendance_date and Present/Absent value are required.' });
         }
         const result = await pool.query(
