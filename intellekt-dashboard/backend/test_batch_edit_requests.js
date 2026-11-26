@@ -189,8 +189,10 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         "SELECT m.roll_no,m.subject_name,m.marks_obtained,m.total_marks,s.name FROM test_batch_marks m " +
         "JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(m.roll_no)) " +
         "WHERE UPPER(TRIM(m.test_code))=$1 AND UPPER(TRIM(m.roll_no))=ANY($2::text[]) " +
-        "AND ($3::text IS NULL OR LOWER(TRIM(m.subject_name))=LOWER(TRIM($3))) ORDER BY m.roll_no",
-        [testCode, rolls, subjectName]
+        "AND ($3::text IS NULL OR LOWER(TRIM(m.subject_name))=LOWER(TRIM($3))) " +
+        "AND EXISTS (SELECT 1 FROM test_batch_registrations r WHERE UPPER(TRIM(r.roll_no))=UPPER(TRIM(m.roll_no)) " +
+        "AND UPPER(TRIM(r.test_code))=$1 AND r.writing_date=$4::date AND r.status='Registered') ORDER BY m.roll_no",
+        [testCode, rolls, subjectName, writingDate]
       );
       if (!marks.rows.length) return res.status(404).json({ error: 'No saved marks found for the selected students.' });
       const snapshot = marks.rows.map((row) => ({
@@ -201,8 +203,10 @@ function registerTestBatchEditRequestRoutes(app, pool) {
       }));
       const existing = await pool.query(
         "SELECT id,status FROM test_batch_record_edit_requests WHERE record_type='marks' AND roll_no='*' " +
-        "AND UPPER(TRIM(test_code))=$1 AND attendance_date=$2::date AND status IN ('Pending','Approved') LIMIT 1",
-        [testCode, writingDate]
+        "AND UPPER(TRIM(test_code))=$1 AND attendance_date=$2::date " +
+        "AND COALESCE(LOWER(TRIM(subject_name)),'')=COALESCE(LOWER(TRIM($3)),'') " +
+        "AND status IN ('Pending','Approved') LIMIT 1",
+        [testCode, writingDate, subjectName]
       );
       if (existing.rows.length) return res.status(409).json({ error: 'An overall edit request for this test and writing date is already pending or approved.' });
       const inserted = await pool.query(
@@ -403,6 +407,10 @@ function registerTestBatchEditRequestRoutes(app, pool) {
             return res.status(409).json({error:'Attendance for ' + roll + ' changed after approval. Submit a new request.'});
           }
         }
+        if (seen.size !== before.size) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({error:'Overall edit must include every saved student in the approved snapshot.'});
+        }
         for (const row of records) {
           await client.query("UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$3 AND attendance_date=$4",
             [row.status, facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date]);
@@ -421,6 +429,10 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         }
         const snapshotByRoll = new Map(snapshot.map((row) => [String(row.roll_no).trim().toUpperCase(), row]));
         const submittedRolls = new Set();
+        if (submittedRolls.size !== snapshotByRoll.size) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Overall edit must include every saved student in the approved snapshot.' });
+        }
         for (const row of records) {
           const roll = String(row.roll_no || '').trim().toUpperCase();
           const original = snapshotByRoll.get(roll);
@@ -465,11 +477,11 @@ function registerTestBatchEditRequestRoutes(app, pool) {
       const current = request.record_type === 'marks'
         ? await client.query(
             "SELECT marks_obtained AS value,total_marks FROM test_batch_marks WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) " +
-            "AND UPPER(TRIM(test_code))=UPPER(TRIM($2)) AND ($3::text IS NULL OR LOWER(TRIM(subject_name))=LOWER(TRIM($3)))",
+            "AND UPPER(TRIM(test_code))=UPPER(TRIM($2)) AND ($3::text IS NULL OR LOWER(TRIM(subject_name))=LOWER(TRIM($3))) FOR UPDATE",
             [request.roll_no, request.test_code, request.subject_name]
           )
         : await client.query(
-            "SELECT status AS value FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND attendance_date=$2",
+            "SELECT status AS value FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND attendance_date=$2 FOR UPDATE",
             [request.roll_no, request.attendance_date]
           );
       const currentValue = current.rows.length ? String(current.rows[0].value).trim() : '';
