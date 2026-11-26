@@ -1079,20 +1079,33 @@ function AttendanceSection({ adminId }) {
                   <td className="p-3">{formatDate(r.attendance_date||date)}</td>
                   <td className="p-3">
                     {(() => {
-                      const approved=approvedRequestForRow(r);
-                      return <select
-                        className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                        value={r.status||""}
-                        disabled={Boolean(r.id)&&!approved}
-                        onChange={e=>{
-                          if(approved)applyApprovedAttendanceEdit(approved);
-                          else setStatus(r.roll_no,e.target.value);
-                        }}
-                      >
-                        <option value="">Not Marked</option>
-                        <option value="Present">Present</option>
-                        <option value="Absent">Absent</option>
-                      </select>;
+                      const approved = approvedRequestForRow(r);
+                      const currentStatus = r.status || "";
+                      const disabled = Boolean(r.id) && !approved;
+                      return (
+                        <div className="flex flex-wrap items-center gap-3">
+                          {["", "Present", "Absent"].map((status) => (
+                            <label
+                              key={status || "not-marked"}
+                              className={`inline-flex items-center gap-2 ${disabled ? "text-gray-500" : "cursor-pointer"}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`test-batch-attendance-${r.roll_no}`}
+                                value={status}
+                                checked={currentStatus === status}
+                                disabled={disabled}
+                                onChange={() => {
+                                  if (approved) applyApprovedAttendanceEdit(approved);
+                                  else setStatus(r.roll_no, status);
+                                }}
+                                className="h-4 w-4 accent-blue-700"
+                              />
+                              <span>{status || "Not Marked"}</span>
+                            </label>
+                          ))}
+                        </div>
+                      );
                     })()}
                   </td>
                   <td className="p-3 text-xs text-gray-600">{r.id?(r.edited_by_name||r.marked_by_name||"-"):"-"}<br />{r.id?(r.edited_at||r.marked_at?new Date(r.edited_at||r.marked_at).toLocaleString():"-"):"-"}</td>
