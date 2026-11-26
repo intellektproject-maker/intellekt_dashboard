@@ -58,13 +58,13 @@ function registerRecordEditRoutes(app, pool) {
     const requester = cleanId(facultyId);
     const type = String(recordType || '').trim().toLowerCase();
     const roll = String(roll_no || '').trim();
-    const requested = String(requested_value ?? '').trim();
+    const requested = String(requested_value ?? 'EDIT_PERMISSION').trim() || 'EDIT_PERMISSION';
 
     if (!requester || isAdmin(requester)) {
       return res.status(403).json({ error: 'A valid faculty account is required.' });
     }
     if (!['marks', 'attendance'].includes(type) || !roll) {
-      return res.status(400).json({ error: 'recordType, roll_no and requested_value are required.' });
+      return res.status(400).json({ error: 'recordType and roll_no are required.' });
     }
 
     try {
@@ -105,7 +105,7 @@ function registerRecordEditRoutes(app, pool) {
       } else {
         const date = String(attendance_date || '').trim();
         const subject = Number(subject_id);
-        if (!date || !Number.isInteger(subject) || subject <= 0 || (roll === '*' ? (requested !== 'BULK_EDIT' || !String(class_name || '').trim() || !String(board || '').trim()) : !['Present', 'Absent'].includes(requested))) {
+        if (!date || !Number.isInteger(subject) || subject <= 0 || (roll === '*' ? (requested !== 'BULK_EDIT' || !String(class_name || '').trim() || !String(board || '').trim()) : (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested)))) {
           return res.status(400).json({ error: 'A valid attendance_date, subject_id and Present/Absent value are required.' });
         }
         if (roll === '*') {

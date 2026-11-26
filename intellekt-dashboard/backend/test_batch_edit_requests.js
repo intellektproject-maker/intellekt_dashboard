@@ -39,11 +39,11 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     const testCode = String(req.body?.test_code || '').trim().toUpperCase() || null;
     const subjectName = String(req.body?.subject_name || '').trim() || null;
     const date = String(req.body?.attendance_date || '').trim() || null;
-    const requested = String(req.body?.requested_value ?? '').trim();
+    const requested = String(req.body?.requested_value ?? 'EDIT_PERMISSION').trim() || 'EDIT_PERMISSION';
 
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
-    if (!['marks', 'attendance'].includes(type) || !roll || !requested) {
-      return res.status(400).json({ error: 'recordType, roll_no and requested_value are required.' });
+    if (!['marks', 'attendance'].includes(type) || !roll) {
+      return res.status(400).json({ error: 'recordType and roll_no are required.' });
     }
 
     try {
@@ -87,7 +87,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         studentName = result.rows[0].name;
         original = String(result.rows[0].status);
       }
-      if (type === 'attendance' && original.toUpperCase() === requested.toUpperCase()) {
+      if (type === 'attendance' && requested !== 'EDIT_PERMISSION' && original.toUpperCase() === requested.toUpperCase()) {
         return res.status(400).json({ error: 'The requested value is the same as the current value.' });
       }
       const pending = await pool.query(
@@ -493,7 +493,8 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         return res.status(409).json({ error: 'This record changed after the request. Submit a new request.' });
       }
       if (request.record_type === 'marks') {
-        const next = String(req.body?.newValue ?? request.requested_value).trim().toUpperCase();
+        const next = String(req.body?.newValue ?? '').trim().toUpperCase();
+        if (!next) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'newValue is required.' }); }
         const total = Number(current.rows[0].total_marks);
         if (next !== 'A' && (!Number.isFinite(Number(next)) || Number(next) < 0 || Number(next) > total)) {
           await client.query('ROLLBACK');
@@ -507,14 +508,15 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           [next, comment, request.roll_no, request.test_code, request.subject_name]
         );
       } else {
-        if (!['Present', 'Absent'].includes(request.requested_value)) {
+        const next = String(req.body?.newValue ?? '').trim();
+        if (!['Present', 'Absent'].includes(next)) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: 'Attendance must be Present or Absent.' });
         }
         await client.query(
           "UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP " +
           "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($3)) AND attendance_date=$4",
-          [request.requested_value, facultyId, request.roll_no, request.attendance_date]
+          [next, facultyId, request.roll_no, request.attendance_date]
         );
       }
       await client.query(
