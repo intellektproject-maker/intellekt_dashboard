@@ -87,10 +87,10 @@ function registerRecordEditRoutes(app, pool) {
         if (!test_code) return res.status(400).json({ error: 'test_code is required for marks edits.' });
         testCodeValue = String(test_code).trim();
         if (roll === '*') {
-          const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1))', [test_code]);
-          if (!countResult.rows[0]?.count) return res.status(404).json({ error: 'No marks records found for this test code.' });
+          const countResult = await pool.query('SELECT roll_no,marks_obtained,total_marks FROM marks WHERE UPPER(TRIM(test_code)) = UPPER(TRIM($1)) ORDER BY roll_no', [test_code]);
+          if (!countResult.rows.length) return res.status(404).json({ error: 'No marks records found for this test code.' });
           studentResult = { rows: [{ name: 'All students' }] };
-          originalValue = 'Multiple records';
+          originalValue = JSON.stringify(countResult.rows.map(row => ({roll_no:row.roll_no,marks_obtained:String(row.marks_obtained),total_marks:Number(row.total_marks)})));
         } else {
           studentResult = await pool.query('SELECT s.name, m.marks_obtained AS original_value FROM students s JOIN marks m ON UPPER(TRIM(m.roll_no)) = UPPER(TRIM(s.roll_no)) WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(m.test_code)) = UPPER(TRIM($2)) LIMIT 1', [roll, test_code]);
           if (!studentResult.rows.length) return res.status(404).json({ error: 'Marks record not found.' });
@@ -110,16 +110,17 @@ function registerRecordEditRoutes(app, pool) {
         }
         if (roll === '*') {
           const countResult = await pool.query(
-            `SELECT COUNT(*)::int AS count FROM attendance a
+            `SELECT a.roll_no,a.status,s.name FROM attendance a
              JOIN students s ON UPPER(TRIM(s.roll_no)) = UPPER(TRIM(a.roll_no))
              WHERE a.subject_id = $1 AND a.attendance_date = $2
                AND UPPER(TRIM(s.class)) = UPPER(TRIM($3))
-               AND UPPER(TRIM(s.board)) = UPPER(TRIM($4))`,
+               AND UPPER(TRIM(s.board)) = UPPER(TRIM($4))
+             ORDER BY a.roll_no`,
             [subject, date, String(class_name).trim(), String(board).trim()]
           );
-          if (!countResult.rows[0]?.count) return res.status(404).json({ error: 'No attendance records found for the selected subject and date.' });
+          if (!countResult.rows.length) return res.status(404).json({ error: 'No attendance records found for the selected subject and date.' });
           studentResult = { rows: [{ name: 'All students' }] };
-          originalValue = 'Multiple records';
+          originalValue = JSON.stringify(countResult.rows.map(row => ({roll_no:row.roll_no,status:String(row.status)})));
         } else {
           studentResult = await pool.query(
             `SELECT s.name, a.status AS original_value
@@ -364,31 +365,39 @@ function registerRecordEditRoutes(app, pool) {
           return res.json({ message: 'Approved posted-test edit applied successfully.', test: updated.rows[0] });
         }
         if (request.record_type === 'attendance' && request.roll_no === '*') {
-          const targetRoll = String(req.body?.roll_no || '').trim();
-          if (!targetRoll || !['Present', 'Absent'].includes(newValue)) {
+          const targetRoll = String(req.body?.roll_no || '').trim().toUpperCase();
+          let snapshot;
+          try { snapshot = JSON.parse(request.original_value || '[]'); } catch { snapshot = null; }
+          const original = Array.isArray(snapshot) ? snapshot.find(row => String(row.roll_no || '').trim().toUpperCase() === targetRoll) : null;
+          if (!targetRoll || !original || !['Present', 'Absent'].includes(newValue)) {
             await client.query('ROLLBACK');
-            return res.status(400).json({ error: 'roll_no and a valid Present/Absent value are required.' });
+            return res.status(400).json({ error: 'roll_no must be included in the approved attendance snapshot and a valid status is required.' });
           }
           const updated = await client.query(
             `UPDATE attendance SET status = $1, edited_by = $2, edited_at = CURRENT_TIMESTAMP
              WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
                AND subject_id = $4 AND attendance_date = $5
+               AND UPPER(TRIM(status)) = UPPER(TRIM($8))
                AND EXISTS (SELECT 1 FROM students s WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM(attendance.roll_no)) AND UPPER(TRIM(s.class)) = UPPER(TRIM($6)) AND UPPER(TRIM(s.board)) = UPPER(TRIM($7)))
              RETURNING roll_no`,
-            [newValue, facultyId, targetRoll, request.subject_id, request.attendance_date, request.class_name, request.board]
+            [newValue, facultyId, targetRoll, request.subject_id, request.attendance_date, request.class_name, request.board, original.status]
           );
           if (!updated.rows.length) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'Attendance record not found for this date and subject.' });
+            return res.status(409).json({ error: 'Attendance changed after overall edit approval was requested. Submit a new request.' });
           }
           await client.query('COMMIT');
           return res.json({ message: 'Approved attendance updated successfully.' });
         }
         if (request.record_type === 'marks' && request.roll_no === '*') {
-          const targetRoll = String(req.body?.roll_no || '').trim();
-          if (!targetRoll) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'roll_no is required.' }); }
-          const target = await client.query('SELECT total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2)) FOR UPDATE', [targetRoll, request.test_code]);
+          const targetRoll = String(req.body?.roll_no || '').trim().toUpperCase();
+          let snapshot;
+          try { snapshot = JSON.parse(request.original_value || '[]'); } catch { snapshot = null; }
+          const original = Array.isArray(snapshot) ? snapshot.find(row => String(row.roll_no || '').trim().toUpperCase() === targetRoll) : null;
+          if (!targetRoll || !original) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'roll_no must be included in the approved marks snapshot.' }); }
+          const target = await client.query('SELECT marks_obtained,total_marks FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2)) FOR UPDATE', [targetRoll, request.test_code]);
           if (!target.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Marks record not found for this test code.' }); }
+          if (String(target.rows[0].marks_obtained).trim().toUpperCase() !== String(original.marks_obtained).trim().toUpperCase()) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Marks changed after overall edit approval was requested. Submit a new request.' }); }
           const value = newValue.toUpperCase();
           const total = Number(target.rows[0].total_marks);
           if (!value || (value !== 'A' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > total))) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Marks must be within the test total, or A for absent.' }); }
@@ -400,11 +409,11 @@ function registerRecordEditRoutes(app, pool) {
         }
         const currentResult = request.record_type === 'marks'
           ? await client.query(
-              'SELECT marks_obtained AS current_value FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2))',
+              'SELECT marks_obtained AS current_value FROM marks WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($2)) FOR UPDATE',
               [request.roll_no, request.test_code]
             )
           : await client.query(
-              'SELECT status AS current_value FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND subject_id = $2 AND attendance_date = $3',
+              'SELECT status AS current_value FROM attendance WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($1)) AND subject_id = $2 AND attendance_date = $3 FOR UPDATE',
               [request.roll_no, request.subject_id, request.attendance_date]
             );
         const currentValue = currentResult.rows.length ? String(currentResult.rows[0].current_value).trim() : '';
