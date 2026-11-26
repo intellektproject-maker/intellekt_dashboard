@@ -65,6 +65,15 @@ function currentValueLabel(request) {
     }
     return "Multiple student marks";
   }
+  if (request.record_type === "attendance" && request.roll_no === "*") {
+    try {
+      const rows = JSON.parse(request.original_value || "[]");
+      if (Array.isArray(rows)) return rows.map((row) => String(row.roll_no || "-") + ": " + String(row.status || "-")).join("; ");
+    } catch {
+      return "Multiple student attendance records";
+    }
+    return "Multiple student attendance records";
+  }
   return request.original_value ?? "-";
 }
 
