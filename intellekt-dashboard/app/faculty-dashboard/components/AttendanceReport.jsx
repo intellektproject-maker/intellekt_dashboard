@@ -774,16 +774,23 @@ function AttendanceTable({
 
               <td className="py-3 px-2">
                 {row.isEditing ? (
-                  <select
-                    value={row.editedStatus}
-                    onChange={(e) =>
-                      handleEditedStatusChange(rowKey, e.target.value, type)
-                    }
-                    className="border rounded-lg px-3 py-2"
-                  >
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                  </select>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {['Present', 'Absent'].map((status) => (
+                      <label key={status} className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`attendance-report-${rowKey}`}
+                          value={status}
+                          checked={row.editedStatus === status}
+                          onChange={(e) =>
+                            handleEditedStatusChange(rowKey, e.target.value, type)
+                          }
+                          className="h-4 w-4 accent-blue-700"
+                        />
+                        <span>{status}</span>
+                      </label>
+                    ))}
+                  </div>
                 ) : (
                   <span>{row.status}</span>
                 )}
