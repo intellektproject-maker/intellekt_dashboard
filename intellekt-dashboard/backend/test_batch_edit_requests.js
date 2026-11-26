@@ -67,7 +67,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         studentName = result.rows[0].name;
         original = String(result.rows[0].marks_obtained);
         totalMarks = Number(result.rows[0].total_marks);
-        if (requested.toUpperCase() !== 'A') {
+        if (!['A', 'EDIT_PERMISSION'].includes(requested.toUpperCase())) {
           const n = Number(requested);
           if (!Number.isFinite(n) || n < 0 || n > totalMarks) {
             return res.status(400).json({ error: 'Marks must be between 0 and total marks, or A for absent.' });
@@ -235,7 +235,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
     const rolls = [...new Set((Array.isArray(req.body?.roll_nos) ? req.body.roll_nos : [])
       .map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))];
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(attendanceDate) || !rolls.length)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(attendanceDate) || !rolls.length)
       return res.status(400).json({ error: 'Attendance date and student roll numbers are required.' });
     try {
       await ensureSchema();
