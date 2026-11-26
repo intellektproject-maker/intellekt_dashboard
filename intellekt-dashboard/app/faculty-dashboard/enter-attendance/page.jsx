@@ -506,15 +506,22 @@ function EnterAttendancePageInner() {
                         </>
                       )}
                       <td className="p-3">
-                        <select
-                          className="border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                          value={attendance[key] || 'Present'}
-                          disabled={attendanceFrozen && !approved}
-                          onChange={(e) => handleAttendanceChange(key, e.target.value)}
-                        >
-                          <option value="Present">Present</option>
-                          <option value="Absent">Absent</option>
-                        </select>
+                        <div className="flex flex-wrap items-center gap-3">
+                          {['Present', 'Absent'].map((status) => (
+                            <label key={status} className={`inline-flex items-center gap-2 ${attendanceFrozen && !approved ? 'text-gray-500' : 'cursor-pointer'}`}>
+                              <input
+                                type="radio"
+                                name={`attendance-${key}`}
+                                value={status}
+                                checked={(attendance[key] || 'Present') === status}
+                                disabled={attendanceFrozen && !approved}
+                                onChange={(e) => handleAttendanceChange(key, e.target.value)}
+                                className="h-4 w-4 accent-blue-700"
+                              />
+                              <span>{status}</span>
+                            </label>
+                          ))}
+                        </div>
                       </td>
                       <td className="p-3 text-xs text-gray-600">
                         {student.attendance_status ? <>{student.attendance_edited_by_name || student.attendance_updated_by_name || '-'}<br />{student.attendance_edited_at || student.attendance_marked_at ? new Date(student.attendance_edited_at || student.attendance_marked_at).toLocaleString() : '-'}</> : '-'}
