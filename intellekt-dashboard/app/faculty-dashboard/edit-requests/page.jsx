@@ -154,6 +154,12 @@ export default function EditRequestsPage() {
   }
 
   async function apply(request) {
+    const isMarks = String(request.record_type || "").toLowerCase() === "marks";
+    const value = window.prompt(
+      isMarks ? "Enter the approved new marks (or A for absent):" : "Enter the approved attendance status (Present or Absent):",
+      ""
+    );
+    if (value === null || !value.trim()) return;
     const key = request._source + "-" + request.id;
     setBusyId(key);
     setError("");
@@ -163,9 +169,9 @@ export default function EditRequestsPage() {
         : "/record-edit-requests/" + request.id + "/apply";
       await api(path, {
         method: "POST",
-        body: JSON.stringify({ facultyId, newValue: request.requested_value }),
+        body: JSON.stringify({ facultyId, newValue: value.trim() }),
       });
-      window.alert("Approved edit applied successfully.");
+      window.alert("Approved edit saved successfully.");
       await load();
     } catch (e) {
       setError(e.message);
