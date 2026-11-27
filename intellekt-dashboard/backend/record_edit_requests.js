@@ -403,7 +403,16 @@ function registerRecordEditRoutes(app, pool) {
           if (!value || (value !== 'A' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > total))) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Marks must be within the test total, or A for absent.' }); }
           const percent = value === 'A' ? 0 : Number(value) / total * 100;
           const comment = value === 'A' ? 'Absent' : percent >= 90 ? 'Excellent' : percent >= 75 ? 'Very Good' : percent >= 60 ? 'Good' : percent >= 40 ? 'Average' : 'Needs Improvement';
-          await client.query('UPDATE marks SET marks_obtained = $1, comments = $2 WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($4))', [value, comment, targetRoll, request.test_code]);
+          const facultyResult = await client.query(
+            'SELECT name FROM faculty WHERE UPPER(TRIM(faculty_id)) = $1 LIMIT 1',
+            [facultyId]
+          );
+          const facultyName = String(facultyResult.rows[0]?.name || facultyId);
+          await client.query(
+            'UPDATE marks SET marks_obtained = $1, comments = $2, updated_by = $3, updated_by_name = $4, updated_at = CURRENT_TIMESTAMP ' +
+            'WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($5)) AND UPPER(TRIM(test_code)) = UPPER(TRIM($6))',
+            [value, comment, facultyId, facultyName, targetRoll, request.test_code]
+          );
           await client.query('COMMIT');
           return res.json({ message: 'Approved mark updated successfully.' });
         }
