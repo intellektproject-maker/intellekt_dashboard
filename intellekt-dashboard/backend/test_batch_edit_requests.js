@@ -74,18 +74,29 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           }
         }
       } else {
-        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested))) {
+        if (!date || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested))) {
           return res.status(400).json({ error: 'A valid attendance_date and Present/Absent value are required.' });
         }
-        const result = await pool.query(
-          "SELECT s.name, a.status FROM test_batch_students s JOIN test_batch_attendance a " +
-          "ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no)) " +
-          "WHERE UPPER(TRIM(s.roll_no)) = $1 AND a.attendance_date = $2 LIMIT 1",
-          [roll, date]
-        );
-        if (!result.rows.length) return res.status(404).json({ error: 'Test Batch attendance record not found.' });
-        studentName = result.rows[0].name;
-        original = String(result.rows[0].status);
+        if (roll === '*') {
+          if (requested !== 'EDIT_PERMISSION') return res.status(400).json({ error: 'Overall attendance requests must request edit permission.' });
+          const result = await pool.query(
+            "SELECT s.roll_no, s.name, a.status FROM test_batch_attendance a JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(a.roll_no)) WHERE a.attendance_date=$1 ORDER BY s.roll_no",
+            [date]
+          );
+          if (!result.rows.length) return res.status(404).json({ error: 'No saved Test Batch attendance records found for this date.' });
+          studentName = 'All Test Batch students (' + result.rows.length + ')';
+          original = JSON.stringify(result.rows.map(row => ({ roll_no: row.roll_no, name: row.name, status: row.status })));
+        } else {
+          const result = await pool.query(
+            "SELECT s.name, a.status FROM test_batch_students s JOIN test_batch_attendance a " +
+            "ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no)) " +
+            "WHERE UPPER(TRIM(s.roll_no)) = $1 AND a.attendance_date = $2 LIMIT 1",
+            [roll, date]
+          );
+          if (!result.rows.length) return res.status(404).json({ error: 'Test Batch attendance record not found.' });
+          studentName = result.rows[0].name;
+          original = String(result.rows[0].status);
+        }
       }
       if (type === 'attendance' && requested !== 'EDIT_PERMISSION' && original.toUpperCase() === requested.toUpperCase()) {
         return res.status(400).json({ error: 'The requested value is the same as the current value.' });
