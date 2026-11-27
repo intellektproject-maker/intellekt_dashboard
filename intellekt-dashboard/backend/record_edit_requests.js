@@ -160,7 +160,7 @@ function registerRecordEditRoutes(app, pool) {
          RETURNING *`,
         [type, roll, studentResult.rows[0].name, testCodeValue, subjectIdValue,
           attendanceDateValue, studentResult.rows[0].class_name || null, studentResult.rows[0].board || null,
-          originalValue, 'Edit permission requested', requester, facultyResult.rows[0].name]
+          originalValue, (type === 'marks' && roll === '*' && requested.toUpperCase() === 'BULK_EDIT' ? 'BULK_EDIT' : 'Edit permission requested'), requester, facultyResult.rows[0].name]
       );
 
       const message = roll === '*' ? (type === 'marks' ? `${facultyResult.rows[0].name} requested overall marks edit access for test code ${testCodeValue}.` : `${facultyResult.rows[0].name} requested overall attendance edit access for subject ${subjectIdValue} on ${attendanceDateValue}.`) : `${facultyResult.rows[0].name} requested edit access for ${studentResult.rows[0].name}'s ${type} record.`;
