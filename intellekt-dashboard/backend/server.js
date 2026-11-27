@@ -7391,6 +7391,7 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
   try {
     const code = String((req.body && req.body.testCode) || '').trim().toUpperCase();
     const parsed = validateMarkEntryTestCode(code);
+    if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
     const records = req.body && req.body.records;
     const chapterValue = String((req.body && req.body.chapter) || '').trim();
     const portionValue = String((req.body && req.body.portion) || '').trim();
@@ -7420,7 +7421,7 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     // retain the test's saved metadata instead of blocking a marks-only update.
     const chapterForTest = chapterValue || (existingMarks.length && isMarksAdmin ? '' : parsed.chapter);
     const chapterIsCombined = String(chapterForTest || '').toLowerCase() === 'combined';
-    const chapterIsNumber = /^\\d+$/.test(String(chapterForTest || '')) && Number(chapterForTest) > 0;
+    const chapterIsNumber = /^\d+$/.test(String(chapterForTest || '')) && Number(chapterForTest) > 0;
     if (!(existingMarks.length && isMarksAdmin)) {
       if (!chapterIsCombined && !chapterIsNumber) {
         throw Object.assign(new Error('Chapter must be a number or combined'), { statusCode: 400 });
