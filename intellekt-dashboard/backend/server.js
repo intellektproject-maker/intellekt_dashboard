@@ -7392,17 +7392,8 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     const code = String((req.body && req.body.testCode) || '').trim().toUpperCase();
     const parsed = validateMarkEntryTestCode(code);
     const records = req.body && req.body.records;
-    const chapterValue = String((req.body && req.body.chapter) || (parsed && parsed.chapter) || '').trim();
+    const chapterValue = String((req.body && req.body.chapter) || '').trim();
     const portionValue = String((req.body && req.body.portion) || '').trim();
-    const chapterIsCombined = chapterValue.toLowerCase() === 'combined';
-    const chapterIsNumber = /^\d+$/.test(chapterValue) && Number(chapterValue) > 0;
-    if (!parsed) return res.status(400).json({ error: 'Invalid test code format or test details' });
-    if (!chapterIsCombined && !chapterIsNumber) {
-      return res.status(400).json({ error: 'Chapter must be a number or combined' });
-    }
-    if (!portionValue) {
-      return res.status(400).json({ error: 'Portions are required' });
-    }
     if (!Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ error: 'Marks are required for every student' });
     }
@@ -7424,6 +7415,23 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     if (existingMarks.length && !isMarksAdmin) {
       throw Object.assign(new Error('Saved marks exist for this test. Faculty must request admin edit approval.'), { statusCode: 403 });
     }
+
+    // When an admin is correcting existing marks, chapter/portion are optional:
+    // retain the test's saved metadata instead of blocking a marks-only update.
+    const chapterForTest = chapterValue || (existingMarks.length && isMarksAdmin ? '' : parsed.chapter);
+    const chapterIsCombined = String(chapterForTest || '').toLowerCase() === 'combined';
+    const chapterIsNumber = /^\\d+$/.test(String(chapterForTest || '')) && Number(chapterForTest) > 0;
+    if (!(existingMarks.length && isMarksAdmin)) {
+      if (!chapterIsCombined && !chapterIsNumber) {
+        throw Object.assign(new Error('Chapter must be a number or combined'), { statusCode: 400 });
+      }
+      if (!portionValue) {
+        throw Object.assign(new Error('Portions are required'), { statusCode: 400 });
+      }
+    } else if (chapterValue && !chapterIsCombined && !chapterIsNumber) {
+      throw Object.assign(new Error('Chapter must be a number or combined'), { statusCode: 400 });
+    }
+    const normalizedChapterForTest = chapterIsCombined ? 'combined' : chapterForTest;
 
     const students = await regularMarkEntryStudents(client, parsed, subjectId);
     if (!students.length) {
@@ -7452,9 +7460,9 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
     if (existingTestResult.rows.length) {
       await client.query(
         "UPDATE tests SET test_date=COALESCE($1::date,test_date),subject_id=$2,total_marks=$3," +
-        "portion=$4,chapter=$5,class=COALESCE(class,$6),board=COALESCE(board,$7) " +
+        "portion=COALESCE(NULLIF($4,''),portion),chapter=COALESCE(NULLIF($5,''),chapter),class=COALESCE(class,$6),board=COALESCE(board,$7) " +
         "WHERE UPPER(TRIM(test_code))=$8",
-        [req.body.testDate || null,subjectId,parsed.totalMarks,portionValue,chapterIsCombined ? 'combined' : chapterValue,className,board,parsed.canonicalCode]
+        [req.body.testDate || null,subjectId,parsed.totalMarks,portionValue,normalizedChapterForTest,className,board,parsed.canonicalCode]
       );
     } else {
       await client.query(
@@ -7466,7 +7474,7 @@ app.post('/regular-mark-entry/submit', requireMarksEntryFaculty, async (req, res
           subjectId,
           parsed.totalMarks,
           portionValue,
-          chapterIsCombined ? 'combined' : chapterValue,
+          normalizedChapterForTest,
           className,
           board,
           req.marksEntryFacultyId
