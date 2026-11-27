@@ -290,6 +290,85 @@ function registerRecordEditRoutes(app, pool) {
     }
   });
 
+  app.post('/record-edit-requests/:id/apply-bulk', async (req, res) => {
+    const facultyId = cleanId(req.body?.facultyId);
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+    if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
+    if (!records.length || records.length > 500) return res.status(400).json({ error: 'Provide between 1 and 500 attendance changes.' });
+    try {
+      await ensureSchema();
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const requestResult = await client.query(
+          `SELECT * FROM record_edit_requests
+           WHERE id = $1 AND requested_by = $2 AND status = 'Approved'
+           FOR UPDATE`,
+          [req.params.id, facultyId]
+        );
+        if (!requestResult.rows.length) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({ error: 'No approved overall edit permission exists.' });
+        }
+        const request = requestResult.rows[0];
+        if (request.record_type !== 'attendance' || request.roll_no !== '*') {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Bulk apply is available only for an approved overall attendance request.' });
+        }
+        let snapshot;
+        try { snapshot = JSON.parse(request.original_value || '[]'); } catch { snapshot = null; }
+        if (!Array.isArray(snapshot)) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'The approved attendance snapshot is invalid. Submit a new request.' });
+        }
+        const seen = new Set();
+        for (const record of records) {
+          const targetRoll = String(record?.roll_no || '').trim().toUpperCase();
+          const value = String(record?.newValue ?? '').trim();
+          const original = snapshot.find(row => String(row.roll_no || '').trim().toUpperCase() === targetRoll);
+          if (!targetRoll || seen.has(targetRoll) || !original || !['Present', 'Absent'].includes(value)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Each record must contain a unique roll_no from the approved snapshot and a valid attendance status.' });
+          }
+          seen.add(targetRoll);
+          const updated = await client.query(
+            `UPDATE attendance SET status = $1, edited_by = $2, edited_at = CURRENT_TIMESTAMP
+             WHERE UPPER(TRIM(roll_no)) = UPPER(TRIM($3))
+               AND subject_id = $4 AND attendance_date = $5
+               AND UPPER(TRIM(status)) = UPPER(TRIM($8))
+               AND EXISTS (
+                 SELECT 1 FROM students s
+                 WHERE UPPER(TRIM(s.roll_no)) = UPPER(TRIM(attendance.roll_no))
+                   AND UPPER(TRIM(s.class)) = UPPER(TRIM($6))
+                   AND UPPER(TRIM(s.board)) = UPPER(TRIM($7))
+               )
+             RETURNING roll_no`,
+            [value, facultyId, targetRoll, request.subject_id, request.attendance_date, request.class_name, request.board, original.status]
+          );
+          if (!updated.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Attendance for ' + targetRoll + ' changed after approval. No bulk changes were saved; submit a new request.' });
+          }
+        }
+        await client.query(
+          `UPDATE record_edit_requests SET status = 'Applied', applied_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND status = 'Approved'`,
+          [request.id]
+        );
+        await client.query('COMMIT');
+        return res.json({ message: 'Overall attendance changes saved successfully.', saved_count: records.length });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Bulk overall attendance edit error:', error);
+      res.status(500).json({ error: 'Could not save overall attendance changes.' });
+    }
+  });
+
   app.post('/record-edit-requests/:id/finish', async (req, res) => {
     const facultyId = cleanId(req.body?.facultyId);
     if (!facultyId || isAdmin(facultyId)) return res.status(403).json({ error: 'A valid faculty account is required.' });
