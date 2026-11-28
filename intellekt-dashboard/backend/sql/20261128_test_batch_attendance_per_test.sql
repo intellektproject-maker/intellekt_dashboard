@@ -5,7 +5,10 @@
 BEGIN;
 
 ALTER TABLE public.test_batch_attendance
-  ADD COLUMN IF NOT EXISTS test_code VARCHAR(100);
+  ADD COLUMN IF NOT EXISTS test_code VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS marked_by_name VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS edited_by_name VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS updated_by_name VARCHAR(150);
 
 -- Remove the old daily uniqueness rule before expanding one row into test-wise rows.
 ALTER TABLE public.test_batch_attendance
