@@ -528,9 +528,27 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         }
         await client.query(
           "UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_by_name=$3,edited_at=CURRENT_TIMESTAMP " +
-          "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($3)) AND attendance_date=$4 AND UPPER(TRIM(test_code))=UPPER(TRIM($5))",
+          "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($4)) AND attendance_date=$5 AND UPPER(TRIM(test_code))=UPPER(TRIM($6))",
           [next, facultyId, request.requested_by_name || facultyId, request.roll_no, request.attendance_date, request.test_code]
         );
+        if (next === 'Absent') {
+          const test = await client.query(
+            "SELECT test_code,subject_name,total_marks FROM test_batch_tests WHERE UPPER(TRIM(test_code))=UPPER(TRIM($1)) LIMIT 1",
+            [request.test_code]
+          );
+          if (test.rows.length) {
+            const t = test.rows[0];
+            await client.query(
+              `INSERT INTO test_batch_marks
+                (roll_no,test_code,subject_name,total_marks,marks_obtained,comments,created_at,updated_at,entered_by,entered_by_name,entered_at,updated_by,updated_by_name)
+               VALUES($1,$2,$3,$4,'A',NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,$5,$6,CURRENT_TIMESTAMP,$5,$6)
+               ON CONFLICT(roll_no,test_code,subject_name) DO UPDATE SET
+                 total_marks=EXCLUDED.total_marks,marks_obtained='A',
+                 updated_by=$5,updated_by_name=$6,updated_at=CURRENT_TIMESTAMP`,
+              [request.roll_no,t.test_code,t.subject_name,Number(t.total_marks),facultyId,request.requested_by_name || facultyId]
+            );
+          }
+        }
       }
       await client.query(
         "UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1",
