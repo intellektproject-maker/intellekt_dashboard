@@ -74,7 +74,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           }
         }
       } else {
-        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested))) {
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (roll !== '*' && !testCode) || (requested !== 'EDIT_PERMISSION' && !['Present', 'Absent'].includes(requested))) {
           return res.status(400).json({ error: 'A valid attendance_date and Present/Absent value are required.' });
         }
         if (roll === '*') {
@@ -90,8 +90,8 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           const result = await pool.query(
             "SELECT s.name, a.status FROM test_batch_students s JOIN test_batch_attendance a " +
             "ON UPPER(TRIM(a.roll_no)) = UPPER(TRIM(s.roll_no)) " +
-            "WHERE UPPER(TRIM(s.roll_no)) = $1 AND a.attendance_date = $2 LIMIT 1",
-            [roll, date]
+            "WHERE UPPER(TRIM(s.roll_no)) = $1 AND a.attendance_date = $2 AND UPPER(TRIM(a.test_code))=$3 LIMIT 1",
+            [roll, date, testCode]
           );
           if (!result.rows.length) return res.status(404).json({ error: 'Test Batch attendance record not found.' });
           studentName = result.rows[0].name;
@@ -117,7 +117,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
         [type, roll, studentName, testCode, subjectName, date, original, requested, facultyId, faculty.name]
       );
-      const detail = type === 'marks' ? 'test ' + testCode : 'attendance on ' + date;
+      const detail = type === 'marks' ? 'test ' + testCode : 'attendance for test ' + (testCode || 'all tests') + ' on ' + date;
       const message = faculty.name + ' requested to edit Test Batch ' + detail + ' for ' + studentName + ' (' + roll + ').';
       await pool.query(
         "INSERT INTO faculty_notifications (faculty_id,module_name,message) VALUES ('IG001','record-edit-request',$1),('IG002','record-edit-request',$1)",
@@ -492,8 +492,8 @@ function registerTestBatchEditRequestRoutes(app, pool) {
             [request.roll_no, request.test_code, request.subject_name]
           )
         : await client.query(
-            "SELECT status AS value FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND attendance_date=$2 FOR UPDATE",
-            [request.roll_no, request.attendance_date]
+            "SELECT status AS value FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($1)) AND attendance_date=$2 AND UPPER(TRIM(test_code))=UPPER(TRIM($3)) FOR UPDATE",
+            [request.roll_no, request.attendance_date, request.test_code]
           );
       const currentValue = current.rows.length ? String(current.rows[0].value).trim() : '';
       const same = request.record_type === 'marks' && currentValue.toUpperCase() !== 'A' && String(request.original_value).toUpperCase() !== 'A'
@@ -526,8 +526,8 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         }
         await client.query(
           "UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP " +
-          "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($3)) AND attendance_date=$4",
-          [next, facultyId, request.roll_no, request.attendance_date]
+          "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($3)) AND attendance_date=$4 AND UPPER(TRIM(test_code))=UPPER(TRIM($5))",
+          [next, facultyId, request.roll_no, request.attendance_date, request.test_code]
         );
       }
       await client.query(
