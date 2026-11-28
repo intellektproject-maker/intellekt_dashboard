@@ -13,6 +13,8 @@ ALTER TABLE public.test_batch_attendance
 -- Remove the old daily uniqueness rule before expanding one row into test-wise rows.
 ALTER TABLE public.test_batch_attendance
   DROP CONSTRAINT IF EXISTS uq_test_batch_attendance;
+ALTER TABLE public.test_batch_attendance
+  DROP CONSTRAINT IF EXISTS test_batch_attendance_roll_no_attendance_date_key;
 
 -- Assign each legacy row to the first registered test, then copy its status
 -- and audit metadata to the other tests registered on that same writing date.
