@@ -8640,33 +8640,14 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
       '       a.attendance_date, ' +
       '       a.status, ' +
       '       a.marked_by, a.marked_by_name, a.marked_at, a.edited_by, a.edited_by_name, a.edited_at, ' +
-      '       COALESCE((' +
-      '         SELECT tr.test_code FROM test_batch_registrations tr ' +
-      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
-      '           AND tr.writing_date=a.attendance_date ' +
-      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
-      '       ),(' +
-      '         SELECT t.test_code FROM test_batch_tests t ' +
-      '         WHERE t.writing_date=a.attendance_date ' +
-      '         ORDER BY t.test_code ASC LIMIT 1' +
-      '       )) AS test_code, ' +
-      '       COALESCE((' +
-      '         SELECT t.subject_name FROM test_batch_registrations tr ' +
-      '         JOIN test_batch_tests t ON UPPER(TRIM(t.test_code))=UPPER(TRIM(tr.test_code)) ' +
-      '         WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
-      '           AND tr.writing_date=a.attendance_date ' +
-      '         ORDER BY tr.registered_at DESC NULLS LAST,tr.test_code ASC LIMIT 1' +
-      '       ),(' +
-      '         SELECT t.subject_name FROM test_batch_tests t ' +
-      '         WHERE t.writing_date=a.attendance_date ' +
-      '         ORDER BY t.test_code ASC LIMIT 1' +
-      '       )) AS subject_name ' +
+      '       a.test_code, ' +
+      '       (SELECT t.subject_name FROM test_batch_tests t WHERE UPPER(TRIM(t.test_code))=UPPER(TRIM(a.test_code)) LIMIT 1) AS subject_name ' +
       'FROM test_batch_attendance a ' +
       'WHERE UPPER(TRIM(a.roll_no))=UPPER(TRIM($1)) ' +
       'AND EXISTS (' +
       '  SELECT 1 FROM test_batch_registrations tr ' +
       '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
-      '    AND tr.writing_date=a.attendance_date' +
+      '    AND tr.writing_date=a.attendance_date ' +\n      '    AND UPPER(TRIM(tr.test_code))=UPPER(TRIM(a.test_code)) AND tr.status=\'Registered\'' +
       ') ' +
       'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
       [roll]
