@@ -68,7 +68,7 @@ function currentValueLabel(request) {
   if (request.record_type === "attendance" && request.roll_no === "*") {
     try {
       const rows = JSON.parse(request.original_value || "[]");
-      if (Array.isArray(rows)) return rows.map((row) => String(row.roll_no || "-") + ": " + String(row.status || "-")).join("; ");
+      if (Array.isArray(rows)) return rows.map((row) => String(row.roll_no || "-") + " · " + String(row.test_code || "-") + ": " + String(row.status || "-")).join("; ");
     } catch {
       return "Multiple student attendance records";
     }
@@ -80,7 +80,7 @@ function currentValueLabel(request) {
 function recordLabel(request) {
   if (request.record_type === "schedule") return "Test Schedule · " + (request.test_code || "-");
   return request.record_type === "attendance"
-    ? "Attendance · " + dateLabel(request.attendance_date)
+    ? "Attendance · " + (request.test_code || (request.roll_no === "*" ? "All tests" : "-")) + " · " + dateLabel(request.attendance_date)
     : "Marks · " + (request.test_code || "-") +
       (request.subject_name ? " · " + request.subject_name : "") +
       (request.roll_no === "*" && request.attendance_date ? " · Writing date " + dateLabel(request.attendance_date) : "");
