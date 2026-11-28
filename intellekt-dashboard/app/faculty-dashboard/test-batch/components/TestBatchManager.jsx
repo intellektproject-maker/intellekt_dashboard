@@ -1085,7 +1085,7 @@ function AttendanceSection({ adminId }) {
                           {["", "Present", "Absent"].map((status) => (
                             <label
                               key={status || "not-marked"}
-                              className={`inline-flex items-center gap-2 ${disabled ? "text-gray-500" : "cursor-pointer"}`}
+                              className="inline-flex items-center gap-2 cursor-pointer"
                             >
                               <input
                                 type="radio"
