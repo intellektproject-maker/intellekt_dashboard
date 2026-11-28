@@ -8647,7 +8647,8 @@ app.get('/test-batch/attendance/:rollNo', async (req,res) => {
       'AND EXISTS (' +
       '  SELECT 1 FROM test_batch_registrations tr ' +
       '  WHERE UPPER(TRIM(tr.roll_no))=UPPER(TRIM(a.roll_no)) ' +
-      '    AND tr.writing_date=a.attendance_date ' +\n      '    AND UPPER(TRIM(tr.test_code))=UPPER(TRIM(a.test_code)) AND tr.status=\'Registered\'' +
+      '    AND tr.writing_date=a.attendance_date ' +
+      '    AND UPPER(TRIM(tr.test_code))=UPPER(TRIM(a.test_code)) AND tr.status=\'Registered\'' +
       ') ' +
       'ORDER BY a.attendance_date DESC,a.id DESC LIMIT 100',
       [roll]
