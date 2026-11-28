@@ -527,9 +527,9 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           return res.status(400).json({ error: 'Attendance must be Present or Absent.' });
         }
         await client.query(
-          "UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP " +
+          "UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_by_name=$3,edited_at=CURRENT_TIMESTAMP " +
           "WHERE UPPER(TRIM(roll_no))=UPPER(TRIM($3)) AND attendance_date=$4 AND UPPER(TRIM(test_code))=UPPER(TRIM($5))",
-          [next, facultyId, request.roll_no, request.attendance_date, request.test_code]
+          [next, facultyId, request.requested_by_name || facultyId, request.roll_no, request.attendance_date, request.test_code]
         );
       }
       await client.query(
