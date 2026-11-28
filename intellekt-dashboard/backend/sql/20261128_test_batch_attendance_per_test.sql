@@ -31,9 +31,9 @@ WHERE a.test_code IS NULL
 
 INSERT INTO public.test_batch_attendance
   (roll_no,attendance_date,test_code,status,marked_by,marked_by_name,marked_at,
-   edited_by,edited_by_name,edited_at,updated_by,updated_by_name)
+   edited_by,edited_by_name,edited_at,updated_by_name)
 SELECT a.roll_no,a.attendance_date,TRIM(r.test_code),a.status,a.marked_by,a.marked_by_name,a.marked_at,
-       a.edited_by,a.edited_by_name,a.edited_at,a.updated_by,a.updated_by_name
+       a.edited_by,a.edited_by_name,a.edited_at,a.updated_by_name
 FROM public.test_batch_attendance a
 JOIN public.test_batch_registrations r
   ON UPPER(TRIM(r.roll_no))=UPPER(TRIM(a.roll_no))
