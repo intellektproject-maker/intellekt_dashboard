@@ -930,14 +930,14 @@ function AttendanceSection({ adminId }) {
     setTo(iso(end));
   }
 
-  function setStatus(roll,status){
-    setRows(prev=>prev.map(r=>r.roll_no===roll?{...r,status}:r));
+  function setStatus(rowKey,status){
+    setRows(prev=>prev.map(r=>`${r.roll_no}|${String(r.test_code||'').trim().toUpperCase()}`===rowKey?{...r,status}:r));
   }
 
   async function saveAll(){
     const records=rows
       .filter(r=>r.status==="Present"||r.status==="Absent")
-      .map(r=>({roll_no:r.roll_no,status:r.status}));
+      .map(r=>({roll_no:r.roll_no,test_code:r.test_code,status:r.status}));
 
     if(!records.length){
       setError("Select Present or Absent for at least one eligible student.");
@@ -1066,22 +1066,20 @@ function AttendanceSection({ adminId }) {
                 <th className="p-3 text-left">Date</th>
                 <th className="p-3 text-left">Status</th>
                 <th className="p-3 text-left">Entered/Updated By</th>
-                <th className="p-3 text-left">Request Edit</th>
+                <th className="p-3 text-left">Edit</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r,i)=>(
-                <tr key={r.roll_no} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}>
+                <tr key={`${r.roll_no}-${r.test_code}`} className={i%2===0?"bg-gray-50 border-b":"bg-white border-b"}>
                   <td className="p-3 font-semibold">{r.roll_no}</td>
                   <td className="p-3">{r.name}</td>
-                  <td className="p-3 font-medium">{r.test_codes || "-"}</td>
+                  <td className="p-3 font-medium">{r.test_code || "-"}</td>
                   <td className="p-3">{r.test_series_name}</td>
                   <td className="p-3">{formatDate(r.attendance_date||date)}</td>
                   <td className="p-3">
                     {(() => {
-                      const approved = approvedRequestForRow(r);
                       const currentStatus = r.status || "";
-                      const disabled = Boolean(r.id) && !approved;
                       return (
                         <div className="flex flex-wrap items-center gap-3">
                           {["", "Present", "Absent"].map((status) => (
@@ -1091,14 +1089,10 @@ function AttendanceSection({ adminId }) {
                             >
                               <input
                                 type="radio"
-                                name={`test-batch-attendance-${r.roll_no}`}
+                                name={`test-batch-attendance-${r.roll_no}-${r.test_code}`}
                                 value={status}
                                 checked={currentStatus === status}
-                                disabled={disabled}
-                                onChange={() => {
-                                  if (approved) applyApprovedAttendanceEdit(approved);
-                                  else setStatus(r.roll_no, status);
-                                }}
+                                onChange={() => setStatus(`${r.roll_no}|${String(r.test_code||'').trim().toUpperCase()}`, status)}
                                 className="h-4 w-4 accent-blue-700"
                               />
                               <span>{status || "Not Marked"}</span>
@@ -1110,15 +1104,7 @@ function AttendanceSection({ adminId }) {
                   </td>
                   <td className="p-3 text-xs text-gray-600">{r.id?(r.edited_by_name||r.marked_by_name||"-"):"-"}<br />{r.id?(r.edited_at||r.marked_at?new Date(r.edited_at||r.marked_at).toLocaleString():"-"):"-"}</td>
                   <td className="p-3">
-                    {r.id && !approvedRequestForRow(r) ? (
-                      <select className="border rounded px-3 py-1" value="" onChange={e=>editStatus(r.id,e.target.value)}>
-                        <option value="">Request Edit</option>
-                        <option value="Present">Present</option>
-                        <option value="Absent">Absent</option>
-                      </select>
-                    ) : approvedRequestForRow(r) ? (
-                      <button onClick={()=>applyApprovedAttendanceEdit(approvedRequestForRow(r))} className="bg-green-600 text-white px-3 py-2 rounded">Apply Approved Edit</button>
-                    ) : "-"}
+                    Change status above, then Save
                   </td>
                 </tr>
               ))}
