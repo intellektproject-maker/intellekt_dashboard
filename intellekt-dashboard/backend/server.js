@@ -8347,7 +8347,7 @@ app.put('/test-batch/attendance/:id', requireTestBatchAdmin, async (req,res) => 
     if(!['Present','Absent'].includes(status)) return res.status(400).json({error:'Invalid attendance status'});
     await client.query('BEGIN');
     const result=await client.query(
-      `UPDATE test_batch_attendance a SET status=$1,updated_by=$2,updated_by_name=$3,
+      `UPDATE test_batch_attendance a SET status=$1,
         edited_by=$2,edited_by_name=$3,edited_at=CURRENT_TIMESTAMP
        WHERE a.id=$4 AND EXISTS(
          SELECT 1 FROM test_batch_registrations r
