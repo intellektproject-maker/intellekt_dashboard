@@ -80,7 +80,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         if (roll === '*') {
           if (requested !== 'EDIT_PERMISSION') return res.status(400).json({ error: 'Overall attendance requests must request edit permission.' });
           const result = await pool.query(
-            "SELECT s.roll_no, s.name, a.status FROM test_batch_attendance a JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(a.roll_no)) WHERE a.attendance_date=$1 ORDER BY s.roll_no",
+            "SELECT s.roll_no, s.name, a.status, a.test_code FROM test_batch_attendance a JOIN test_batch_students s ON UPPER(TRIM(s.roll_no))=UPPER(TRIM(a.roll_no)) WHERE a.attendance_date=$1 ORDER BY s.roll_no,a.test_code",
             [date]
           );
           if (!result.rows.length) return res.status(404).json({ error: 'No saved Test Batch attendance records found for this date.' });
@@ -402,18 +402,20 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           await client.query('ROLLBACK');
           return res.status(400).json({error:'A valid set of attendance updates is required.'});
         }
-        const before = new Map(snapshot.map(row => [String(row.roll_no).trim().toUpperCase(), String(row.status)]));
+        const before = new Map(snapshot.map(row => [String(row.roll_no).trim().toUpperCase() + '|' + String(row.test_code || '').trim().toUpperCase(), String(row.status)]));
         const seen = new Set();
         for (const row of records) {
           const roll = String(row.roll_no || '').trim().toUpperCase();
+          const testCode = String(row.test_code || '').trim().toUpperCase();
+          const key = roll + '|' + testCode;
           const next = String(row.status || '').trim();
-          if (!before.has(roll) || seen.has(roll) || !['Present','Absent'].includes(next)) {
+          if (!before.has(key) || seen.has(key) || !['Present','Absent'].includes(next)) {
             await client.query('ROLLBACK');
             return res.status(400).json({error:'Invalid or duplicate attendance update.'});
           }
-          seen.add(roll);
-          const current = await client.query("SELECT status FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=$1 AND attendance_date=$2 FOR UPDATE", [roll, request.attendance_date]);
-          if (!current.rows.length || String(current.rows[0].status) !== before.get(roll)) {
+          seen.add(key);
+          const current = await client.query("SELECT status FROM test_batch_attendance WHERE UPPER(TRIM(roll_no))=$1 AND attendance_date=$2 AND UPPER(TRIM(test_code))=$3 FOR UPDATE", [roll, request.attendance_date, testCode]);
+          if (!current.rows.length || String(current.rows[0].status) !== before.get(key)) {
             await client.query('ROLLBACK');
             return res.status(409).json({error:'Attendance for ' + roll + ' changed after approval. Submit a new request.'});
           }
@@ -423,8 +425,8 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           return res.status(400).json({error:'Overall edit must include every saved student in the approved snapshot.'});
         }
         for (const row of records) {
-          await client.query("UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$3 AND attendance_date=$4",
-            [row.status, facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date]);
+          await client.query("UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_by_name=$3,edited_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$4 AND attendance_date=$5 AND UPPER(TRIM(test_code))=$6",
+            [row.status, facultyId, req.recordAuditActor?.name || facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date, String(row.test_code).trim().toUpperCase()]);
         }
         await client.query("UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
         await client.query('COMMIT');
