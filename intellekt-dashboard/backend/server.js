@@ -8407,6 +8407,7 @@ app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, 
           s.name,
           ts.name AS test_series_name,
           a.attendance_date,
+          a.test_code,
           a.status,
           a.marked_by, a.marked_by_name,
           a.marked_at,
@@ -8423,6 +8424,7 @@ app.get('/test-batch/attendance-report', requireTestBatchAttendanceMarksAccess, 
           FROM test_batch_registrations tr
           WHERE UPPER(TRIM(tr.roll_no)) = UPPER(TRIM(a.roll_no))
             AND tr.writing_date = a.attendance_date
+            AND UPPER(TRIM(tr.test_code))=UPPER(TRIM(a.test_code))
         )
         ORDER BY a.attendance_date DESC,a.roll_no ASC`,
       values
