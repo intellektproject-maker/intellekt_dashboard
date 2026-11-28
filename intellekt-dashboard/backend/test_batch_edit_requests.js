@@ -85,7 +85,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
           );
           if (!result.rows.length) return res.status(404).json({ error: 'No saved Test Batch attendance records found for this date.' });
           studentName = 'All Test Batch students (' + result.rows.length + ')';
-          original = JSON.stringify(result.rows.map(row => ({ roll_no: row.roll_no, name: row.name, status: row.status })));
+          original = JSON.stringify(result.rows.map(row => ({ roll_no: row.roll_no, name: row.name, test_code: row.test_code, status: row.status })));
         } else {
           const result = await pool.query(
             "SELECT s.name, a.status FROM test_batch_students s JOIN test_batch_attendance a " +
@@ -426,7 +426,7 @@ function registerTestBatchEditRequestRoutes(app, pool) {
         }
         for (const row of records) {
           await client.query("UPDATE test_batch_attendance SET status=$1,edited_by=$2,edited_by_name=$3,edited_at=CURRENT_TIMESTAMP WHERE UPPER(TRIM(roll_no))=$4 AND attendance_date=$5 AND UPPER(TRIM(test_code))=$6",
-            [row.status, facultyId, req.recordAuditActor?.name || facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date, String(row.test_code).trim().toUpperCase()]);
+            [row.status, facultyId, request.requested_by_name || facultyId, String(row.roll_no).trim().toUpperCase(), request.attendance_date, String(row.test_code).trim().toUpperCase()]);
         }
         await client.query("UPDATE test_batch_record_edit_requests SET status='Applied',applied_at=CURRENT_TIMESTAMP WHERE id=$1", [request.id]);
         await client.query('COMMIT');
